@@ -1,0 +1,21 @@
+workflows:
+  clipboard-stacker-debug:
+    name: Clipboard Stacker — installable debug APK
+    max_build_duration: 30
+    environment:
+      java: 17
+    scripts:
+      - name: Configure Android SDK
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Download Gradle 8.2.1
+        script: |
+          curl --fail --location --silent --show-error \
+            https://services.gradle.org/distributions/gradle-8.2.1-bin.zip \
+            --output /tmp/gradle-8.2.1-bin.zip
+          unzip -q /tmp/gradle-8.2.1-bin.zip -d /tmp
+      - name: Build debug APK
+        script: |
+          /tmp/gradle-8.2.1/bin/gradle --no-daemon --stacktrace assembleDebug
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
