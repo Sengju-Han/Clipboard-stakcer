@@ -28,6 +28,7 @@ from anki.notes import NoteFieldsCheckResult  # noqa: E402
 from anki.sync_pb2 import SyncCollectionResponse  # noqa: E402
 
 from build_tts_apkg import MIN_BYTES, PROVIDERS, audio_name, speakable  # noqa: E402
+from proofread import apply_correction, proofread, split_annotation  # noqa: E402
 from export_deck import (  # noqa: E402
     SOUND_TAG,
     TTS_DIRECTIVE,
@@ -62,6 +63,45 @@ async def synthesize(text: str, voice: str, attempts: int, provider: str) -> byt
             if attempt < attempts - 1:
                 time.sleep(2 ** attempt)
     fail(f"Could not generate audio ({last}).", "Nothing was added and nothing was synced.")
+
+
+def check_sentence(values: dict[str, str], field: str) -> list[str]:
+    """Correct the sentence in place, and say what changed.
+
+    A card is worth more than a perfect sentence, so nothing here is fatal: if
+    the check cannot run, the card is added exactly as typed.
+    """
+    raw = values.get(field, "")
+    head, _ = split_annotation(raw)
+    if not head.strip():
+        return []
+    try:
+        import anthropic
+
+        checked = proofread([head], anthropic.Anthropic(), targets=[values.get("Back", "")])[0]
+    except Exception as exc:
+        log(f"::warning::Could not check the sentence ({type(exc).__name__}: {exc}). "
+            "Adding it as typed.")
+        return []
+
+    updated, refused = apply_correction(raw, checked.corrected)
+    if refused:
+        for issue in checked.issues:
+            log(f"  would change: {issue}")
+        if checked.issues:
+            log(f"::warning::Suggestions not applied because {refused}.")
+        return []
+    if updated == raw:
+        log("The sentence looks fine.")
+        return []
+
+    values[field] = updated
+    log("Corrected the sentence:")
+    log(f"  was: {head.strip()}")
+    log(f"  now: {checked.corrected.strip()}")
+    for issue in checked.issues:
+        log(f"  - {issue}")
+    return checked.issues or ["rewritten"]
 
 
 def existing_notes(col: Collection) -> dict[int, int]:
@@ -134,6 +174,9 @@ def main() -> int:
     parser.add_argument("--provider", default="edge", choices=sorted(PROVIDERS),
                         help="edge = Microsoft neural voices; silent = offline test files.")
     parser.add_argument("--attempts", type=int, default=4)
+    parser.add_argument("--no-proofread", action="store_true",
+                        help="Skip the typo and phrasing check. It is skipped anyway "
+                             "when ANTHROPIC_API_KEY is not set.")
     parser.add_argument("--allow-duplicate", action="store_true",
                         help="Add even if a note with the same first field exists.")
     parser.add_argument("--create-deck", action="store_true",
@@ -207,6 +250,12 @@ def main() -> int:
             ],
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    corrections: list[str] = []
+    if not args.no_proofread and os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        corrections = check_sentence(values, args.speak_field)
+    elif not args.no_proofread:
+        log("ANTHROPIC_API_KEY is not set, so the sentence was not checked.")
+
     note = col.new_note(notetype)
     for name, value in values.items():
         note[name] = value
@@ -278,6 +327,9 @@ def main() -> int:
         + [f"- `{name}`: {value[:120]}" for name, value in values.items()]
         + ([f"- Audio: `{stored}` for {len(spoken)} characters, media sync **{media_state}**"]
            if stored else ["- No audio was generated."])
+        + (["", "### The sentence was corrected", ""]
+           + [f"- {issue}" for issue in corrections]
+           if corrections else [])
         + ([f"- ::warning:: `{args.notetype}` still contains `{{{{tts}}}}`; the card will speak twice."]
            if stored and speaks else [])
         + [

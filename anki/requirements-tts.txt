@@ -9,3 +9,6 @@ edge-tts==7.2.8
 # Reads the duration back out of a generated mp3, so a file that is the wrong
 # length for its text is caught before it reaches the phone.
 mutagen==1.48.1
+
+# Typo and phrasing check on example sentences (anki/proofread.py).
+anthropic==1.5.0

@@ -89,6 +89,7 @@
       <input id="tags" placeholder="from-web">
     </div>
 
+    <label class="check row"><input type="checkbox" id="proof" checked> Check my English and fix typos</label>
     <label class="check row"><input type="checkbox" id="dupe"> Add even if the first field already exists</label>
 
     <button class="primary" type="submit" id="go">Add card</button>
@@ -287,6 +288,7 @@ $("card").addEventListener("submit", async (event) => {
             speak_field: "Example",
             voice: $("voice").value.trim() || "en-US-AvaNeural",
             allow_duplicate: String($("dupe").checked),
+            proofread: String($("proof").checked),
           },
         }),
       }
@@ -310,7 +312,8 @@ $("card").addEventListener("submit", async (event) => {
       for (const box of document.querySelectorAll("#fields textarea")) box.value = "";
       $("dupe").checked = false;
       document.querySelector("#fields textarea")?.focus();
-      say("ok", `Added. Sync AnkiDroid to see it — if the audio is silent at first, sync again. (${link})`);
+      const fixed = $("proof").checked ? " Open the run to see any wording it corrected." : "";
+      say("ok", `Added. Sync AnkiDroid to see it — if the audio is silent at first, sync again.${fixed} (${link})`);
     } else {
       say("bad", `The run finished as <b>${conclusion}</b>. Open ${link} to see why — nothing was added if it failed before syncing.`);
     }

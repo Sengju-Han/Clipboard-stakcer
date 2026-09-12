@@ -44,14 +44,17 @@ it can see on `main`, so merge this branch first. Nothing works until you do.
 `https://<your-username>.github.io/<repository>/`. Bookmark it, or add it to
 your home screen so it opens like an app.
 
-**3. Make a token.** *Settings → Developer settings → Personal access tokens →
+**3. Add an `ANTHROPIC_API_KEY` secret** if you want your English checked — see
+*Checking your English* below. Skip it and everything else still works.
+
+**4. Make a token.** *Settings → Developer settings → Personal access tokens →
 Fine-grained tokens → Generate new token.*
 
 - Repository access: **Only select repositories** → this one.
 - Permissions → Repository permissions → **Actions: Read and write**.
 - Give it an expiry you are happy with. You will need to replace it when it runs out.
 
-**4. Paste it into the form** under *Settings*. It is kept in that browser only
+**5. Paste it into the form** under *Settings*. It is kept in that browser only
 and is sent to `api.github.com` and nowhere else. It is never committed, never
 in the page's source, and not readable by anyone who opens the page.
 
@@ -83,6 +86,43 @@ follows the run and tells you when it lands.
 Expect a minute or two per card. Most of that is downloading your collection;
 the audio itself takes a second or so.
 
+## Checking your English
+
+Sentences typed on a phone pick up typos, and a sentence can be spelled
+perfectly and still not be one a native speaker would write. Both are checked
+before the card is saved, and the sentence is corrected in place. What changed
+is listed in the run summary, so you can see it and disagree.
+
+The audio is generated **after** the correction, so the recording says the
+corrected sentence rather than the typo.
+
+It works under deliberately tight rules. It will not:
+
+- change or remove the word you are practising, even for one that reads better
+- change the meaning, or add or remove information
+- make a correct sentence longer, more formal, or more literary
+- touch text in another language — Korean is left exactly as typed
+- fill in a blank. `' '` marks a gap you fill in from memory; it survives.
+
+A sentence that is already fine comes back untouched. That is the normal case,
+and a run reporting no changes has not failed.
+
+**One exception:** when the sentence contains formatting (bold, colour, a link),
+the suggestion is reported but **not** applied — the correction comes back as
+plain text, and applying it would throw the formatting away. Fix those by hand.
+
+### Turning it on
+
+Add an `ANTHROPIC_API_KEY` secret alongside your AnkiWeb ones
+(*Settings → Secrets and variables → Actions*). The key comes from
+platform.claude.com → Account Settings → API keys.
+
+**It is optional.** Without the secret the card is added exactly as typed and
+the run says so. Untick *Check my English* on the form to skip it for one card.
+
+Cost is roughly a cent per card at current Claude Opus 5 pricing. Worth setting
+a spend limit on the key in the Console regardless.
+
 ## If the note type still speaks
 
 If you have not yet run the **Anki TTS package** workflow, your note types still
@@ -102,6 +142,9 @@ voice. The run warns you when it notices. Fix it once, under
 | *AnkiWeb asked for a FULL UPLOAD* | Refused on purpose. Sync your phone with AnkiWeb first, then add the card again. Nothing was changed. |
 | *AnkiWeb needs a full download* | Another device changed something structural. The card was **not** saved. Sync your phone, then re-add. |
 | The run failed | Open it from the link. If it failed before the sync step, nothing reached your collection. |
+| *ANTHROPIC_API_KEY is not set* | The sentence check is off. Add the secret, or untick *Check my English*. The card was still added. |
+| *Could not check the sentence* | The check itself failed, so the card went in exactly as typed. Nothing was lost. |
+| *Suggestions not applied* | The sentence carries formatting. The suggestion is in the log; apply it by hand. |
 
 ## Running it without the page
 

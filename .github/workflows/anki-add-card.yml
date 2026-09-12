@@ -34,6 +34,11 @@ on:
         description: 'Voice'
         required: false
         default: 'en-US-AvaNeural'
+      proofread:
+        description: 'Check the sentence for typos and unnatural phrasing, and correct it'
+        required: false
+        type: boolean
+        default: true
       allow_duplicate:
         description: 'Add even if the first field already exists'
         required: false
@@ -70,6 +75,8 @@ jobs:
         env:
           ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
           ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Optional. Without it the sentence is added exactly as typed.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Passed as environment variables, never interpolated into the shell.
           DECK: ${{ inputs.deck }}
           NOTETYPE: ${{ inputs.notetype }}
@@ -78,9 +85,11 @@ jobs:
           SPEAK_FIELD: ${{ inputs.speak_field }}
           VOICE: ${{ inputs.voice }}
           ALLOW_DUPLICATE: ${{ inputs.allow_duplicate }}
+          PROOFREAD: ${{ inputs.proofread }}
         run: |
           FLAGS=""
-          if [ "$ALLOW_DUPLICATE" = "true" ]; then FLAGS="--allow-duplicate"; fi
+          if [ "$ALLOW_DUPLICATE" = "true" ]; then FLAGS="$FLAGS --allow-duplicate"; fi
+          if [ "$PROOFREAD" = "false" ]; then FLAGS="$FLAGS --no-proofread"; fi
           python anki/add_card.py \
             --deck "$DECK" \
             --notetype "$NOTETYPE" \
