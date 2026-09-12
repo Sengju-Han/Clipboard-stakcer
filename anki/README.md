@@ -38,7 +38,9 @@ into the export, and are not readable back out of the settings page — not even
    `Podcasts, Suits, duo` — or put `*` to export every deck you have.
 4. Set *timezone* to your own (e.g. `Asia/Seoul`) so dates match your review days.
 5. When the run finishes, scroll to **Artifacts** and download **anki-export**.
-   It is a zip containing the files below. The summary on that page also shows a
+   It downloads as a **zip — unzip it first**, then open `anki-export.xlsx`.
+   (Opening the zip itself in a spreadsheet app is what produces "the file is
+   damaged".) It contains the files below. The summary on that page also shows a
    preview table, so you can check the result without downloading anything.
 
 Artifacts are deleted after 7 days; just run the workflow again for a fresh copy.
@@ -47,7 +49,8 @@ Artifacts are deleted after 7 days; just run the workflow again for a fresh copy
 
 | File | Contents |
 | --- | --- |
-| `cards.csv` | One row per card — open in Excel, Numbers, or Google Sheets |
+| `anki-export.xlsx` | **Start here.** Cards and reviews as two sheets, with filters ready — opens directly in Excel, Numbers, and Google Sheets |
+| `cards.csv` | One row per card, same data, for scripts or importing elsewhere |
 | `cards.json` | The same data plus full review history, for scripts |
 | `reviews.csv` | One row per individual review you have ever done |
 | `by-deck/<deck>.csv` | The same rows split per deck, when you export more than one |
@@ -126,6 +129,8 @@ afterwards, which is normal for any extra device and resolves on your next sync.
 | `No cards matched` | Deck names are case-sensitive and use `::` between parent and subdeck. Run with an empty deck name to list them. |
 | `This repository is public` | Make it private, or tick `confirm_public`. |
 | Sync fails repeatedly | AnkiWeb rate-limits frequent syncs. Wait a few minutes between runs. |
+| "The file is damaged" when opening it | You are most likely opening the downloaded `.zip` rather than a file inside it. Unzip first (on iPhone: tap the zip in Files, then open the folder it creates), then open `anki-export.xlsx`. |
+| The CSV looks like one long column | Your spreadsheet app is splitting on semicolons instead of commas. Open `anki-export.xlsx` instead — it has no import step to get wrong. |
 
 ## Running it yourself (optional)
 

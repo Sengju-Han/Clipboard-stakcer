@@ -2,3 +2,6 @@
 # Pinned so the workflow keeps working when upstream changes its API.
 # To upgrade: bump this version, run the workflow, check it still succeeds.
 anki==26.8.1
+
+# Writes the .xlsx copy, which spreadsheet apps open without a CSV import step.
+openpyxl==3.1.5

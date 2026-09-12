@@ -391,7 +391,8 @@ def assign_word_column(records: list[dict], override: str | None) -> list[str]:
 # output
 # --------------------------------------------------------------------------
 
-def write_cards_csv(path: Path, records: list[dict]) -> list[str]:
+def build_table(records: list[dict]) -> tuple[list[str], list[dict]]:
+    """Flatten the records into a header and plain rows, fields last."""
     field_names: list[str] = []
     for record in records:
         for name in record["_fields"]:
@@ -401,14 +402,26 @@ def write_cards_csv(path: Path, records: list[dict]) -> list[str]:
     base = [k for k in records[0] if not k.startswith("_")] if records else []
     header = base + [f"field: {name}" for name in field_names]
 
+    rows = []
+    for record in records:
+        row = {k: v for k, v in record.items() if not k.startswith("_")}
+        for name in field_names:
+            row[f"field: {name}"] = record["_fields"].get(name, "")
+        rows.append(row)
+    return header, rows
+
+
+def write_csv(path: Path, header: list[str], rows: list[dict]) -> None:
+    # utf-8-sig so Excel detects UTF-8; the csv module quotes and uses CRLF.
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=header, extrasaction="ignore")
         writer.writeheader()
-        for record in records:
-            row = {k: v for k, v in record.items() if not k.startswith("_")}
-            for name in field_names:
-                row[f"field: {name}"] = record["_fields"].get(name, "")
-            writer.writerow(row)
+        writer.writerows(rows)
+
+
+def write_cards_csv(path: Path, records: list[dict]) -> list[str]:
+    header, rows = build_table(records)
+    write_csv(path, header, rows)
     return header
 
 
@@ -425,21 +438,62 @@ def write_per_deck_csvs(out_dir: Path, records: list[dict]) -> dict[str, list[di
     return groups
 
 
-def write_reviews_csv(path: Path, records: list[dict]) -> int:
-    header = [
-        "word", "card_id", "reviewed_at", "rating", "rating_name", "kind",
-        "interval_days", "previous_interval_days", "ease_pct", "seconds_taken",
-        "fsrs_stability_days", "fsrs_difficulty",
-    ]
-    rows = 0
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=header, extrasaction="ignore")
-        writer.writeheader()
-        for record in records:
-            for review in reversed(record["_reviews"]):  # oldest first, reads naturally
-                writer.writerow({"word": record["word"], "card_id": record["card_id"], **review})
-                rows += 1
+REVIEW_COLUMNS = [
+    "word", "card_id", "reviewed_at", "rating", "rating_name", "kind",
+    "interval_days", "previous_interval_days", "ease_pct", "seconds_taken",
+    "fsrs_stability_days", "fsrs_difficulty",
+]
+
+
+def build_review_table(records: list[dict]) -> list[dict]:
+    rows = []
+    for record in records:
+        for review in reversed(record["_reviews"]):  # oldest first, reads naturally
+            rows.append({"word": record["word"], "card_id": record["card_id"], **review})
     return rows
+
+
+def write_reviews_csv(path: Path, rows: list[dict]) -> int:
+    write_csv(path, REVIEW_COLUMNS, rows)
+    return len(rows)
+
+
+def write_workbook(path: Path, cards: tuple[list[str], list[dict]], reviews: list[dict]) -> bool:
+    """Write a real .xlsx. Spreadsheet apps open it without guessing an encoding."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        log("::warning::openpyxl is not installed, so no Excel file was written.")
+        return False
+
+    book = Workbook()
+    for index, (title, header, rows) in enumerate(
+        [("Cards", cards[0], cards[1]), ("Reviews", REVIEW_COLUMNS, reviews)]
+    ):
+        sheet = book.active if index == 0 else book.create_sheet()
+        sheet.title = title
+        sheet.append(header)
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        for row in rows:
+            values = [row.get(name, "") for name in header]
+            sheet.append(values)
+            for cell, value in zip(sheet[sheet.max_row], values):
+                # A leading "=" would otherwise be stored as a formula.
+                if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+                    cell.data_type = "s"
+
+        sheet.freeze_panes = "A2"
+        if rows:
+            sheet.auto_filter.ref = f"A1:{get_column_letter(len(header))}{len(rows) + 1}"
+        for column, name in enumerate(header, start=1):
+            longest = max([len(str(row.get(name, ""))) for row in rows[:200]] + [len(name)])
+            sheet.column_dimensions[get_column_letter(column)].width = min(max(longest + 2, 9), 55)
+
+    book.save(path)
+    return True
 
 
 def write_summary(lines: list[str]) -> None:
@@ -564,8 +618,11 @@ def main() -> int:
         field_report = assign_word_column(records, args.word_field.strip() or None)
         records.sort(key=lambda r: (r["deck"], r["word"].lower()))
 
-        write_cards_csv(out_dir / "cards.csv", records)
-        review_rows = write_reviews_csv(out_dir / "reviews.csv", records)
+        table = build_table(records)
+        write_csv(out_dir / "cards.csv", *table)
+        review_table = build_review_table(records)
+        review_rows = write_reviews_csv(out_dir / "reviews.csv", review_table)
+        wrote_xlsx = write_workbook(out_dir / "anki-export.xlsx", table, review_table)
         by_deck = write_per_deck_csvs(out_dir, records)
         payload = {
             "exported_at": clock.stamp(int(datetime.now(tz=timezone.utc).timestamp())),
@@ -594,7 +651,9 @@ def main() -> int:
             f"- Total reviews recorded: **{review_rows}**",
             "- Hardest cards (most lapses): " + (", ".join(f"`{r['word']}` ({r['lapses']})" for r in leeches if r["lapses"]) or "none yet"),
             "",
-            "Download **anki-export** under *Artifacts* below for `cards.csv`, `reviews.csv` and `cards.json`"
+            "Download **anki-export** under *Artifacts* below. Unzip it, then open "
+            + ("**anki-export.xlsx**" if wrote_xlsx else "`cards.csv`")
+            + " — it also contains `cards.csv`, `reviews.csv` and `cards.json`"
             + (", plus one CSV per deck under `by-deck/`." if len(by_deck) > 1 else "."),
             "",
         ]
