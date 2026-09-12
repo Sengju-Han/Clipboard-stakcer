@@ -54,7 +54,7 @@ Columns in `cards.csv`:
 
 | Column | Meaning |
 | --- | --- |
-| `word` | The note's sort field — normally the target English word. Override with the *word_field* input. |
+| `word` | The target word — see *Which field becomes the word* below. Override with the *word_field* input. |
 | `state` | new / learning / review / relearning / suspended / buried |
 | `due_date`, `interval_days` | When it comes back, and the current interval |
 | `ease_pct` | SM-2 ease factor (250% is the default starting value) |
@@ -69,6 +69,24 @@ Columns in `cards.csv`:
 | `total_minutes`, `avg_seconds` | Time spent on the card |
 | `tags`, `notetype`, `card_template`, `flag` | Card metadata |
 | `field: …` | One column per field on your note type, HTML stripped |
+
+## Which field becomes the `word` column
+
+Anki has no concept of "the word", so the script works it out per note type:
+
+1. If you set the **word_field** input, that field is used.
+2. Otherwise a field *named* like a vocabulary field wins — `Word`, `Term`,
+   `Vocab`, `Expression`, `단어`, `어휘`, and similar.
+3. Otherwise the field that is consistently **much shorter** than the others wins.
+   This is what handles cue-sentence decks, where the prompt is a sentence with a
+   blank in it and the answer field holds the single word.
+4. If nothing stands out — two sentence fields, say — it falls back to the note's
+   sort field and says so.
+
+Every run prints which field it chose and why, with an example note, under
+*Which field became the `word` column* in the run summary. If it guessed wrong,
+re-run with **word_field** set. Either way every field is always exported in full
+as its own `field: …` column, so nothing is lost.
 
 ## Is this safe for my Anki account?
 

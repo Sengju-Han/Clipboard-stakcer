@@ -22,6 +22,7 @@ import sys
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+from statistics import median
 from typing import NoReturn
 
 import anki.lang
@@ -49,6 +50,11 @@ QUEUE_STATES = {
 TYPE_STATES = {0: "new", 1: "learning", 2: "review", 3: "relearning"}
 RATING_NAMES = {1: "again", 2: "hard", 3: "good", 4: "easy"}
 REVIEW_KINDS = {0: "learning", 1: "review", 2: "relearning", 3: "filtered", 4: "manual", 5: "rescheduled"}
+
+# Field names that usually hold the target word itself rather than a prompt.
+VOCAB_FIELD_NAME = re.compile(
+    r"word|term|vocab|target|expression|lemma|spelling|headword|단어|어휘|표현", re.IGNORECASE
+)
 
 
 def log(msg: str) -> None:
@@ -171,7 +177,7 @@ def deck_inventory(col: Collection) -> list[dict]:
     return sorted(decks, key=lambda d: d["deck"])
 
 
-def card_record(col: Collection, card_id: int, clock: Clock, word_field: str | None) -> dict:
+def card_record(col: Collection, card_id: int, clock: Clock) -> dict:
     card = col.get_card(card_id)
     note = card.note()
     stats = col.card_stats_data(card_id)
@@ -179,17 +185,11 @@ def card_record(col: Collection, card_id: int, clock: Clock, word_field: str | N
     fields = {name: value for name, value in note.items()}
     notetype = note.note_type() or {}
 
-    # "The word": the note's sort field, unless the user named a field explicitly.
-    word = ""
-    if word_field and word_field in fields:
-        word = clean(fields[word_field])
-    if not word:
-        sort_index = int(notetype.get("sortf", 0) or 0)
-        ordered = list(fields.values())
-        if sort_index < len(ordered):
-            word = clean(ordered[sort_index])
-    if not word:
-        word = next((clean(v) for v in fields.values() if clean(v)), "")
+    # Which field holds the target word is decided later, per note type, once
+    # every card has been read - see assign_word_column().
+    names = list(fields)
+    sort_index = int(notetype.get("sortf", 0) or 0)
+    sort_field = names[sort_index] if sort_index < len(names) else (names[0] if names else "")
 
     # Review history, newest first as returned by the backend.
     reviews = []
@@ -231,7 +231,7 @@ def card_record(col: Collection, card_id: int, clock: Clock, word_field: str | N
         difficulty, stability = reviews[0]["fsrs_difficulty"], reviews[0]["fsrs_stability_days"]
 
     return {
-        "word": word,
+        "word": "",  # filled in by assign_word_column()
         "deck": stats.deck or col.decks.name(card.did),
         "state": state,
         "due_date": clock.date(stats.due_date) if stats.due_date else "",
@@ -265,9 +265,85 @@ def card_record(col: Collection, card_id: int, clock: Clock, word_field: str | N
         "deck_preset": stats.preset,
         "note_id": note.id,
         "card_id": card_id,
+        "_sort_field": sort_field,
         "_fields": {name: clean(value) for name, value in fields.items()},
         "_reviews": reviews,
     }
+
+
+def plural(count: float, noun: str) -> str:
+    return f"{count:g} {noun}" + ("" if count == 1 else "s")
+
+
+def _median_length(values: list[str]) -> float | None:
+    """Median word count of the non-empty values, or None if they are all empty."""
+    lengths = [len(value.split()) for value in values if value]
+    return median(lengths) if lengths else None
+
+
+def choose_word_field(field_names: list[str], samples: dict[str, list[str]], sort_field: str) -> tuple[str, str]:
+    """Pick the field holding the target word, and explain the choice.
+
+    Sort order is no guide: a note may well be prompted by a cue sentence and
+    answered with the word. So prefer a field named like a vocabulary field,
+    then the field that is consistently much shorter than the others.
+    """
+    for name in field_names:
+        if VOCAB_FIELD_NAME.search(name):
+            return name, "its name looks like a vocabulary field"
+
+    lengths = {}
+    for name in field_names:
+        value = _median_length(samples[name])
+        if value is not None:
+            lengths[name] = value
+    if len(lengths) >= 2:
+        shortest = min(lengths, key=lambda name: (lengths[name], field_names.index(name)))
+        runner_up = min(value for name, value in lengths.items() if name != shortest)
+        if lengths[shortest] <= 3 and runner_up > lengths[shortest]:
+            return shortest, (
+                f"it is the short one - {plural(lengths[shortest], 'word')} per note "
+                f"against {plural(runner_up, 'word')} in the next shortest field"
+            )
+
+    return sort_field, "no field looked more like the word, so the note's sort field was used"
+
+
+def assign_word_column(records: list[dict], override: str | None) -> list[str]:
+    """Fill the "word" column for every card and report how it was decided."""
+    by_notetype: dict[str, list[dict]] = {}
+    for record in records:
+        by_notetype.setdefault(record["notetype"], []).append(record)
+
+    report: list[str] = []
+    for notetype, group in sorted(by_notetype.items()):
+        field_names: list[str] = []
+        for record in group:
+            for name in record["_fields"]:
+                if name not in field_names:
+                    field_names.append(name)
+        samples = {name: [r["_fields"].get(name, "") for r in group] for name in field_names}
+
+        if override and override in field_names:
+            chosen, why = override, "you set the word_field input"
+        else:
+            if override:
+                log(f"::warning::Note type {notetype!r} has no field named {override!r}; detecting instead.")
+            chosen, why = choose_word_field(field_names, samples, group[0]["_sort_field"])
+
+        for record in group:
+            record["word"] = record["_fields"].get(chosen, "") or record["_fields"].get(record["_sort_field"], "")
+
+        example = next((r for r in group if r["_fields"].get(chosen)), group[0])
+        shown = " · ".join(
+            f"{name}: {(example['_fields'].get(name) or '')[:40]}" for name in field_names[:4]
+        )
+        report.append(
+            f"- **{notetype}** ({len(group)} cards): `word` column = **{chosen}**, because {why}.\n"
+            f"  - fields: {', '.join(f'`{n}`' for n in field_names)}\n"
+            f"  - example — {shown}"
+        )
+    return report
 
 
 # --------------------------------------------------------------------------
@@ -411,7 +487,8 @@ def main() -> int:
             card_ids = card_ids[: args.limit]
         log(f"Exporting {len(card_ids)} cards...")
 
-        records = [card_record(col, cid, clock, args.word_field or None) for cid in card_ids]
+        records = [card_record(col, cid, clock) for cid in card_ids]
+        field_report = assign_word_column(records, args.word_field.strip() or None)
         records.sort(key=lambda r: (r["deck"], r["word"].lower()))
 
         write_cards_csv(out_dir / "cards.csv", records)
@@ -443,6 +520,14 @@ def main() -> int:
             "- Hardest cards (most lapses): " + (", ".join(f"`{r['word']}` ({r['lapses']})" for r in leeches if r["lapses"]) or "none yet"),
             "",
             "Download **anki-export** under *Artifacts* below for `cards.csv`, `reviews.csv` and `cards.json`.",
+            "",
+            "### Which field became the `word` column",
+            "",
+        ]
+        + field_report
+        + [
+            "",
+            "If that picked the wrong field, re-run with *word_field* set to the field you want.",
             "",
             "<details><summary>Preview</summary>",
         ]
