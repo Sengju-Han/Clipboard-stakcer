@@ -34,6 +34,8 @@ into the export, and are not readable back out of the settings page — not even
    finishes, open it and read the summary — it lists every deck name you have.
 3. **Run it again**, this time pasting the deck name exactly as listed
    (e.g. `English::TOEFL`). Subdecks are included automatically.
+   To export **several decks at once**, separate them with commas —
+   `Podcasts, Suits, duo` — or put `*` to export every deck you have.
 4. Set *timezone* to your own (e.g. `Asia/Seoul`) so dates match your review days.
 5. When the run finishes, scroll to **Artifacts** and download **anki-export**.
    It is a zip containing the files below. The summary on that page also shows a
@@ -48,13 +50,14 @@ Artifacts are deleted after 7 days; just run the workflow again for a fresh copy
 | `cards.csv` | One row per card — open in Excel, Numbers, or Google Sheets |
 | `cards.json` | The same data plus full review history, for scripts |
 | `reviews.csv` | One row per individual review you have ever done |
+| `by-deck/<deck>.csv` | The same rows split per deck, when you export more than one |
 | `decks.csv` / `decks.json` | Every deck name with its card count |
 
 Columns in `cards.csv`:
 
 | Column | Meaning |
 | --- | --- |
-| `word` | The note's sort field — normally the target English word. Override with the *word_field* input. |
+| `word` | The target word — see *Which field becomes the word* below. Override with the *word_field* input. |
 | `state` | new / learning / review / relearning / suspended / buried |
 | `due_date`, `interval_days` | When it comes back, and the current interval |
 | `ease_pct` | SM-2 ease factor (250% is the default starting value) |
@@ -69,6 +72,35 @@ Columns in `cards.csv`:
 | `total_minutes`, `avg_seconds` | Time spent on the card |
 | `tags`, `notetype`, `card_template`, `flag` | Card metadata |
 | `field: …` | One column per field on your note type, HTML stripped |
+
+## Exporting several decks
+
+Put a comma-separated list in the *deck* box (`Podcasts, Suits, duo`), or `*` for
+everything. You get one combined `cards.csv` — the `deck` column says where each
+card came from — plus a per-deck copy under `by-deck/`, and the run summary breaks
+the totals down by deck.
+
+Naming a parent deck and one of its subdecks together is safe: each card is
+exported once, never twice. Unknown names are reported as a warning and skipped,
+so one typo doesn't waste the whole run.
+
+## Which field becomes the `word` column
+
+Anki has no concept of "the word", so the script works it out per note type:
+
+1. If you set the **word_field** input, that field is used.
+2. Otherwise a field *named* like a vocabulary field wins — `Word`, `Term`,
+   `Vocab`, `Expression`, `단어`, `어휘`, and similar.
+3. Otherwise the field that is consistently **much shorter** than the others wins.
+   This is what handles cue-sentence decks, where the prompt is a sentence with a
+   blank in it and the answer field holds the single word.
+4. If nothing stands out — two sentence fields, say — it falls back to the note's
+   sort field and says so.
+
+Every run prints which field it chose and why, with an example note, under
+*Which field became the `word` column* in the run summary. If it guessed wrong,
+re-run with **word_field** set. Either way every field is always exported in full
+as its own `field: …` column, so nothing is lost.
 
 ## Is this safe for my Anki account?
 
