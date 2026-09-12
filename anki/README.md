@@ -51,10 +51,11 @@ Artifacts are deleted after 7 days; just run the workflow again for a fresh copy
 | --- | --- |
 | `anki-export.xlsx` | **Start here.** Cards and reviews as two sheets, with filters ready — opens directly in Excel, Numbers, and Google Sheets |
 | `cards.csv` | One row per card, same data, for scripts or importing elsewhere |
-| `cards.json` | The same data plus full review history, for scripts |
+| `cards.json` | The same data plus full review history and the untouched field values, for scripts |
 | `reviews.csv` | One row per individual review you have ever done |
 | `by-deck/<deck>.csv` | The same rows split per deck, when you export more than one |
 | `decks.csv` / `decks.json` | Every deck name with its card count |
+| `notetypes.json`, `notetypes/<name>.json` | Each note type in full — its id, field order, every card template, and the CSS, copied verbatim |
 
 Columns in `cards.csv`:
 
@@ -74,7 +75,18 @@ Columns in `cards.csv`:
 | `first_review`, `last_review`, `created` | Dates, in the timezone you chose |
 | `total_minutes`, `avg_seconds` | Time spent on the card |
 | `tags`, `notetype`, `card_template`, `flag` | Card metadata |
-| `field: …` | One column per field on your note type, HTML stripped |
+| `guid` | Anki's own identifier for the note. Importing matches on this, so a note that already exists is updated rather than duplicated |
+| `word_field` | Which field the `word` column was taken from on this row |
+| `deck_id`, `notetype_id` | Anki's numeric ids, for joining against `decks.json` and `notetypes.json` |
+| `sound_tags` | Audio files the note already references, if any |
+| `field: …` | One field per column, HTML and `[sound:]` tags stripped for reading |
+
+`field: …` columns are the **union** of every field name in the export, so when
+you export more than one note type a column can be blank simply because that
+note type has no such field. `notetypes.json` says which fields each note type
+really has, and the run summary marks fields that exist but are blank on every
+note. The stripped-down text is for reading — `cards.json` also carries
+`fields_raw`, each field exactly as Anki stores it.
 
 ## Exporting several decks
 
@@ -99,6 +111,13 @@ Anki has no concept of "the word", so the script works it out per note type:
    blank in it and the answer field holds the single word.
 4. If nothing stands out — two sentence fields, say — it falls back to the note's
    sort field and says so.
+5. Finally, if the export spans several note types and they did not land on the
+   same field, one field they all have is chosen for all of them. Otherwise the
+   same column holds the prompt for one note type and the answer for another,
+   with nothing on the row to say which — which is the kind of mistake you only
+   notice long after the file is open. A field *named* like a vocabulary field
+   wins here too; failing that, the one that holds the same kind of text in
+   every note type. The run summary says when this happened.
 
 Every run prints which field it chose and why, with an example note, under
 *Which field became the `word` column* in the run summary. If it guessed wrong,

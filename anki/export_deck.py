@@ -56,6 +56,15 @@ VOCAB_FIELD_NAME = re.compile(
     r"word|term|vocab|target|expression|lemma|spelling|headword|단어|어휘|표현", re.IGNORECASE
 )
 
+# [sound:file.mp3] references inside a field. clean() strips these out of the
+# readable columns, so they are collected from the raw text first - otherwise
+# an export cannot tell a field that already has audio from one that does not.
+SOUND_TAG = re.compile(r"\[sound:([^]]*)\]")
+
+# {{tts en_US:Example}} and friends. A note type that speaks a field at review
+# time has one of these in a template; a pre-generated [sound:] tag replaces it.
+TTS_DIRECTIVE = re.compile(r"\{\{[^}]*\btts\b[^}]*\}\}")
+
 
 def log(msg: str) -> None:
     print(msg, flush=True)
@@ -76,7 +85,7 @@ def clean(text: str) -> str:
     """Plain-text version of an Anki field (drops HTML, media refs, cloze marks)."""
     if not text:
         return ""
-    text = re.sub(r"\[sound:[^]]*\]", " ", text)
+    text = SOUND_TAG.sub(" ", text)
     text = re.sub(r"\{\{c\d+::(.*?)(?:::.*?)?\}\}", r"\1", text, flags=re.S)
     try:
         text = strip_html(text)
@@ -226,6 +235,11 @@ def card_record(col: Collection, card_id: int, clock: Clock) -> dict:
     fields = {name: value for name, value in note.items()}
     notetype = note.note_type() or {}
 
+    # Anything already referencing audio. Collected before clean() runs, because
+    # clean() removes [sound:] tags: without this the export looks identical
+    # whether a note has audio or not.
+    sounds = [ref for value in fields.values() for ref in SOUND_TAG.findall(value)]
+
     # Which field holds the target word is decided later, per note type, once
     # every card has been read - see assign_word_column().
     names = list(fields)
@@ -273,7 +287,11 @@ def card_record(col: Collection, card_id: int, clock: Clock) -> dict:
 
     return {
         "word": "",  # filled in by assign_word_column()
+        "word_field": "",  # which field it came from, so the column explains itself
         "deck": stats.deck or col.decks.name(card.did),
+        # odid is set only while a card sits in a filtered deck, and then holds
+        # the deck it will return to - which is the one worth reporting.
+        "deck_id": card.odid or card.did,
         "state": state,
         "due_date": clock.date(stats.due_date) if stats.due_date else "",
         "new_card_position": stats.due_position if state == "new" else "",
@@ -301,13 +319,22 @@ def card_record(col: Collection, card_id: int, clock: Clock) -> dict:
         "avg_seconds": round(stats.average_secs, 1) if stats.average_secs else "",
         "flag": card.user_flag() or "",
         "tags": " ".join(note.tags),
+        "sound_tags": " ".join(sounds),
         "notetype": stats.notetype,
+        "notetype_id": notetype.get("id", ""),
         "card_template": stats.card_type,
         "deck_preset": stats.preset,
+        # Anki matches notes on guid when importing an .apkg: a match updates the
+        # existing note and leaves its cards' scheduling alone, a mismatch adds a
+        # duplicate. Anything that rebuilds these notes has to carry it through.
+        "guid": note.guid,
         "note_id": note.id,
         "card_id": card_id,
         "_sort_field": sort_field,
         "_fields": {name: clean(value) for name, value in fields.items()},
+        # Exactly as stored, HTML and media refs intact. The readable columns are
+        # for people; anything writing fields back has to start from these.
+        "_fields_raw": dict(fields),
         "_reviews": reviews,
     }
 
@@ -350,30 +377,107 @@ def choose_word_field(field_names: list[str], samples: dict[str, list[str]], sor
     return sort_field, "no field looked more like the word, so the note's sort field was used"
 
 
+def reconcile_word_field(
+    by_notetype: dict[str, list[dict]],
+    fields_of: dict[str, list[str]],
+    chosen_of: dict[str, str],
+) -> str | None:
+    """Find one field every note type can put in the word column, or None.
+
+    Detection runs per note type, so a mixed export can end up with the prompt
+    of one note type and the answer of another stacked in the same column, with
+    nothing on the row to say which is which. Among the fields that were picked
+    and that every note type has, prefer the one that behaves the *same* in each
+    of them: a field holding a word here and a sentence there is not one column.
+    """
+    if len(set(chosen_of.values())) < 2:
+        return None  # they already agree
+
+    common = set.intersection(*(set(names) for names in fields_of.values()))
+    candidates = [name for name in dict.fromkeys(chosen_of.values()) if name in common]
+    if len(candidates) < 2:
+        return candidates[0] if candidates else None
+
+    # A field actually named like a vocabulary field beats any measurement of
+    # how long its contents are, exactly as it does per note type.
+    named = [name for name in candidates if VOCAB_FIELD_NAME.search(name)]
+    if named:
+        return named[0]
+
+    scored: dict[str, tuple[float, float]] = {}
+    for name in candidates:
+        per_notetype = []
+        for group in by_notetype.values():
+            length = _median_length([r["_fields"].get(name, "") for r in group])
+            if length is None:
+                break  # empty for a whole note type, so it cannot be the word
+            per_notetype.append(length)
+        else:
+            spread = max(per_notetype) - min(per_notetype)
+            scored[name] = (spread, max(per_notetype))
+    if not scored:
+        return None
+    return min(scored, key=lambda name: scored[name] + (candidates.index(name),))
+
+
 def assign_word_column(records: list[dict], override: str | None) -> list[str]:
     """Fill the "word" column for every card and report how it was decided."""
     by_notetype: dict[str, list[dict]] = {}
     for record in records:
         by_notetype.setdefault(record["notetype"], []).append(record)
 
-    report: list[str] = []
-    for notetype, group in sorted(by_notetype.items()):
-        field_names: list[str] = []
+    fields_of: dict[str, list[str]] = {}
+    samples_of: dict[str, dict[str, list[str]]] = {}
+    for notetype, group in by_notetype.items():
+        names: list[str] = []
         for record in group:
             for name in record["_fields"]:
-                if name not in field_names:
-                    field_names.append(name)
-        samples = {name: [r["_fields"].get(name, "") for r in group] for name in field_names}
+                if name not in names:
+                    names.append(name)
+        fields_of[notetype] = names
+        samples_of[notetype] = {name: [r["_fields"].get(name, "") for r in group] for name in names}
 
-        if override and override in field_names:
-            chosen, why = override, "you set the word_field input"
-        else:
-            if override:
-                log(f"::warning::Note type {notetype!r} has no field named {override!r}; detecting instead.")
-            chosen, why = choose_word_field(field_names, samples, group[0]["_sort_field"])
+    chosen_of: dict[str, str] = {}
+    why_of: dict[str, str] = {}
+    override_used = False
+    for notetype, group in by_notetype.items():
+        names = fields_of[notetype]
+        if override and override in names:
+            chosen_of[notetype], why_of[notetype] = override, "you set the word_field input"
+            override_used = True
+            continue
+        if override:
+            log(f"::warning::Note type {notetype!r} has no field named {override!r}; detecting instead.")
+        chosen_of[notetype], why_of[notetype] = choose_word_field(
+            names, samples_of[notetype], group[0]["_sort_field"]
+        )
+
+    if not override_used:
+        agreed = reconcile_word_field(by_notetype, fields_of, chosen_of)
+        if agreed:
+            for notetype, previous in list(chosen_of.items()):
+                if previous != agreed:
+                    log(
+                        f"::warning::Note type {notetype!r} looked like it wanted {previous!r} in the "
+                        f"word column; using {agreed!r} instead, so the column means the same thing "
+                        f"on every row. Set word_field to override."
+                    )
+                chosen_of[notetype] = agreed
+                why_of[notetype] = (
+                    f"every note type here has a `{agreed}` field and it holds the same kind of "
+                    "text in each of them"
+                )
+
+    report: list[str] = []
+    for notetype, group in sorted(by_notetype.items()):
+        chosen, why = chosen_of[notetype], why_of[notetype]
+        field_names = fields_of[notetype]
 
         for record in group:
-            record["word"] = record["_fields"].get(chosen, "") or record["_fields"].get(record["_sort_field"], "")
+            value = record["_fields"].get(chosen, "")
+            # An empty field on one note still needs something in the column.
+            record["word_field"] = chosen if value else record["_sort_field"]
+            record["word"] = value or record["_fields"].get(record["_sort_field"], "")
 
         example = next((r for r in group if r["_fields"].get(chosen)), group[0])
         shown = " · ".join(
@@ -385,6 +489,139 @@ def assign_word_column(records: list[dict], override: str | None) -> list[str]:
             f"  - example — {shown}"
         )
     return report
+
+
+# --------------------------------------------------------------------------
+# note type metadata
+# --------------------------------------------------------------------------
+
+def tts_directives(templates: list[dict]) -> list[dict]:
+    """Every {{tts ...}} in the templates, with the template and line it sits on."""
+    found = []
+    for template in templates:
+        for side in ("qfmt", "afmt"):
+            for number, line in enumerate(template[side].splitlines(), start=1):
+                if TTS_DIRECTIVE.search(line):
+                    found.append(
+                        {
+                            "template": template["name"],
+                            "side": side,
+                            "line_number": number,
+                            "line": line.strip(),
+                        }
+                    )
+    return found
+
+
+def notetype_records(col: Collection, notetype_ids: list[int]) -> list[dict]:
+    """Enough of each note type to rebuild it without forking it.
+
+    Anki treats a rebuilt note type as the same one only when the id, fields,
+    templates and CSS all match; anything else imports as a copy and drags the
+    notes into it. So these are taken verbatim, and the stored dict is kept
+    whole under `raw` rather than trusting this function to know what matters.
+    """
+    out = []
+    for notetype_id in notetype_ids:
+        notetype = col.models.get(notetype_id)
+        if notetype is None:
+            log(f"::warning::Note type id {notetype_id} is used by a card but is not in the collection.")
+            continue
+        templates = [
+            {
+                "ord": template.get("ord"),
+                "name": template.get("name", ""),
+                "qfmt": template.get("qfmt", ""),
+                "afmt": template.get("afmt", ""),
+            }
+            for template in notetype.get("tmpls", [])
+        ]
+        out.append(
+            {
+                "id": notetype["id"],
+                "name": notetype["name"],
+                "kind": "cloze" if notetype.get("type") else "standard",
+                "sort_field_index": notetype.get("sortf", 0),
+                "field_names": [field["name"] for field in notetype.get("flds", [])],
+                "templates": templates,
+                "css": notetype.get("css", ""),
+                "tts_directives": tts_directives(templates),
+                "raw": notetype,
+            }
+        )
+    return sorted(out, key=lambda notetype: notetype["name"])
+
+
+def write_notetypes(out_dir: Path, notetypes: list[dict]) -> None:
+    (out_dir / "notetypes.json").write_text(
+        json.dumps(notetypes, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    folder = out_dir / "notetypes"
+    folder.mkdir(parents=True, exist_ok=True)
+    for notetype in notetypes:
+        (folder / f"{safe_filename(notetype['name'])}.json").write_text(
+            json.dumps(notetype, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+
+def notetype_report(notetypes: list[dict], records: list[dict]) -> list[str]:
+    """Per note type: the fields it really has, its templates, and any {{tts}}.
+
+    `cards.csv` holds the union of every field name seen across the export, so a
+    `field: X` column there is no evidence that this note type has an X field.
+    This says what each note type actually declares, and which of those fields
+    are blank on every note exported - a different thing from not existing.
+    """
+    by_id: dict[int, list[dict]] = {}
+    for record in records:
+        by_id.setdefault(record["notetype_id"], []).append(record)
+
+    lines = []
+    for notetype in notetypes:
+        group = by_id.get(notetype["id"], [])
+        annotated = []
+        for name in notetype["field_names"]:
+            filled = sum(1 for record in group if record["_fields"].get(name))
+            annotated.append(f"`{name}`" if filled else f"`{name}` _(blank on all {len(group)})_")
+        directives = notetype["tts_directives"]
+        spoken = (
+            "; ".join(
+                f"{d['template']} / {d['side']} line {d['line_number']} — `{d['line']}`"
+                for d in directives
+            )
+            if directives
+            else "none"
+        )
+        lines.append(
+            f"- **{notetype['name']}** — id `{notetype['id']}`, {len(group)} cards\n"
+            f"  - fields ({len(notetype['field_names'])}): {', '.join(annotated)}\n"
+            f"  - templates ({len(notetype['templates'])}): "
+            + ", ".join(f"`{t['name']}`" for t in notetype["templates"])
+            + "\n  - "
+            + "`{{tts}}`: "
+            + spoken
+        )
+    return lines
+
+
+def sound_report(records: list[dict]) -> list[str]:
+    """Which notes already reference audio, per field.
+
+    Worth knowing before anything appends a `[sound:]` tag. The readable columns
+    have these stripped out, so their absence from `cards.csv` means nothing.
+    """
+    per_field: dict[str, set] = {}
+    for record in records:
+        for name, value in record["_fields_raw"].items():
+            if SOUND_TAG.search(value):
+                per_field.setdefault(name, set()).add(record["note_id"])
+    if not per_field:
+        return ["No note in this export references audio yet."]
+
+    notes = set().union(*per_field.values())
+    return [f"**{plural(len(notes), 'note')}** already reference audio:", ""] + [
+        f"- `{name}` — {plural(len(ids), 'note')}" for name, ids in sorted(per_field.items())
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -562,11 +799,14 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.local_collection:
+        source = f"local collection file `{args.local_collection}`"
         col = Collection(args.local_collection)
     else:
+        source = "AnkiWeb sync, downloaded with the official `anki` library"
         work_dir = Path("anki-work")
         work_dir.mkdir(exist_ok=True)
         col = Collection(str(work_dir / "collection.anki2"))
+    log(f"Collection source: {source}")
 
     try:
         if not args.local_collection:
@@ -618,6 +858,11 @@ def main() -> int:
         field_report = assign_word_column(records, args.word_field.strip() or None)
         records.sort(key=lambda r: (r["deck"], r["word"].lower()))
 
+        notetype_ids = list(dict.fromkeys(r["notetype_id"] for r in records if r["notetype_id"]))
+        notetypes = notetype_records(col, notetype_ids)
+        write_notetypes(out_dir, notetypes)
+        log(f"Exported {len(notetypes)} note types.")
+
         table = build_table(records)
         write_csv(out_dir / "cards.csv", *table)
         review_table = build_review_table(records)
@@ -627,10 +872,19 @@ def main() -> int:
         payload = {
             "exported_at": clock.stamp(int(datetime.now(tz=timezone.utc).timestamp())),
             "timezone": clock.name,
+            "collection_source": source,
             "query": query,
             "card_count": len(records),
+            "notetypes": notetypes,
             "cards": [
-                {**{k: v for k, v in r.items() if not k.startswith("_")}, "fields": r["_fields"], "reviews": r["_reviews"]}
+                {
+                    **{k: v for k, v in r.items() if not k.startswith("_")},
+                    "fields": r["_fields"],
+                    # As stored, HTML and [sound:] tags intact - what anything
+                    # writing fields back has to start from.
+                    "fields_raw": r["_fields_raw"],
+                    "reviews": r["_reviews"],
+                }
                 for r in records
             ],
         }
@@ -658,6 +912,21 @@ def main() -> int:
             "",
         ]
         + (deck_breakdown(by_deck) if len(by_deck) > 1 else [])
+        + [
+            "",
+            "### Note types",
+            "",
+        ]
+        + notetype_report(notetypes, records)
+        + [
+            "",
+            "Full definitions - field order, every template, the CSS - are in "
+            "`notetypes.json` and one file per note type under `notetypes/`.",
+            "",
+            "### Audio already on these notes",
+            "",
+        ]
+        + sound_report(records)
         + [
             "",
             "### Which field became the `word` column",
