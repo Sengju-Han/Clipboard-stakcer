@@ -1,0 +1,118 @@
+name: Anki TTS package
+
+# Generates neural audio for one field and packages it as an .apkg that updates
+# your existing notes in place. Scheduling and review history are untouched:
+# Anki matches notes on guid, so importing updates fields and leaves cards alone.
+# Nothing is ever uploaded to your AnkiWeb account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck name(s), comma-separated. Start with one small deck.'
+        required: false
+        default: 'Steve Jobs'
+      field:
+        description: 'Field to speak, and to append the [sound:] tag to'
+        required: false
+        default: 'Example'
+      voice:
+        description: 'Voice, e.g. en-US-AvaNeural, en-US-AndrewNeural, en-US-EmmaNeural'
+        required: false
+        default: 'en-US-AvaNeural'
+      dry_run:
+        description: 'Report what would be generated, generate nothing'
+        required: false
+        type: boolean
+        default: false
+      keep_tts:
+        description: 'Leave {{tts}} in the templates (the card will then play both)'
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: 'Only the first N notes (0 = all). Useful for a first look.'
+        required: false
+        default: '0'
+      confirm_public:
+        description: 'Tick only if this repo is PUBLIC and you accept that the package is public too'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-tts
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the .apkg
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+
+      - name: Refuse to publish study data from a public repository
+        if: ${{ !github.event.repository.private && !inputs.confirm_public }}
+        run: |
+          echo "::error title=Public repository::This repository is public, so the package would be downloadable by anyone. Make the repository private (Settings -> General -> Change visibility), or re-run and tick 'confirm_public'."
+          exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-tts.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
+
+      # Audio filenames are a hash of the text, so a cached file is always the
+      # right file. This is what makes a run that is cut short resumable: the
+      # next one regenerates only what is missing.
+      - name: Restore previously generated audio
+        uses: actions/cache@v4
+        with:
+          path: tts-build/audio
+          key: tts-audio-${{ inputs.voice }}-${{ inputs.field }}-${{ github.run_id }}
+          restore-keys: |
+            tts-audio-${{ inputs.voice }}-${{ inputs.field }}-
+
+      - name: Build
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          FIELD: ${{ inputs.field }}
+          VOICE: ${{ inputs.voice }}
+          LIMIT: ${{ inputs.limit }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          KEEP_TTS: ${{ inputs.keep_tts }}
+        run: |
+          FLAGS=""
+          if [ "$DRY_RUN" = "true" ]; then FLAGS="$FLAGS --dry-run"; fi
+          if [ "$KEEP_TTS" = "true" ]; then FLAGS="$FLAGS --keep-tts"; fi
+          python anki/build_tts_apkg.py \
+            --deck "$DECK" \
+            --field "$FIELD" \
+            --voice "$VOICE" \
+            --limit "${LIMIT:-0}" \
+            --out-dir tts-build $FLAGS
+
+      - name: Upload the package
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: anki-tts-package
+          path: |
+            tts-build/tts-update.apkg
+            tts-build/manifest.jsonl
+          if-no-files-found: error
+          retention-days: 7
