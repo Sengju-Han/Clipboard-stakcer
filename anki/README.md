@@ -34,6 +34,8 @@ into the export, and are not readable back out of the settings page — not even
    finishes, open it and read the summary — it lists every deck name you have.
 3. **Run it again**, this time pasting the deck name exactly as listed
    (e.g. `English::TOEFL`). Subdecks are included automatically.
+   To export **several decks at once**, separate them with commas —
+   `Podcasts, Suits, duo` — or put `*` to export every deck you have.
 4. Set *timezone* to your own (e.g. `Asia/Seoul`) so dates match your review days.
 5. When the run finishes, scroll to **Artifacts** and download **anki-export**.
    It is a zip containing the files below. The summary on that page also shows a
@@ -48,6 +50,7 @@ Artifacts are deleted after 7 days; just run the workflow again for a fresh copy
 | `cards.csv` | One row per card — open in Excel, Numbers, or Google Sheets |
 | `cards.json` | The same data plus full review history, for scripts |
 | `reviews.csv` | One row per individual review you have ever done |
+| `by-deck/<deck>.csv` | The same rows split per deck, when you export more than one |
 | `decks.csv` / `decks.json` | Every deck name with its card count |
 
 Columns in `cards.csv`:
@@ -69,6 +72,17 @@ Columns in `cards.csv`:
 | `total_minutes`, `avg_seconds` | Time spent on the card |
 | `tags`, `notetype`, `card_template`, `flag` | Card metadata |
 | `field: …` | One column per field on your note type, HTML stripped |
+
+## Exporting several decks
+
+Put a comma-separated list in the *deck* box (`Podcasts, Suits, duo`), or `*` for
+everything. You get one combined `cards.csv` — the `deck` column says where each
+card came from — plus a per-deck copy under `by-deck/`, and the run summary breaks
+the totals down by deck.
+
+Naming a parent deck and one of its subdecks together is safe: each card is
+exported once, never twice. Unknown names are reported as a warning and skipped,
+so one typo doesn't waste the whole run.
 
 ## Which field becomes the `word` column
 

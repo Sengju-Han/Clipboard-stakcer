@@ -177,6 +177,47 @@ def deck_inventory(col: Collection) -> list[dict]:
     return sorted(decks, key=lambda d: d["deck"])
 
 
+def parse_deck_list(raw: str) -> list[str]:
+    """Split the deck input on commas and newlines, keeping :: inside names."""
+    names = []
+    for chunk in re.split(r"[,\n]", raw or ""):
+        name = chunk.strip().strip('"').strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def build_deck_query(requested: list[str], decks: list[dict]) -> str:
+    """Turn the requested deck names into one Anki search, skipping unknown ones.
+
+    Listing a parent and its subdeck is harmless: a card matching both clauses
+    is still returned once.
+    """
+    if any(name in ("*", "all") for name in requested):
+        return "deck:*"
+
+    known = {deck["deck"].lower() for deck in decks}
+    clauses = []
+    for name in requested:
+        lowered = name.lower()
+        if lowered not in known and not any(k.startswith(f"{lowered}::") for k in known):
+            log(f"::warning::No deck named {name!r} - skipping it.")
+            continue
+        clauses.append('deck:"{}"'.format(name.replace('"', '\\"')))
+
+    if not clauses:
+        fail(
+            "None of the deck names matched a deck in your collection.",
+            "Deck names use :: between a parent and a subdeck. Run with an empty deck "
+            "box to list them. Available: " + (", ".join(d["deck"] for d in decks) or "(none)"),
+        )
+    return clauses[0] if len(clauses) == 1 else "(" + " or ".join(clauses) + ")"
+
+
+def safe_filename(name: str) -> str:
+    return re.sub(r"[^\w.-]", "_", name.replace("::", "__"), flags=re.UNICODE) or "deck"
+
+
 def card_record(col: Collection, card_id: int, clock: Clock) -> dict:
     card = col.get_card(card_id)
     note = card.note()
@@ -371,6 +412,19 @@ def write_cards_csv(path: Path, records: list[dict]) -> list[str]:
     return header
 
 
+def write_per_deck_csvs(out_dir: Path, records: list[dict]) -> dict[str, list[dict]]:
+    """Group by deck; when more than one is exported, also write a file per deck."""
+    groups: dict[str, list[dict]] = {}
+    for record in records:
+        groups.setdefault(record["deck"], []).append(record)
+    if len(groups) > 1:
+        folder = out_dir / "by-deck"
+        folder.mkdir(parents=True, exist_ok=True)
+        for deck, group in groups.items():
+            write_cards_csv(folder / f"{safe_filename(deck)}.csv", group)
+    return groups
+
+
 def write_reviews_csv(path: Path, records: list[dict]) -> int:
     header = [
         "word", "card_id", "reviewed_at", "rating", "rating_name", "kind",
@@ -397,6 +451,17 @@ def write_summary(lines: list[str]) -> None:
     log(text)
 
 
+def deck_breakdown(by_deck: dict[str, list[dict]]) -> list[str]:
+    lines = ["| deck | cards | studied | mature | reviews |", "|---|---|---|---|---|"]
+    for deck, group in sorted(by_deck.items()):
+        studied = sum(1 for r in group if r["reviews"])
+        mature = sum(1 for r in group if isinstance(r["interval_days"], int) and r["interval_days"] >= 21)
+        lines.append(
+            f"| {deck} | {len(group)} | {studied} | {mature} | {sum(r['reviews'] for r in group)} |"
+        )
+    return lines
+
+
 def markdown_table(records: list[dict], limit: int) -> list[str]:
     columns = ["word", "state", "due_date", "interval_days", "ease_pct", "reviews", "lapses", "last_rating_name"]
     lines = ["", "| " + " | ".join(columns) + " |", "|" + "---|" * len(columns)]
@@ -412,7 +477,12 @@ def markdown_table(records: list[dict], limit: int) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Export an Anki deck from AnkiWeb.")
-    parser.add_argument("--deck", default="", help="Deck name. Subdecks are included. Empty = only list decks.")
+    parser.add_argument(
+        "--deck",
+        default="",
+        help="Deck name, or several separated by commas. '*' exports every deck. "
+        "Subdecks are always included. Empty = only list the decks.",
+    )
     parser.add_argument("--query", default="", help="Raw Anki search string; overrides --deck.")
     parser.add_argument("--out-dir", default="anki-export", help="Directory for the exported files.")
     parser.add_argument("--word-field", default="", help="Field holding the target word (default: the note's sort field).")
@@ -458,17 +528,20 @@ def main() -> int:
             writer.writerows(decks)
         log(f"Found {len(decks)} decks, {col.card_count()} cards in the collection.")
 
-        if not args.deck and not args.query:
+        requested = parse_deck_list(args.deck)
+        if not requested and not args.query:
             write_summary(
                 ["## Your Anki decks", "", "Re-run this workflow with one of these deck names:", ""]
                 + [f"- `{d['deck']}` — {d['cards_incl_subdecks']} cards (including subdecks)" for d in decks]
+                + [
+                    "",
+                    "You can name several at once, separated by commas "
+                    "(`Podcasts, Suits, duo`), or `*` for every deck.",
+                ]
             )
             return 0
 
-        if args.query:
-            query = args.query
-        else:
-            query = 'deck:"{}"'.format(args.deck.replace('"', '\\"'))
+        query = args.query if args.query else build_deck_query(requested, decks)
         log(f"Searching: {query}")
 
         try:
@@ -480,7 +553,7 @@ def main() -> int:
             names = ", ".join(d["deck"] for d in decks) or "(none)"
             fail(
                 f"No cards matched {query!r}.",
-                f"Deck names are case-sensitive and use :: for subdecks. Available decks: {names}",
+                f"Those decks exist but hold no cards. Available decks: {names}",
             )
 
         if args.limit:
@@ -493,6 +566,7 @@ def main() -> int:
 
         write_cards_csv(out_dir / "cards.csv", records)
         review_rows = write_reviews_csv(out_dir / "reviews.csv", records)
+        by_deck = write_per_deck_csvs(out_dir, records)
         payload = {
             "exported_at": clock.stamp(int(datetime.now(tz=timezone.utc).timestamp())),
             "timezone": clock.name,
@@ -510,16 +584,22 @@ def main() -> int:
     studied = [r for r in records if r["reviews"]]
     matured = [r for r in records if isinstance(r["interval_days"], int) and r["interval_days"] >= 21]
     leeches = sorted(records, key=lambda r: -r["lapses"])[:5]
+    title = ", ".join(by_deck) if len(by_deck) > 1 else (args.deck or query)
     write_summary(
         [
-            f"## {args.deck or query} — {len(records)} cards",
+            f"## {title} — {len(records)} cards",
             "",
             f"- Studied at least once: **{len(studied)}** · never seen: **{len(records) - len(studied)}**",
             f"- Mature (interval 21+ days): **{len(matured)}**",
             f"- Total reviews recorded: **{review_rows}**",
             "- Hardest cards (most lapses): " + (", ".join(f"`{r['word']}` ({r['lapses']})" for r in leeches if r["lapses"]) or "none yet"),
             "",
-            "Download **anki-export** under *Artifacts* below for `cards.csv`, `reviews.csv` and `cards.json`.",
+            "Download **anki-export** under *Artifacts* below for `cards.csv`, `reviews.csv` and `cards.json`"
+            + (", plus one CSV per deck under `by-deck/`." if len(by_deck) > 1 else "."),
+            "",
+        ]
+        + (deck_breakdown(by_deck) if len(by_deck) > 1 else [])
+        + [
             "",
             "### Which field became the `word` column",
             "",

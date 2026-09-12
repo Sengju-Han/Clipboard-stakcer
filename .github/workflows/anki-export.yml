@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       deck:
-        description: 'Deck name (leave empty to just list your decks)'
+        description: 'Deck name(s), comma-separated. * = all decks. Empty = just list your decks.'
         required: false
         default: ''
       timezone:
