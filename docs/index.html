@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Add to Anki</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%94%8A%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f2f3f5; --panel: #ffffff; --ink: #1f2328; --muted: #61686f;
+    --line: #d8dce0; --field: #ffffff; --accent: #2d6cdf; --accent-ink: #ffffff;
+    --ok: #1a7f45; --ok-bg: #e7f5ec; --bad: #b3261e; --bad-bg: #fdeceb;
+    --warn: #8a5a00; --warn-bg: #fdf3e0; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c; --panel: #1f2227; --ink: #e6e8ea; --muted: #9aa3ab;
+      --line: #343a41; --field: #14171a; --accent: #4d8bf0; --accent-ink: #0b1220;
+      --ok: #6fd096; --ok-bg: #14301f; --bad: #f2a49e; --bad-bg: #321917;
+      --warn: #e8c07a; --warn-bg: #322715;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line);
+           padding: 14px 16px; position: sticky; top: 0; z-index: 5; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; padding-block-end: 40px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 5px; }
+  .hint { font-weight: 400; color: var(--muted); }
+  input, select, textarea {
+    width: 100%; padding: 10px 11px; font: inherit; color: var(--ink);
+    background: var(--field); border: 1px solid var(--line); border-radius: 8px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { min-height: 68px; resize: vertical; }
+  .row { margin-bottom: 13px; }
+  .two { display: flex; gap: 10px; flex-wrap: wrap; }
+  .two > * { flex: 1 1 180px; min-width: 0; }
+  button { font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer; }
+  .primary { width: 100%; padding: 12px; background: var(--accent); color: var(--accent-ink);
+             border: 1px solid transparent; }
+  .primary[disabled] { opacity: .55; cursor: progress; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .check input { width: auto; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details[open] summary { margin-bottom: 12px; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+  #status:empty { display: none; }
+  #status { border-radius: 8px; padding: 11px 12px; font-size: 14px; margin-bottom: 14px;
+            border: 1px solid transparent; overflow-wrap: anywhere; }
+  #status.ok   { background: var(--ok-bg);   color: var(--ok);   border-color: currentColor; }
+  #status.bad  { background: var(--bad-bg);  color: var(--bad);  border-color: currentColor; }
+  #status.work { background: var(--warn-bg); color: var(--warn); border-color: currentColor; }
+  #status a { color: inherit; }
+  .sep { height: 1px; background: var(--line); border: 0; margin: 14px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Add to Anki</h1>
+  <p>Types a card, generates the sentence audio, syncs it to your devices.</p>
+</header>
+
+<main>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <form id="card" class="panel" autocomplete="off">
+    <div class="row two">
+      <div>
+        <label for="deck">Deck</label>
+        <input id="deck" list="decks" required placeholder="Steve Jobs">
+        <datalist id="decks"></datalist>
+      </div>
+      <div>
+        <label for="notetype">Type</label>
+        <select id="notetype" required></select>
+      </div>
+    </div>
+
+    <div id="fields"></div>
+
+    <div class="row">
+      <label for="tags">Tags <span class="hint">optional, space separated</span></label>
+      <input id="tags" placeholder="from-web">
+    </div>
+
+    <label class="check row"><input type="checkbox" id="dupe"> Add even if the first field already exists</label>
+
+    <button class="primary" type="submit" id="go">Add card</button>
+    <p class="note" id="speaks"></p>
+  </form>
+
+  <details class="panel" id="settings">
+    <summary>Settings</summary>
+    <div class="row">
+      <label for="token">GitHub token <span class="hint">fine-grained, Actions: read and write on this repo only</span></label>
+      <input id="token" type="password" placeholder="github_pat_...">
+    </div>
+    <div class="row two">
+      <div>
+        <label for="owner">Owner</label>
+        <input id="owner" placeholder="Sengju-Han">
+      </div>
+      <div>
+        <label for="repo">Repository</label>
+        <input id="repo" placeholder="Clipboard-stakcer">
+      </div>
+    </div>
+    <div class="row two">
+      <div>
+        <label for="ref">Branch</label>
+        <input id="ref" placeholder="main">
+      </div>
+      <div>
+        <label for="voice">Voice</label>
+        <input id="voice" placeholder="en-US-AvaNeural">
+      </div>
+    </div>
+    <hr class="sep">
+    <p class="note">
+      The token is kept in this browser only, and is sent to api.github.com and nowhere
+      else. It never reaches this page's source, the repository, or anyone else. Clear it
+      by emptying the box and adding a card, or by clearing this site's data.
+    </p>
+  </details>
+</main>
+
+<script>
+const WORKFLOW = "anki-add-card.yml";
+const API = "https://api.github.com";
+const store = {
+  get: (k, d = "") => { try { return localStorage.getItem("addcard." + k) ?? d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem("addcard." + k, v); } catch {} },
+};
+
+const $ = (id) => document.getElementById(id);
+const statusBox = $("status");
+let catalog = { decks: [], notetypes: [] };
+
+function say(kind, html) {
+  statusBox.className = kind;
+  statusBox.innerHTML = html;
+}
+
+// ---- settings ------------------------------------------------------------
+const SETTINGS = ["token", "owner", "repo", "ref", "voice"];
+const DEFAULTS = { ref: "main", voice: "en-US-AvaNeural" };
+for (const key of SETTINGS) $(key).value = store.get(key, DEFAULTS[key] || "");
+// Owner and repo can be inferred from the Pages URL, so most people never open this.
+if (!$("owner").value || !$("repo").value) {
+  const [, owner, repo] = location.hostname.endsWith("github.io")
+    ? [null, location.hostname.split(".")[0], location.pathname.split("/")[1] || ""]
+    : [null, "", ""];
+  if (!$("owner").value) $("owner").value = owner || "";
+  if (!$("repo").value) $("repo").value = repo || "";
+}
+for (const key of SETTINGS) $(key).addEventListener("change", () => store.set(key, $(key).value.trim()));
+
+// ---- catalog -------------------------------------------------------------
+function renderFields() {
+  const chosen = catalog.notetypes.find((n) => n.name === $("notetype").value);
+  const box = $("fields");
+  box.innerHTML = "";
+  if (!chosen) return;
+  for (const name of chosen.fields) {
+    const wrap = document.createElement("div");
+    wrap.className = "row";
+    const spoken = name === "Example";
+    wrap.innerHTML =
+      `<label for="f-${name}">${name}` +
+      (spoken ? ` <span class="hint">— audio is generated from this</span>` : "") +
+      `</label><textarea id="f-${name}" data-field="${name}"></textarea>`;
+    box.appendChild(wrap);
+  }
+  const speaks = chosen.fields.includes("Example");
+  $("speaks").textContent = speaks
+    ? "Audio is generated for Example. Takes a minute or two, then sync AnkiDroid."
+    : "This note type has no Example field, so no audio is generated.";
+  store.set("notetype", chosen.name);
+}
+
+async function loadCatalog() {
+  try {
+    const res = await fetch("collection.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(res.status);
+    catalog = await res.json();
+  } catch {
+    say("bad", "Could not load <code>collection.json</code>. You can still type a deck and note type by hand.");
+    catalog = { decks: [], notetypes: [{ name: "EN LEARNING TOOL", fields: ["Front", "Back", "Example"] }] };
+  }
+  $("decks").innerHTML = catalog.decks.map((d) => `<option value="${d}">`).join("");
+  $("notetype").innerHTML = catalog.notetypes.map((n) => `<option>${n.name}</option>`).join("");
+  const lastType = store.get("notetype");
+  if (catalog.notetypes.some((n) => n.name === lastType)) $("notetype").value = lastType;
+  $("deck").value = store.get("deck");
+  renderFields();
+}
+$("notetype").addEventListener("change", renderFields);
+$("deck").addEventListener("change", () => store.set("deck", $("deck").value.trim()));
+
+// ---- dispatch ------------------------------------------------------------
+async function gh(path, options = {}) {
+  const res = await fetch(API + path, {
+    ...options,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: "Bearer " + $("token").value.trim(),
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+    },
+  });
+  return res;
+}
+
+function explain(res, body) {
+  if (res.status === 401) return "GitHub rejected the token. Check it has not expired.";
+  if (res.status === 403) return "The token is not allowed to run workflows on this repository. It needs <b>Actions: read and write</b>.";
+  if (res.status === 404)
+    return `Not found. Either the owner/repository is wrong, or <code>${WORKFLOW}</code> is not on the <b>${$("ref").value || "main"}</b> branch yet — GitHub only offers workflows that exist there.`;
+  if (res.status === 422) return "GitHub refused the inputs: " + (body.message || "unprocessable");
+  return `GitHub returned ${res.status}. ${body.message || ""}`;
+}
+
+async function findRun(since) {
+  const base = `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}`;
+  for (let tries = 0; tries < 10; tries++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const res = await gh(`${base}/actions/workflows/${WORKFLOW}/runs?per_page=5`);
+    if (!res.ok) continue;
+    const { workflow_runs = [] } = await res.json();
+    const mine = workflow_runs.find((run) => new Date(run.created_at).getTime() >= since - 10000);
+    if (mine) return mine;
+  }
+  return null;
+}
+
+async function watch(run) {
+  const link = `<a href="${run.html_url}" target="_blank" rel="noopener">the run</a>`;
+  for (let tries = 0; tries < 90; tries++) {
+    const res = await gh(`/repos/${$("owner").value.trim()}/${$("repo").value.trim()}/actions/runs/${run.id}`);
+    if (res.ok) {
+      const now = await res.json();
+      if (now.status === "completed") return { conclusion: now.conclusion, link };
+      say("work", `Working — ${now.status.replace("_", " ")}. Watch ${link}.`);
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return { conclusion: "timed_out", link };
+}
+
+$("card").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  for (const key of SETTINGS) store.set(key, $(key).value.trim());
+
+  if (!$("token").value.trim() || !$("owner").value.trim() || !$("repo").value.trim()) {
+    $("settings").open = true;
+    return say("bad", "Fill in the token, owner and repository under <b>Settings</b> first.");
+  }
+
+  const fields = {};
+  for (const box of document.querySelectorAll("#fields textarea")) {
+    if (box.value.trim()) fields[box.dataset.field] = box.value.trim();
+  }
+  if (!Object.keys(fields).length) return say("bad", "Type something into at least one field.");
+
+  $("go").disabled = true;
+  say("work", "Sending to GitHub…");
+  const since = Date.now();
+
+  try {
+    const res = await gh(
+      `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}/actions/workflows/${WORKFLOW}/dispatches`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ref: $("ref").value.trim() || "main",
+          inputs: {
+            deck: $("deck").value.trim(),
+            notetype: $("notetype").value,
+            fields: JSON.stringify(fields),
+            tags: $("tags").value.trim(),
+            speak_field: "Example",
+            voice: $("voice").value.trim() || "en-US-AvaNeural",
+            allow_duplicate: String($("dupe").checked),
+          },
+        }),
+      }
+    );
+    if (!res.ok) {
+      let body = {};
+      try { body = await res.json(); } catch {}
+      throw new Error(explain(res, body));
+    }
+
+    say("work", "Queued. Finding the run…");
+    const run = await findRun(since);
+    if (!run) {
+      $("go").disabled = false;
+      return say("ok", "Sent. Could not follow the run from here — check the <b>Actions</b> tab.");
+    }
+
+    const { conclusion, link } = await watch(run);
+    $("go").disabled = false;
+    if (conclusion === "success") {
+      for (const box of document.querySelectorAll("#fields textarea")) box.value = "";
+      $("dupe").checked = false;
+      document.querySelector("#fields textarea")?.focus();
+      say("ok", `Added. Sync AnkiDroid to see it — if the audio is silent at first, sync again. (${link})`);
+    } else {
+      say("bad", `The run finished as <b>${conclusion}</b>. Open ${link} to see why — nothing was added if it failed before syncing.`);
+    }
+  } catch (err) {
+    $("go").disabled = false;
+    say("bad", err.message || String(err));
+  }
+});
+
+loadCatalog();
+</script>
+</body>
+</html>
