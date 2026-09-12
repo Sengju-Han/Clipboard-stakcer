@@ -26,3 +26,6 @@ Open the app to activate capture, then copy text. Tap a stack item to copy it ba
 
 ## Phone-only cloud build
 This package includes `codemagic.yaml` and can be built from a phone with Codemagic. Read **BUILD_ON_PHONE.md** for the exact mobile-only steps.
+
+## Anki deck export
+This repository also carries a GitHub Actions workflow that exports a deck from your AnkiWeb account (words, scheduling, and review ratings) to CSV/JSON without installing anything locally. See **anki/README.md**.

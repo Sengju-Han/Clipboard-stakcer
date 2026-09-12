@@ -1,0 +1,94 @@
+name: Anki deck export
+
+# Pulls your collection from AnkiWeb and exports one deck (words + scheduling
+# + review ratings) as CSV/JSON you can download. Nothing is installed locally;
+# nothing is ever uploaded to your AnkiWeb account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck name (leave empty to just list your decks)'
+        required: false
+        default: ''
+      timezone:
+        description: 'Timezone for dates, e.g. Asia/Seoul'
+        required: false
+        default: 'UTC'
+      word_field:
+        description: 'Field holding the target word (empty = the note sort field)'
+        required: false
+        default: ''
+      query:
+        description: 'Advanced: raw Anki search, e.g. deck:English is:due. Overrides deck.'
+        required: false
+        default: ''
+      confirm_public:
+        description: 'Tick only if this repo is PUBLIC and you accept that the export is public too'
+        required: false
+        type: boolean
+        default: false
+
+  # Weekly snapshot: uncomment to export every Monday 08:00 UTC.
+  # Set the deck name below, because scheduled runs get no inputs.
+  # schedule:
+  #   - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anki-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: Export from AnkiWeb
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+
+      - name: Refuse to publish study data from a public repository
+        if: ${{ !github.event.repository.private && !inputs.confirm_public }}
+        run: |
+          echo "::error title=Public repository::This repository is public, so the exported artifact would be downloadable by anyone. Make the repository private (Settings -> General -> Change visibility), or re-run and tick 'confirm_public' to export anyway."
+          exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements.txt
+
+      - name: Install the Anki library
+        run: pip install --disable-pip-version-check -r anki/requirements.txt
+
+      - name: Export deck
+        env:
+          # Stored under Settings -> Secrets and variables -> Actions.
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          QUERY: ${{ inputs.query }}
+          TZ_NAME: ${{ inputs.timezone || 'UTC' }}
+          WORD_FIELD: ${{ inputs.word_field }}
+        run: |
+          python anki/export_deck.py \
+            --deck "$DECK" \
+            --query "$QUERY" \
+            --word-field "$WORD_FIELD" \
+            --timezone "$TZ_NAME" \
+            --out-dir anki-export
+
+      - name: Upload the export
+        uses: actions/upload-artifact@v4
+        with:
+          name: anki-export
+          path: anki-export/
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,4 @@
+# Official Anki library (same engine as Anki desktop). Provides AnkiWeb sync.
+# Pinned so the workflow keeps working when upstream changes its API.
+# To upgrade: bump this version, run the workflow, check it still succeeds.
+anki==26.8.1
