@@ -1,5 +1,7 @@
 # Anki deck export (runs on GitHub, nothing to install)
 
+> Looking to replace AnkiDroid's `{{tts}}` robot voice with real audio? That is a separate workflow — see **[TTS.md](TTS.md)**.
+
 Pulls your collection from **AnkiWeb** and exports one deck as spreadsheet-ready
 files: the target word, every field on the note, the scheduling state, and your
 actual review ratings. It runs on GitHub's servers, so you do not need Python,

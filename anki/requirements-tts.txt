@@ -1,0 +1,11 @@
+# Everything the exporter needs, plus audio generation.
+-r requirements.txt
+
+# Microsoft Edge's neural voices. No account, no API key, no billing.
+# Unofficial and reverse-engineered: pin it, and expect to change provider if it
+# ever stops working rather than to debug it.
+edge-tts==7.2.8
+
+# Reads the duration back out of a generated mp3, so a file that is the wrong
+# length for its text is caught before it reaches the phone.
+mutagen==1.48.1
