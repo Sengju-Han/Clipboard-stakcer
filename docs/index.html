@@ -89,6 +89,24 @@
                  font-size: 11.5px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
   .look button.say { border-color: var(--accent); color: var(--accent); font-size: 13px;
                      padding: 2px 9px; margin: 0; }
+
+  .brain { margin-top: 7px; border: 1px solid var(--accent); border-radius: 8px;
+           padding: 10px 11px; font-size: 13px; background: var(--panel); }
+  .brain:empty { display: none; }
+  .brain .gloss { font-size: 15px; font-weight: 700; }
+  .brain .reg { color: var(--muted); font-style: italic; margin-left: 7px; font-size: 12px; }
+  .brain .nuance { margin: 6px 0 0; }
+  .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
+              letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+  .brain ul { margin: 0; padding-left: 17px; }
+  .brain li { margin-bottom: 3px; }
+  .brain code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .brain .hook { margin-top: 9px; color: var(--muted); font-style: italic; }
+  .brain button { background: none; border: 1px solid var(--line); color: inherit;
+                  font-size: 11.5px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
+  .brain .ask { border-color: var(--accent); color: var(--accent); font-size: 13px;
+                padding: 6px 12px; margin: 0; width: 100%; font-weight: 600; }
+  .brain .waiting { color: var(--muted); }
   .sep { height: 1px; background: var(--line); border: 0; margin: 14px 0; }
 </style>
 </head>
@@ -211,10 +229,10 @@ function renderFields() {
       (spoken ? ` <span class="hint">— audio is generated from this</span>` : "") +
       (target ? ` <span class="hint">— look it up as you type</span>` : "") +
       `</label><textarea id="f-${name}" data-field="${name}"></textarea>` +
-      (target ? `<div class="look" id="look"></div>` : "");
+      (target ? `<div class="look" id="look"></div><div class="brain" id="brain"></div>` : "");
     box.appendChild(wrap);
   }
-  if (chosen.fields.includes("Back")) watchTarget();
+  if (chosen.fields.includes("Back")) { watchTarget(); wireBrain(); }
   const speaks = chosen.fields.includes("Example");
   $("speaks").textContent = speaks
     ? "Audio is generated for Example. Sending never blocks you — keep typing."
@@ -338,6 +356,8 @@ function watchTarget() {
     const term = lookupTerm(box.value);
     if (term.length < 2) {
       panel.innerHTML = "";
+      const brain = $("brain");
+      if (brain) brain.innerHTML = "";
       lookedUp = "";
       return;
     }
@@ -345,6 +365,7 @@ function watchTarget() {
     lookupTimer = setTimeout(() => {
       lookedUp = term;
       lookUp(term);
+      explainTerm(term);
     }, LOOKUP_PAUSE);
   });
   panel.addEventListener("click", (event) => {
@@ -363,6 +384,154 @@ function watchTarget() {
         field.value = use.dataset.eg;
         field.focus();
       }
+    }
+  });
+}
+
+// ---- what the dictionary cannot tell you ---------------------------------
+// A dictionary gives the meaning. It does not say whether the word belongs in
+// a cover letter or a group chat, which words it habitually travels with, or
+// which near-identical word you are about to reach for by mistake. Those
+// decide whether a word is usable, so they are asked for separately.
+//
+// Answers are cached in the repository. A word that has been asked once is
+// served from the page instantly and costs nothing ever again; only a word
+// nobody has met yet goes to the model.
+const EXPLAIN_WORKFLOW = "anki-explain.yml";
+const CACHE_PATH = "docs/lookups/";
+const ASK_TIMEOUT = 120000;
+
+function slug(term) {
+  return term.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+// Already-deployed answers come straight off the page: no token, no API, no wait.
+async function cachedExplanation(key) {
+  try {
+    const res = await fetch(`lookups/${key}.json`, { cache: "no-cache" });
+    if (res.ok) return await res.json();
+  } catch { /* not deployed yet; the API path below covers it */ }
+  return null;
+}
+
+// A freshly written answer is in git before the site has rebuilt, so it is read
+// from the API rather than waiting for a deploy.
+async function freshExplanation(key) {
+  const base = `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}`;
+  try {
+    const res = await gh(`${base}/contents/${CACHE_PATH}${key}.json`);
+    if (!res.ok) return null;
+    const payload = await res.json();
+    if (!payload.content) return null;
+    const bytes = Uint8Array.from(atob(payload.content.replace(/\s/g, "")), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function renderExplanation(info) {
+  const panel = $("brain");
+  if (!panel) return;
+  const wantsExample = Boolean(document.getElementById("f-Example"));
+  const wantsFront = Boolean(document.getElementById("f-Front"));
+
+  let html = `<div><span class="gloss">${escape(info.korean || "")}</span>`;
+  if (info.tone) html += `<span class="reg">${escape(info.tone)}</span>`;
+  if (wantsFront && info.korean) {
+    html += `<button type="button" class="put" data-into="f-Front" data-text="${escape(info.korean)}">use as Front</button>`;
+  }
+  html += `</div>`;
+  if (info.nuance) html += `<p class="nuance">${escape(info.nuance)}</p>`;
+
+  if ((info.collocations || []).length) {
+    html += `<h4>goes with</h4><div>` +
+      info.collocations.map((c) => `<code>${escape(c)}</code>`).join(" ") + `</div>`;
+  }
+  if ((info.confusables || []).length) {
+    html += `<h4>not to be confused with</h4><ul>` +
+      info.confusables.map((c) => `<li><b>${escape(c.word)}</b> — ${escape(c.difference)}</li>`).join("") +
+      `</ul>`;
+  }
+  if ((info.examples || []).length) {
+    html += `<h4>examples</h4><ul>` + info.examples.map((e) =>
+      `<li>${escape(e)}` +
+      (wantsExample ? `<button type="button" class="put" data-into="f-Example" data-text="${escape(e)}">use</button>` : "") +
+      `</li>`).join("") + `</ul>`;
+  }
+  if (info.memory_hook) html += `<div class="hook">${escape(info.memory_hook)}</div>`;
+  panel.innerHTML = html;
+}
+
+function offerToAsk(term) {
+  const panel = $("brain");
+  if (!panel) return;
+  panel.innerHTML =
+    `<button type="button" class="ask" data-term="${escape(term)}">Ask Claude about “${escape(term)}”</button>`;
+}
+
+async function askAbout(term) {
+  const panel = $("brain");
+  const key = slug(term);
+  if (!panel || !key) return;
+  if (!$("token").value.trim() || !$("owner").value.trim()) {
+    panel.innerHTML = `<div class="waiting">Fill in the token and repository under Settings first.</div>`;
+    return;
+  }
+  panel.innerHTML = `<div class="waiting">Asking about “${escape(term)}”… this one is new, so it takes about half a minute. Keep typing.</div>`;
+
+  try {
+    const res = await gh(
+      `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}/actions/workflows/${EXPLAIN_WORKFLOW}/dispatches`,
+      { method: "POST", body: JSON.stringify({ ref: $("ref").value.trim() || "main", inputs: { word: term } }) }
+    );
+    if (!res.ok) {
+      let body = {};
+      try { body = await res.json(); } catch {}
+      throw new Error(explain(res, body));
+    }
+  } catch (err) {
+    panel.innerHTML = `<div class="waiting">${escape(err.message || String(err))}</div>`;
+    return;
+  }
+
+  const until = Date.now() + ASK_TIMEOUT;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const info = await freshExplanation(key);
+    if (info) {
+      // Only paint it if the word in the box is still this one.
+      if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(info);
+      return;
+    }
+  }
+  panel.innerHTML = `<div class="waiting">Still working. Check the Actions tab, or type the word again in a minute.</div>`;
+}
+
+async function explainTerm(term) {
+  const panel = $("brain");
+  if (!panel) return;
+  const key = slug(term);
+  if (!key) return;
+  panel.innerHTML = "";
+  const cached = (await cachedExplanation(key)) || (await freshExplanation(key));
+  if (cached) {
+    if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(cached);
+    return;
+  }
+  offerToAsk(term);
+}
+
+function wireBrain() {
+  const panel = $("brain");
+  if (!panel) return;
+  panel.addEventListener("click", (event) => {
+    const ask = event.target.closest("button.ask");
+    if (ask) return void askAbout(ask.dataset.term);
+    const put = event.target.closest("button.put");
+    if (put) {
+      const field = document.getElementById(put.dataset.into);
+      if (field) { field.value = put.dataset.text; field.focus(); }
     }
   });
 }

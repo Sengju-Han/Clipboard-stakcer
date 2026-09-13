@@ -1,0 +1,70 @@
+name: Anki explain word
+
+# Explains one word and commits the answer to docs/lookups/, where the card
+# form reads it. Cached answers are served straight from the page with no
+# workflow and no cost, so each word is only ever paid for once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      word:
+        description: 'The word or phrase to explain'
+        required: true
+      force:
+        description: 'Ask again even if it is already cached'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Two lookups finishing at once would collide on the push, not on AnkiWeb, so
+# this has its own queue rather than sharing the collection's.
+concurrency:
+  group: anki-cache
+  cancel-in-progress: false
+
+jobs:
+  explain:
+    name: Explain and cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-explain.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-explain.txt
+
+      - name: Explain
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          # Passed as environment variables, never interpolated into the shell.
+          WORD: ${{ inputs.word }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          FLAGS=""
+          if [ "$FORCE" = "true" ]; then FLAGS="--force"; fi
+          python anki/explain.py --word "$WORD" $FLAGS
+
+      - name: Cache the answer
+        run: |
+          if [ -n "$(git status --porcelain docs/lookups)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/lookups
+            git commit -m "Explain $(git status --porcelain docs/lookups | head -1 | sed 's#.*/##; s#\.json##')"
+            # Another lookup may have landed while this one was thinking.
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          else
+            echo "Nothing new to cache."
+          fi
