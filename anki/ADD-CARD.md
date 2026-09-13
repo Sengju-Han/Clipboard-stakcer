@@ -95,6 +95,30 @@ you are not waiting on it. Cards sent in a burst queue up on GitHub's side and
 drain one after another; that is deliberate, since two syncs at once would
 collide.
 
+## Looking the word up as you type
+
+Type into **Back** and a panel opens under it: the pronunciation in IPA, a
+**say it** button playing a human recording, definitions grouped by part of
+speech, an example sentence for each, and close synonyms.
+
+It runs in your browser against a free, keyless dictionary, so it answers in
+under a second — no key, no setup, and no round trip through GitHub.
+
+- **use as Example** drops that sentence straight into the Example field, which
+  is the one that gets audio. A dictionary sentence is usually better English
+  than one typed from scratch on a phone.
+- *No dictionary entry* is itself useful. Phrases like `put off` often have
+  none, but for a single word it usually means a typo — which is how
+  `dicimate` gives itself away before the card is ever made.
+- An English word with a Korean gloss stuck to it (`dicimate대량 학살하다`) is
+  handled: the English part is what gets looked up.
+- **Cambridge** and **Forvo** links are always shown, whether or not the
+  dictionary answered. Forvo is native speakers reading the word, which is the
+  one thing synthetic audio is genuinely worse at.
+
+If the dictionary is unreachable the panel says so and still shows those links.
+Nothing about it can stop you typing or sending a card.
+
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled
