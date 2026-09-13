@@ -95,41 +95,23 @@ you are not waiting on it. Cards sent in a burst queue up on GitHub's side and
 drain one after another; that is deliberate, since two syncs at once would
 collide.
 
-## Looking the word up as you type
+## The word, explained as you type
 
-Type into **Back** and a panel opens under it: the pronunciation in IPA, a
-**say it** button playing a human recording, definitions grouped by part of
-speech, an example sentence for each, and close synonyms.
+Type into **Back** and an explanation appears under it. **It fills itself in** —
+you do not press anything. It waits until the word looks finished, which means
+either you left the Back field or you stopped typing for a couple of seconds, so
+a half-typed word is never sent. The same word is never asked twice.
 
-It runs in your browser against a free, keyless dictionary, so it answers in
-under a second — no key, no setup, and no round trip through GitHub.
+A free keyless dictionary used to sit above this. It refuses cross-origin
+requests from a browser, so every lookup failed and the panel only ever showed
+an apology; it is gone. What it was for — the definition and the pronunciation —
+the explanation carries itself. **Cambridge** and **Forvo** links remain, because
+they need no request at all, and Forvo is native speakers reading the word,
+which neither a model nor a synthetic voice matches.
 
-- **use as Example** drops that sentence straight into the Example field, which
-  is the one that gets audio. A dictionary sentence is usually better English
-  than one typed from scratch on a phone.
-- *No dictionary entry* is itself useful. Phrases like `put off` often have
-  none, but for a single word it usually means a typo — which is how
-  `dicimate` gives itself away before the card is ever made.
-- An English word with a Korean gloss stuck to it (`dicimate대량 학살하다`) is
-  handled: the English part is what gets looked up.
-- **Cambridge** and **Forvo** links are always shown, whether or not the
-  dictionary answered. Forvo is native speakers reading the word, which is the
-  one thing synthetic audio is genuinely worse at.
+What you get:
 
-If the dictionary is unreachable the panel says so and still shows those links.
-Nothing about it can stop you typing or sending a card.
-
-## What the dictionary cannot tell you
-
-Under the dictionary panel sits a second one. **It fills itself in** — you do
-not press anything. It waits until the word looks finished, which means either
-you left the Back field or you stopped typing for a couple of seconds, so a
-half-typed word is never sent. The same word is never asked twice.
-
-It repeats the definition and the pronunciation, so if the dictionary above it
-is down you lose nothing. Then it answers what a dictionary cannot:
-
-- **the meaning and the IPA**, so this panel stands on its own
+- **the meaning and the IPA**
 - **the Korean gloss**, with a button to drop it straight into Front
 - **the register** — formal, neutral, casual, slang, literary, technical
 - **the nuance**: what this word carries that a plainer synonym does not
@@ -294,11 +276,10 @@ have a fix it has not been given.
 
 ## If the page cannot reach anything
 
-If every lookup fails and the page says *"This page is open as a file"*, that is
-exactly what has happened: the file was downloaded and opened directly. Browsers
-send `Origin: null` from a `file://` page and refuse every cross-site request, so
-nothing on the page can work — not the dictionary, not the explanations, not
-even adding a card.
+If the page says *"This page is open as a file"*, that is exactly what has
+happened: the file was downloaded and opened directly. Browsers send
+`Origin: null` from a `file://` page and refuse every cross-site request, so
+nothing on the page can work — not the explanations, not even adding a card.
 
 The fix is **GitHub Pages**, not the code. *Settings → Pages → Deploy from a
 branch → `main` → `/docs`*, then open
