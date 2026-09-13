@@ -6,3 +6,4 @@ A second workflow generates neural audio for a field and packages it as an `.apk
 
 ## Add cards from your phone
 A web form that adds a card to your collection and generates its sentence audio on the way, so nothing has to be imported. See **anki/ADD-CARD.md**.
+\n\n## Audit the sentences you already have\nChecks every sentence in your collection for typos and unnatural phrasing, reports what it finds, and can correct them in place. See **anki/AUDIT.md**.\n
