@@ -7,11 +7,57 @@
   ],
   "notetypes": [
     {
+      "name": "Basic",
+      "fields": [
+        "Front",
+        "Back"
+      ]
+    },
+    {
+      "name": "Basic (and reversed card)",
+      "fields": [
+        "Front",
+        "Back"
+      ]
+    },
+    {
+      "name": "Basic (optional reversed card)",
+      "fields": [
+        "Front",
+        "Back",
+        "Add Reverse"
+      ]
+    },
+    {
+      "name": "Basic (type in the answer)",
+      "fields": [
+        "Front",
+        "Back"
+      ]
+    },
+    {
+      "name": "Cloze",
+      "fields": [
+        "Text",
+        "Back Extra"
+      ]
+    },
+    {
       "name": "EN LEARNING TOOL",
       "fields": [
         "Front",
         "Back",
         "Example"
+      ]
+    },
+    {
+      "name": "Image Occlusion",
+      "fields": [
+        "Occlusion",
+        "Image",
+        "Header",
+        "Back Extra",
+        "Comments"
       ]
     },
     {
