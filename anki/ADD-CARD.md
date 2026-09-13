@@ -119,6 +119,46 @@ under a second — no key, no setup, and no round trip through GitHub.
 If the dictionary is unreachable the panel says so and still shows those links.
 Nothing about it can stop you typing or sending a card.
 
+## What the dictionary cannot tell you
+
+Under the dictionary panel sits a second one, and it answers the questions that
+decide whether a word is actually *usable*:
+
+- **the Korean gloss**, with a button to drop it straight into Front
+- **the register** — formal, neutral, casual, slang, literary, technical
+- **the nuance**: what this word carries that a plainer synonym does not
+- **collocations** — `a resilient economy`, `bounce back from`. For sounding
+  native these matter more than the definition does.
+- **confusables**: the word you were about to reach for by mistake, and the one
+  distinction that separates them
+- **examples** at your level, each insertable into Example
+- **a memory hook** — an etymology or an image that makes it stick
+
+### Each word is paid for once
+
+Answers are cached in `docs/lookups/` as one JSON file per word, committed by
+the **Anki explain word** workflow.
+
+A word already in the cache is served straight off the page: **instant, no
+token, no API call, no cost**. Only a word nobody has met before goes to the
+model, and after that it is cached for good. Over a year of study that means
+almost every lookup is free — and the cache is a record of the vocabulary you
+have worked through.
+
+A new word takes about half a minute. The panel says so and you can keep
+typing; it fills itself in when the answer lands.
+
+To re-ask a word, delete its file or run the workflow with *force* ticked.
+
+### What it costs
+
+It uses the same `ANTHROPIC_API_KEY` secret as the sentence check, on Claude
+Sonnet 5. A word is a few hundred tokens in and a few hundred out — well under
+a cent, once, ever.
+
+Without the key the panel simply does not appear. The dictionary above it,
+which needs nothing, carries on working.
+
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled
