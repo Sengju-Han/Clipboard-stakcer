@@ -17,11 +17,15 @@ Needs ANTHROPIC_API_KEY.
 
 from __future__ import annotations
 
+import os
 import re
 
 from pydantic import BaseModel
 
-MODEL = "claude-opus-5"
+# Claude Sonnet 5: $2 per million input tokens, $10 per million output, which is
+# roughly a fifth of Opus for a job that is mostly spotting typos. Override it
+# with an ANTHROPIC_MODEL repository variable rather than editing this line.
+MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-sonnet-5"
 
 # Everything after the first block break is the learner's own note - a gloss, a
 # definition, often in another language. It is not part of the sentence and is

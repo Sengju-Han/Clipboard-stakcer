@@ -122,15 +122,42 @@ plain text, and applying it would throw the formatting away. Fix those by hand.
 
 ### Turning it on
 
-Add an `ANTHROPIC_API_KEY` secret alongside your AnkiWeb ones
-(*Settings → Secrets and variables → Actions*). The key comes from
-platform.claude.com → Account Settings → API keys.
+Everything is already wired. The one thing left is the key:
 
-**It is optional.** Without the secret the card is added exactly as typed and
+1. Get one at **platform.claude.com → Account Settings → API keys**.
+2. Add it to this repository as a secret named exactly **`ANTHROPIC_API_KEY`**
+   (*Settings → Secrets and variables → Actions → New repository secret*).
+
+That is the whole setup. The next card you add gets checked — no code change, no
+workflow edit, nothing to redeploy.
+
+**It stays optional.** Without the secret the card is added exactly as typed and
 the run says so. Untick *Check my English* on the form to skip it for one card.
 
-Cost is roughly a cent per card at current Claude Opus 5 pricing. Worth setting
-a spend limit on the key in the Console regardless.
+### What it costs
+
+It runs on **Claude Sonnet 5** — $2 per million input tokens, $10 per million
+output. Measured against the real prompt and your average sentence:
+
+| | per card | 100 cards | 1000 cards |
+| --- | --- | --- | --- |
+| light | $0.002 | $0.21 | $2.12 |
+| typical | $0.005 | $0.46 | $4.62 |
+| heavy | $0.010 | $0.96 | $9.62 |
+
+The spread is thinking tokens, billed as output, which vary with the sentence.
+New accounts get a small amount of free credit, and at this rate that covers a
+great many cards.
+
+API billing is separate from a Claude.ai subscription — a Pro or Max plan does
+not cover it. Worth setting a spend limit on the key in the Console.
+
+### Using a different model
+
+Set a repository **variable** (not a secret) named `ANTHROPIC_MODEL`
+(*Settings → Secrets and variables → Actions → Variables*) to any model id —
+`claude-haiku-4-5` to halve the cost again, `claude-opus-5` for the most
+capable. Leave it unset for the default.
 
 ## Turning off Anki's built-in voice
 
