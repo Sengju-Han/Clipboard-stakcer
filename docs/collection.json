@@ -1,0 +1,27 @@
+{
+  "decks": [
+    "Podcasts",
+    "Steve Jobs",
+    "Suits",
+    "duo"
+  ],
+  "notetypes": [
+    {
+      "name": "EN LEARNING TOOL",
+      "fields": [
+        "Front",
+        "Back",
+        "Example"
+      ]
+    },
+    {
+      "name": "test",
+      "fields": [
+        "Front",
+        "Hint",
+        "Back",
+        "Example"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+name: Anki add card
+
+# Adds one note to your collection, generates audio for its sentence, and syncs
+# it up, so a card typed on a phone appears on every device with nothing to
+# import. Triggered by the web form under docs/, or from this tab directly.
+#
+# Unlike the other two workflows this one WRITES to your AnkiWeb account. It only
+# ever adds: the job checks that every note that existed before still exists
+# unchanged and that exactly one was created, and refuses to sync otherwise. A
+# full upload is refused outright.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck to add the card to'
+        required: true
+      notetype:
+        description: 'Note type'
+        required: true
+        default: 'EN LEARNING TOOL'
+      fields:
+        description: 'Field values as JSON, e.g. {"Front":"...","Back":"...","Example":"..."}'
+        required: true
+      tags:
+        description: 'Space-separated tags'
+        required: false
+        default: ''
+      speak_field:
+        description: 'Field to generate audio for (blank = no audio)'
+        required: false
+        default: 'Example'
+      voice:
+        description: 'Voice'
+        required: false
+        default: 'en-US-AvaNeural'
+      proofread:
+        description: 'Check the sentence for typos and unnatural phrasing, and correct it'
+        required: false
+        type: boolean
+        default: true
+      allow_duplicate:
+        description: 'Add even if the first field already exists'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Two runs syncing the same account at once would collide, so they queue.
+concurrency:
+  group: anki-write
+  cancel-in-progress: false
+
+jobs:
+  add:
+    name: Add and sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-tts.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
+
+      - name: Add the card
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Optional. Without it the sentence is added exactly as typed.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          NOTETYPE: ${{ inputs.notetype }}
+          FIELDS: ${{ inputs.fields }}
+          TAGS: ${{ inputs.tags }}
+          SPEAK_FIELD: ${{ inputs.speak_field }}
+          VOICE: ${{ inputs.voice }}
+          ALLOW_DUPLICATE: ${{ inputs.allow_duplicate }}
+          PROOFREAD: ${{ inputs.proofread }}
+        run: |
+          FLAGS=""
+          if [ "$ALLOW_DUPLICATE" = "true" ]; then FLAGS="$FLAGS --allow-duplicate"; fi
+          if [ "$PROOFREAD" = "false" ]; then FLAGS="$FLAGS --no-proofread"; fi
+          python anki/add_card.py \
+            --deck "$DECK" \
+            --notetype "$NOTETYPE" \
+            --fields-json "$FIELDS" \
+            --tags "$TAGS" \
+            --speak-field "$SPEAK_FIELD" \
+            --voice "$VOICE" \
+            --backup-dir backup \
+            --catalog docs/collection.json $FLAGS
+
+      # The collection this ran against is the source of truth for the form's
+      # dropdowns, so a new deck or note type shows up without anyone editing
+      # a file by hand. Nothing is committed when nothing changed.
+      # The card is already added and synced by this point, so a failure here
+      # (a protected branch, say) must not report the run as failed.
+      - name: Refresh the form's deck and note type list
+        continue-on-error: true
+        run: |
+          if [ -n "$(git status --porcelain docs/collection.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/collection.json
+            git commit -m "Refresh deck and note type list for the add-card form"
+            git push
+          else
+            echo "No change to docs/collection.json."
+          fi
+
+      # The collection as it was before the note was added, in case a card ever
+      # needs undoing. Cards only, no media, so it stays small.
+      - name: Keep the pre-change backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-backup
+          path: backup/before-add.colpkg
+          if-no-files-found: ignore
+          retention-days: 14

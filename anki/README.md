@@ -1,6 +1,8 @@
 # Anki deck export (runs on GitHub, nothing to install)
 
 > Looking to replace AnkiDroid's `{{tts}}` robot voice with real audio? That is a separate workflow — see **[TTS.md](TTS.md)**.
+>
+> Want to add new cards from your phone and have the audio made automatically? See **[ADD-CARD.md](ADD-CARD.md)**.
 
 Pulls your collection from **AnkiWeb** and exports one deck as spreadsheet-ready
 files: the target word, every field on the note, the scheduling state, and your
