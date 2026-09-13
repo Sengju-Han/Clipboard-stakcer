@@ -194,7 +194,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-13.5";
+const VERSION = "2026-09-13.6";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -248,7 +248,7 @@ function renderFields() {
     wrap.innerHTML =
       `<label for="f-${name}">${name}` +
       (spoken ? ` <span class="hint">— audio is generated from this</span>` : "") +
-      (target ? ` <span class="hint">— look it up as you type</span>` : "") +
+      (target ? ` <span class="hint">— explained as you type</span>` : "") +
       `</label><textarea id="f-${name}" data-field="${name}"></textarea>` +
       (target ? `<div class="look" id="look"></div><div class="brain" id="brain"></div>` : "");
     box.appendChild(wrap);
@@ -288,16 +288,15 @@ $("deck").addEventListener("change", () => store.set("deck", $("deck").value.tri
 // Runs in this browser against a free, keyless dictionary. No account, no
 // setup, and no round trip through GitHub, so it answers while you are still
 // typing rather than half a minute later.
-const DICTIONARY = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 const LOOKUP_PAUSE = 600;
 
 let lookupTimer = null;
 let lookedUp = "";
 
 // Back holds things like "put off" and, occasionally, an English word with a
-// Korean gloss stuck to it. Take the leading English run and look that up.
+// Korean gloss stuck to it. Take the leading English run and use that.
 function lookupTerm(raw) {
-  const found = (raw || "").trim().match(/^[A-Za-z][A-Za-z'’\- ]*/);
+  const found = (raw || "").trim().match(/^[A-Za-z][A-Za-z'\u2019\- ]*/);
   return found ? found[0].trim().toLowerCase() : "";
 }
 
@@ -306,79 +305,24 @@ function escape(text) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// The word is looked up by Claude below. A free keyless dictionary sat here
+// once; it refuses cross-origin requests from a browser, so every lookup failed
+// and the panel only ever showed an apology. What it was for - the definition
+// and the pronunciation - the explanation now carries itself.
+//
+// These links stay because they need no request at all, and Forvo is native
+// speakers reading the word, which no model and no synthetic voice matches.
 function referenceLinks(term) {
   const q = encodeURIComponent(term);
   return `<div class="links">
     <a href="https://dictionary.cambridge.org/dictionary/english/${q}" target="_blank" rel="noopener">Cambridge</a>
-    <a href="https://forvo.com/word/${q}/#en" target="_blank" rel="noopener">Forvo — native speakers</a>
+    <a href="https://forvo.com/word/${q}/#en" target="_blank" rel="noopener">Forvo — hear a native speaker</a>
   </div>`;
 }
 
-function renderEntry(term, entries) {
+function showLinks(term) {
   const panel = $("look");
-  if (!panel) return;
-  const first = entries[0] || {};
-  const phonetics = (first.phonetics || []).filter((p) => p && p.audio);
-  const ipa = first.phonetic || (first.phonetics || []).map((p) => p && p.text).find(Boolean) || "";
-
-  let html = `<div class="head"><span class="word">${escape(first.word || term)}</span>`;
-  if (ipa) html += `<span class="ipa">${escape(ipa)}</span>`;
-  if (phonetics.length) html += `<button type="button" class="say" data-audio="${escape(phonetics[0].audio)}">▶ say it</button>`;
-  html += `</div>`;
-
-  const wantsExample = Boolean(document.getElementById("f-Example"));
-  for (const meaning of (first.meanings || []).slice(0, 3)) {
-    html += `<div class="pos">${escape(meaning.partOfSpeech || "")}</div><ol>`;
-    for (const sense of (meaning.definitions || []).slice(0, 2)) {
-      html += `<li>${escape(sense.definition || "")}`;
-      if (sense.example) {
-        html += `<span class="eg">“${escape(sense.example)}”`;
-        if (wantsExample) html += `<button type="button" class="use" data-eg="${escape(sense.example)}">use as Example</button>`;
-        html += `</span>`;
-      }
-      html += `</li>`;
-    }
-    html += `</ol>`;
-    const synonyms = (meaning.synonyms || []).slice(0, 6);
-    if (synonyms.length) html += `<div class="syn">also: ${synonyms.map(escape).join(", ")}</div>`;
-  }
-  html += referenceLinks(term);
-  panel.innerHTML = html;
-}
-
-function renderLookupNote(term, note) {
-  const panel = $("look");
-  if (!panel) return;
-  panel.innerHTML = (note ? `<div class="none">${note}</div>` : "") + referenceLinks(term);
-}
-
-async function lookUp(term) {
-  const panel = $("look");
-  if (!panel) return;
-  panel.innerHTML = `<div class="none">Looking up ${escape(term)}…</div>`;
-  try {
-    const res = await fetch(DICTIONARY + encodeURIComponent(term));
-    if (res.status === 404) {
-      return renderLookupNote(term,
-        `No dictionary entry for <b>${escape(term)}</b>. Phrases often have none — ` +
-        `and if it is a single word, check the spelling.`);
-    }
-    if (!res.ok) throw new Error(String(res.status));
-    const entries = await res.json();
-    if (!Array.isArray(entries) || !entries.length) throw new Error("empty");
-    renderEntry(term, entries);
-  } catch (err) {
-    // A cross-origin refusal arrives as a TypeError with no status, which reads
-    // the same as being offline unless it is named.
-    const why = OFFLINE_ORIGIN
-      ? "This page is open as a file, so the browser blocks every lookup. " +
-        "Turn on GitHub Pages and open it from there."
-      : err instanceof TypeError
-        ? "The dictionary refused the request from this page. Claude covers the " +
-          "definition below; these are for pronunciation:"
-        : "";
-    renderLookupNote(term, why);
-  }
+  if (panel) panel.innerHTML = referenceLinks(term);
 }
 
 function watchTarget() {
@@ -399,7 +343,7 @@ function watchTarget() {
     if (term === lookedUp) return;
     lookupTimer = setTimeout(() => {
       lookedUp = term;
-      lookUp(term);
+      showLinks(term);
       explainTerm(term);
     }, LOOKUP_PAUSE);
     clearTimeout(settleTimer);
