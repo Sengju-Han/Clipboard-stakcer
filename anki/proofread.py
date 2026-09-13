@@ -17,8 +17,12 @@ Needs ANTHROPIC_API_KEY.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from pydantic import BaseModel
 
@@ -33,6 +37,26 @@ MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-sonnet-5"
 BLOCK_BOUNDARY = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6])\b[^>]*>", re.IGNORECASE)
 
 MARKUP = re.compile(r"<[^>]+>|&[a-zA-Z]+;|&#\d+;")
+
+# LanguageTool: free, no account, no key. It reads grammar and spelling by rule,
+# which is a different thing from judging whether a sentence sounds like English.
+LANGUAGETOOL_URL = (
+    os.environ.get("LANGUAGETOOL_URL", "").strip() or "https://api.languagetool.org/v2/check"
+)
+
+# What a rule engine may change unsupervised. "style" is deliberately absent: its
+# suggestions are preferences, and a flashcard is not prose to be improved.
+AUTO_FIX = {"misspelling", "grammar", "duplication", "whitespace", "typographical"}
+
+# A sentence needing this many fixes is usually a checker having a bad time -
+# a name it does not know, or another language - not a sentence that wrong.
+MAX_AUTO_FIX = 5
+
+# ' ' is the blank the learner fills in from memory. A checker that has never
+# heard of the convention sees stray punctuation and tidies it away.
+GAP = re.compile(r"'\s*'")
+
+HANGUL = re.compile(r"[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]")
 
 SYSTEM = """You proofread example sentences on a language learner's flashcards.
 
@@ -135,3 +159,109 @@ def apply_correction(raw: str, corrected: str) -> tuple[str, str]:
     if corrected.strip() == head.strip():
         return raw, ""
     return corrected.strip() + tail, ""
+
+
+# --------------------------------------------------------------------------
+# LanguageTool
+# --------------------------------------------------------------------------
+
+def _languagetool_matches(text: str, url: str, language: str, timeout: float) -> list[dict]:
+    """Ask LanguageTool what is wrong with one sentence.
+
+    Transport failures are raised, not swallowed. The caller already adds the
+    card as typed when a check fails; swallowing here would instead report a
+    sentence nobody looked at as one that came back clean.
+    """
+    body = urllib.parse.urlencode({"text": text, "language": language}).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": "anki-add-card",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    matches = payload.get("matches")
+    return matches if isinstance(matches, list) else []
+
+
+def _worth_applying(text: str, match: dict, protected: list[tuple[int, int]]) -> tuple | None:
+    """Decide whether one finding can be applied without a person looking at it.
+
+    Returns the span, the flagged text and the replacement, or None to leave it
+    alone. Everything rejected here is still reported; it is just not applied.
+    """
+    offset, length = match.get("offset"), match.get("length")
+    if not isinstance(offset, int) or not isinstance(length, int) or length <= 0:
+        return None
+    start, end = offset, offset + length
+    if end > len(text):
+        return None
+
+    replacements = [r.get("value", "") for r in match.get("replacements", []) if isinstance(r, dict)]
+    if not replacements or not replacements[0]:
+        return None
+
+    issue = (match.get("rule") or {}).get("issueType", "")
+    if issue not in AUTO_FIX:
+        return None
+
+    # Never touch a blank the learner fills in themselves.
+    if any(a < end and start < b for a, b in protected):
+        return None
+
+    flagged = text[start:end]
+    # Another language is not a spelling mistake.
+    if HANGUL.search(flagged):
+        return None
+    # A capitalised word mid-sentence is usually a name the checker has not met.
+    if issue == "misspelling" and start > 0 and flagged[:1].isupper():
+        return None
+
+    return start, end, flagged, replacements[0]
+
+
+def check_with_languagetool(
+    texts: list[str], *, url: str = "", language: str = "en-US", timeout: float = 20.0
+) -> list[Checked]:
+    """Correct each sentence with LanguageTool. One result per input, in order."""
+    endpoint = url or LANGUAGETOOL_URL
+    results: list[Checked] = []
+
+    for index, text in enumerate(texts):
+        if not text.strip():
+            results.append(Checked(index=index, corrected=text, issues=[]))
+            continue
+        matches = _languagetool_matches(text, endpoint, language, timeout)
+
+        protected = [m.span() for m in GAP.finditer(text)]
+        usable = []
+        for match in matches:
+            if isinstance(match, dict):
+                found = _worth_applying(text, match, protected)
+                if found:
+                    usable.append(found)
+
+        if not usable:
+            results.append(Checked(index=index, corrected=text, issues=[]))
+            continue
+        if len(usable) > MAX_AUTO_FIX:
+            results.append(Checked(
+                index=index, corrected=text,
+                issues=[f"{len(usable)} problems found, too many to apply unsupervised: "
+                        + ", ".join(f"{flagged} -> {fix}" for _, _, flagged, fix in usable[:4])
+                        + " ..."],
+            ))
+            continue
+
+        # Right to left, so each edit leaves the offsets of the ones before it intact.
+        corrected, issues = text, []
+        for start, end, flagged, fix in sorted(usable, reverse=True):
+            corrected = corrected[:start] + fix + corrected[end:]
+            issues.append(f"{flagged} -> {fix}")
+        results.append(Checked(index=index, corrected=corrected, issues=list(reversed(issues))))
+
+    return results

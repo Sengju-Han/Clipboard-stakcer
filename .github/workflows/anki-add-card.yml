@@ -77,9 +77,11 @@ jobs:
           ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
           # Optional. Without it the sentence is added exactly as typed.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Optional repository *variable*, not a secret. Only set it to use a
-          # model other than the default.
+          # Optional repository *variables*, not secrets. ANTHROPIC_MODEL picks a
+          # different model; LANGUAGETOOL_URL points at your own LanguageTool
+          # instead of the free public one.
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          LANGUAGETOOL_URL: ${{ vars.LANGUAGETOOL_URL }}
           # Passed as environment variables, never interpolated into the shell.
           DECK: ${{ inputs.deck }}
           NOTETYPE: ${{ inputs.notetype }}
