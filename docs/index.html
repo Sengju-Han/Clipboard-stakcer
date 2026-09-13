@@ -69,26 +69,6 @@
                  font-size: 12px; padding: 3px 8px; border-radius: 6px; }
   #hint { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
   #hint:empty { display: none; }
-
-  .look { margin-top: 7px; border: 1px solid var(--line); border-radius: 8px;
-          padding: 10px 11px; font-size: 13px; background: var(--bg); }
-  .look:empty { display: none; }
-  .look .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
-                margin-bottom: 6px; }
-  .look .word { font-weight: 700; font-size: 14px; }
-  .look .ipa { color: var(--muted); font-family: ui-monospace, monospace; }
-  .look .pos { color: var(--muted); font-style: italic; margin: 7px 0 3px; }
-  .look ol { margin: 0; padding-left: 18px; }
-  .look li { margin-bottom: 4px; }
-  .look .eg { display: block; color: var(--muted); margin-top: 2px; }
-  .look .syn { color: var(--muted); margin-top: 7px; }
-  .look .links { margin-top: 9px; display: flex; gap: 12px; flex-wrap: wrap; }
-  .look .links a { color: var(--accent); }
-  .look .none { color: var(--muted); }
-  .look button { background: none; border: 1px solid var(--line); color: inherit;
-                 font-size: 11.5px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
-  .look button.say { border-color: var(--accent); color: var(--accent); font-size: 13px;
-                     padding: 2px 9px; margin: 0; }
   .sep { height: 1px; background: var(--line); border: 0; margin: 14px 0; }
 </style>
 </head>
@@ -205,16 +185,12 @@ function renderFields() {
     const wrap = document.createElement("div");
     wrap.className = "row";
     const spoken = name === "Example";
-    const target = name === "Back";
     wrap.innerHTML =
       `<label for="f-${name}">${name}` +
       (spoken ? ` <span class="hint">— audio is generated from this</span>` : "") +
-      (target ? ` <span class="hint">— look it up as you type</span>` : "") +
-      `</label><textarea id="f-${name}" data-field="${name}"></textarea>` +
-      (target ? `<div class="look" id="look"></div>` : "");
+      `</label><textarea id="f-${name}" data-field="${name}"></textarea>`;
     box.appendChild(wrap);
   }
-  if (chosen.fields.includes("Back")) watchTarget();
   const speaks = chosen.fields.includes("Example");
   $("speaks").textContent = speaks
     ? "Audio is generated for Example. Sending never blocks you — keep typing."
@@ -240,132 +216,6 @@ async function loadCatalog() {
 }
 $("notetype").addEventListener("change", renderFields);
 $("deck").addEventListener("change", () => store.set("deck", $("deck").value.trim()));
-
-// ---- looking the target word up ------------------------------------------
-// Runs in this browser against a free, keyless dictionary. No account, no
-// setup, and no round trip through GitHub, so it answers while you are still
-// typing rather than half a minute later.
-const DICTIONARY = "https://api.dictionaryapi.dev/api/v2/entries/en/";
-const LOOKUP_PAUSE = 600;
-
-let lookupTimer = null;
-let lookedUp = "";
-
-// Back holds things like "put off" and, occasionally, an English word with a
-// Korean gloss stuck to it. Take the leading English run and look that up.
-function lookupTerm(raw) {
-  const found = (raw || "").trim().match(/^[A-Za-z][A-Za-z'’\- ]*/);
-  return found ? found[0].trim().toLowerCase() : "";
-}
-
-function escape(text) {
-  return String(text).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-function referenceLinks(term) {
-  const q = encodeURIComponent(term);
-  return `<div class="links">
-    <a href="https://dictionary.cambridge.org/dictionary/english/${q}" target="_blank" rel="noopener">Cambridge</a>
-    <a href="https://forvo.com/word/${q}/#en" target="_blank" rel="noopener">Forvo — native speakers</a>
-  </div>`;
-}
-
-function renderEntry(term, entries) {
-  const panel = $("look");
-  if (!panel) return;
-  const first = entries[0] || {};
-  const phonetics = (first.phonetics || []).filter((p) => p && p.audio);
-  const ipa = first.phonetic || (first.phonetics || []).map((p) => p && p.text).find(Boolean) || "";
-
-  let html = `<div class="head"><span class="word">${escape(first.word || term)}</span>`;
-  if (ipa) html += `<span class="ipa">${escape(ipa)}</span>`;
-  if (phonetics.length) html += `<button type="button" class="say" data-audio="${escape(phonetics[0].audio)}">▶ say it</button>`;
-  html += `</div>`;
-
-  const wantsExample = Boolean(document.getElementById("f-Example"));
-  for (const meaning of (first.meanings || []).slice(0, 3)) {
-    html += `<div class="pos">${escape(meaning.partOfSpeech || "")}</div><ol>`;
-    for (const sense of (meaning.definitions || []).slice(0, 2)) {
-      html += `<li>${escape(sense.definition || "")}`;
-      if (sense.example) {
-        html += `<span class="eg">“${escape(sense.example)}”`;
-        if (wantsExample) html += `<button type="button" class="use" data-eg="${escape(sense.example)}">use as Example</button>`;
-        html += `</span>`;
-      }
-      html += `</li>`;
-    }
-    html += `</ol>`;
-    const synonyms = (meaning.synonyms || []).slice(0, 6);
-    if (synonyms.length) html += `<div class="syn">also: ${synonyms.map(escape).join(", ")}</div>`;
-  }
-  html += referenceLinks(term);
-  panel.innerHTML = html;
-}
-
-function renderLookupNote(term, note) {
-  const panel = $("look");
-  if (panel) panel.innerHTML = `<div class="none">${note}</div>` + referenceLinks(term);
-}
-
-async function lookUp(term) {
-  const panel = $("look");
-  if (!panel) return;
-  panel.innerHTML = `<div class="none">Looking up ${escape(term)}…</div>`;
-  try {
-    const res = await fetch(DICTIONARY + encodeURIComponent(term));
-    if (res.status === 404) {
-      return renderLookupNote(term,
-        `No dictionary entry for <b>${escape(term)}</b>. Phrases often have none — ` +
-        `and if it is a single word, check the spelling.`);
-    }
-    if (!res.ok) throw new Error(String(res.status));
-    const entries = await res.json();
-    if (!Array.isArray(entries) || !entries.length) throw new Error("empty");
-    renderEntry(term, entries);
-  } catch {
-    renderLookupNote(term, "The dictionary could not be reached, so here are the usual places:");
-  }
-}
-
-function watchTarget() {
-  const box = document.getElementById("f-Back");
-  const panel = $("look");
-  if (!box || !panel) return;
-  lookedUp = "";
-  box.addEventListener("input", () => {
-    clearTimeout(lookupTimer);
-    const term = lookupTerm(box.value);
-    if (term.length < 2) {
-      panel.innerHTML = "";
-      lookedUp = "";
-      return;
-    }
-    if (term === lookedUp) return;
-    lookupTimer = setTimeout(() => {
-      lookedUp = term;
-      lookUp(term);
-    }, LOOKUP_PAUSE);
-  });
-  panel.addEventListener("click", (event) => {
-    const say = event.target.closest("button.say");
-    if (say) {
-      new Audio(say.dataset.audio).play().catch(() => {
-        say.textContent = "no audio";
-        say.disabled = true;
-      });
-      return;
-    }
-    const use = event.target.closest("button.use");
-    if (use) {
-      const field = document.getElementById("f-Example");
-      if (field) {
-        field.value = use.dataset.eg;
-        field.focus();
-      }
-    }
-  });
-}
 
 // ---- dispatch ------------------------------------------------------------
 // A card is sent and forgotten: the fields clear at once and you carry on
