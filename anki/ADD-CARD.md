@@ -121,9 +121,15 @@ Nothing about it can stop you typing or sending a card.
 
 ## What the dictionary cannot tell you
 
-Under the dictionary panel sits a second one, and it answers the questions that
-decide whether a word is actually *usable*:
+Under the dictionary panel sits a second one. **It fills itself in** — you do
+not press anything. It waits until the word looks finished, which means either
+you left the Back field or you stopped typing for a couple of seconds, so a
+half-typed word is never sent. The same word is never asked twice.
 
+It repeats the definition and the pronunciation, so if the dictionary above it
+is down you lose nothing. Then it answers what a dictionary cannot:
+
+- **the meaning and the IPA**, so this panel stands on its own
 - **the Korean gloss**, with a button to drop it straight into Front
 - **the register** — formal, neutral, casual, slang, literary, technical
 - **the nuance**: what this word carries that a plainer synonym does not
@@ -273,6 +279,18 @@ first, and running it twice is harmless — the second time it finds nothing to 
 
 Cards that already have a `[sound:]` recording keep playing it. Cards without
 one simply go quiet, which is what the **Anki TTS package** workflow is for.
+
+## If the page cannot reach anything
+
+If every lookup fails and the page says *"This page is open as a file"*, that is
+exactly what has happened: the file was downloaded and opened directly. Browsers
+send `Origin: null` from a `file://` page and refuse every cross-site request, so
+nothing on the page can work — not the dictionary, not the explanations, not
+even adding a card.
+
+The fix is **GitHub Pages**, not the code. *Settings → Pages → Deploy from a
+branch → `main` → `/docs`*, then open
+`https://<your-username>.github.io/<repository>/`. Everything works from there.
 
 ## If something goes wrong
 

@@ -33,6 +33,9 @@ are working on the ones that make writing sound native.
 Explain the word as given. If it is a phrase or a phrasal verb, explain the \
 phrase, not its parts.
 
+- meaning: the plain English definition, one line. Say what it means before \
+saying anything clever about it.
+- pronunciation: IPA, in slashes, as a British or American speaker would say it.
 - korean: the most accurate Korean gloss. If no single word fits, give the \
 short phrase that does. Do not list five near-synonyms.
 - tone: the register, as one of formal, neutral, casual, slang, literary, \
@@ -61,6 +64,8 @@ class Confusable(BaseModel):
 
 class Explanation(BaseModel):
     word: str
+    meaning: str
+    pronunciation: str
     korean: str
     tone: str
     nuance: str
@@ -129,7 +134,8 @@ def main() -> int:
     if summary:
         lines = [
             f"## {answer.word}", "",
-            f"**{answer.korean}** · _{answer.tone}_", "",
+            f"**{answer.korean}** · _{answer.tone}_ · `{answer.pronunciation}`", "",
+            answer.meaning, "",
             answer.nuance, "",
             "**Goes with:** " + ", ".join(f"`{c}`" for c in answer.collocations),
         ]

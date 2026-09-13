@@ -95,6 +95,9 @@
   .brain:empty { display: none; }
   .brain .gloss { font-size: 15px; font-weight: 700; }
   .brain .reg { color: var(--muted); font-style: italic; margin-left: 7px; font-size: 12px; }
+  .brain .ipa2 { color: var(--muted); font-family: ui-monospace, monospace; margin-left: 7px;
+                 font-size: 12px; }
+  .brain .meaning { margin: 6px 0 0; font-weight: 600; }
   .brain .nuance { margin: 6px 0 0; }
   .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
               letter-spacing: .04em; color: var(--muted); font-weight: 700; }
@@ -185,18 +188,26 @@
 <script>
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
+
+// Opened from a file:// URL the browser sends Origin: null and refuses every
+// cross-site request, so nothing here can work. That looks identical to an
+// outage from the inside, so it is worth naming.
+const OFFLINE_ORIGIN = location.protocol === "file:";
 const store = {
   get: (k, d = "") => { try { return localStorage.getItem("addcard." + k) ?? d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem("addcard." + k, v); } catch {} },
 };
 
 const $ = (id) => document.getElementById(id);
-const statusBox = $("status");
 let catalog = { decks: [], notetypes: [] };
 
-function say(kind, html) {
-  statusBox.className = kind;
-  statusBox.innerHTML = html;
+// Anything the page needs to say before a card exists. It writes to the hint
+// line, which is always present - the previous version wrote to an element
+// that had been removed, so the one place it was called, the catalog failing
+// to load, threw and took the whole form down with it.
+function note(html) {
+  const line = $("hint");
+  if (line) line.innerHTML = html;
 }
 
 // ---- settings ------------------------------------------------------------
@@ -246,7 +257,11 @@ async function loadCatalog() {
     if (!res.ok) throw new Error(res.status);
     catalog = await res.json();
   } catch {
-    say("bad", "Could not load <code>collection.json</code>. You can still type a deck and note type by hand.");
+    note(location.protocol === "file:"
+      ? "This page is open as a file, so the browser blocks everything it needs. " +
+        "Turn on GitHub Pages and open it from there."
+      : "Could not load <code>collection.json</code> — the deck and note type lists " +
+        "may be out of date. Everything else still works.");
     catalog = { decks: [], notetypes: [{ name: "EN LEARNING TOOL", fields: ["Front", "Back", "Example"] }] };
   }
   $("decks").innerHTML = catalog.decks.map((d) => `<option value="${d}">`).join("");
@@ -323,7 +338,8 @@ function renderEntry(term, entries) {
 
 function renderLookupNote(term, note) {
   const panel = $("look");
-  if (panel) panel.innerHTML = `<div class="none">${note}</div>` + referenceLinks(term);
+  if (!panel) return;
+  panel.innerHTML = (note ? `<div class="none">${note}</div>` : "") + referenceLinks(term);
 }
 
 async function lookUp(term) {
@@ -342,7 +358,11 @@ async function lookUp(term) {
     if (!Array.isArray(entries) || !entries.length) throw new Error("empty");
     renderEntry(term, entries);
   } catch {
-    renderLookupNote(term, "The dictionary could not be reached, so here are the usual places:");
+    const why = OFFLINE_ORIGIN
+      ? "This page is open as a file, so the browser blocks every lookup. " +
+        "Turn on GitHub Pages and open it from there."
+      : "";
+    renderLookupNote(term, why);
   }
 }
 
@@ -367,7 +387,10 @@ function watchTarget() {
       lookUp(term);
       explainTerm(term);
     }, LOOKUP_PAUSE);
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settle, SETTLED_PAUSE);
   });
+  box.addEventListener("blur", settle);
   panel.addEventListener("click", (event) => {
     const say = event.target.closest("button.say");
     if (say) {
@@ -400,6 +423,13 @@ function watchTarget() {
 const EXPLAIN_WORKFLOW = "anki-explain.yml";
 const CACHE_PATH = "docs/lookups/";
 const ASK_TIMEOUT = 120000;
+
+// Asking happens on its own. The risk is paying for half-typed words, so it
+// waits for a real signal that the word is finished: either leaving the field,
+// or a pause much longer than the one the dictionary uses.
+const SETTLED_PAUSE = 2200;
+const asked = new Set();
+let settleTimer = null;
 
 function slug(term) {
   return term.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -438,10 +468,12 @@ function renderExplanation(info) {
 
   let html = `<div><span class="gloss">${escape(info.korean || "")}</span>`;
   if (info.tone) html += `<span class="reg">${escape(info.tone)}</span>`;
+  if (info.pronunciation) html += `<span class="ipa2">${escape(info.pronunciation)}</span>`;
   if (wantsFront && info.korean) {
     html += `<button type="button" class="put" data-into="f-Front" data-text="${escape(info.korean)}">use as Front</button>`;
   }
   html += `</div>`;
+  if (info.meaning) html += `<p class="meaning">${escape(info.meaning)}</p>`;
   if (info.nuance) html += `<p class="nuance">${escape(info.nuance)}</p>`;
 
   if ((info.collocations || []).length) {
@@ -474,10 +506,12 @@ async function askAbout(term) {
   const panel = $("brain");
   const key = slug(term);
   if (!panel || !key) return;
+  if (asked.has(key)) return;
   if (!$("token").value.trim() || !$("owner").value.trim()) {
     panel.innerHTML = `<div class="waiting">Fill in the token and repository under Settings first.</div>`;
     return;
   }
+  asked.add(key);
   panel.innerHTML = `<div class="waiting">Asking about “${escape(term)}”… this one is new, so it takes about half a minute. Keep typing.</div>`;
 
   try {
@@ -508,18 +542,31 @@ async function askAbout(term) {
   panel.innerHTML = `<div class="waiting">Still working. Check the Actions tab, or type the word again in a minute.</div>`;
 }
 
-async function explainTerm(term) {
+async function explainTerm(term, { settled = false } = {}) {
   const panel = $("brain");
   if (!panel) return;
   const key = slug(term);
   if (!key) return;
-  panel.innerHTML = "";
+  if (asked.has(key)) return;   // already on its way; leave the waiting text alone
+  if (!settled) panel.innerHTML = "";
+
   const cached = (await cachedExplanation(key)) || (await freshExplanation(key));
   if (cached) {
     if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(cached);
     return;
   }
+  // Only spend once the word looks finished. Until then the button is there
+  // for anyone who does not want to wait for the pause.
+  if (settled && !OFFLINE_ORIGIN && $("token").value.trim()) return void askAbout(term);
   offerToAsk(term);
+}
+
+// The word is finished when you leave the field, or stop typing for long enough.
+function settle() {
+  clearTimeout(settleTimer);
+  const box = document.getElementById("f-Back");
+  const term = lookupTerm(box ? box.value : "");
+  if (term.length >= 2) explainTerm(term, { settled: true });
 }
 
 function wireBrain() {
