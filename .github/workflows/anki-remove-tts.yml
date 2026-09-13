@@ -1,0 +1,68 @@
+name: Anki remove built-in TTS
+
+# Deletes the {{tts}} directives from your note types and syncs the change, so
+# cards stop speaking with AnkiDroid's synthetic voice. Run it once. Cards that
+# already carry a [sound:] recording keep playing it.
+#
+# Only template text changes. Fields, field order and note type ids are left
+# alone, and the job refuses to sync if it finds otherwise.
+
+on:
+  workflow_dispatch:
+    inputs:
+      notetype:
+        description: 'Only this note type (empty = all of them)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Just report what would be removed'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Shares the write lock with the add-card workflow: two syncs at once collide.
+concurrency:
+  group: anki-write
+  cancel-in-progress: false
+
+jobs:
+  remove:
+    name: Remove and sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-tts.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
+
+      - name: Remove the directives
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Passed as environment variables, never interpolated into the shell.
+          NOTETYPE: ${{ inputs.notetype }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          FLAGS=""
+          if [ "$DRY_RUN" = "true" ]; then FLAGS="--dry-run"; fi
+          python anki/remove_tts.py --notetype "$NOTETYPE" --backup-dir backup $FLAGS
+
+      - name: Keep the pre-change backup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collection-backup
+          path: backup/before-remove-tts.colpkg
+          if-no-files-found: ignore
+          retention-days: 14

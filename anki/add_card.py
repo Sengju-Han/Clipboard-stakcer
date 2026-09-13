@@ -252,13 +252,28 @@ def main() -> int:
     deck_id = deck["id"] if deck else col.decks.id(args.deck)
 
     if args.catalog:
+        in_use = dict(col.db.all("select mid, count() from notes group by mid"))
         Path(args.catalog).parent.mkdir(parents=True, exist_ok=True)
         Path(args.catalog).write_text(json.dumps({
             "decks": sorted(d.name for d in col.decks.all_names_and_ids()
                             if d.name.lower() != "default"),
+            # Most-used first. A collection carries Anki's stock note types
+            # whether or not anyone uses them, and sorted by name "Basic" wins -
+            # which would open the form on a note type with no Example field,
+            # and so no audio.
             "notetypes": [
-                {"name": n.name, "fields": [f["name"] for f in col.models.get(n.id)["flds"]]}
-                for n in sorted(col.models.all_names_and_ids(), key=lambda n: n.name)
+                {"name": name, "fields": fields, "notes": count}
+                for name, fields, count in sorted(
+                    (
+                        (
+                            entry.name,
+                            [f["name"] for f in col.models.get(entry.id)["flds"]],
+                            in_use.get(entry.id, 0),
+                        )
+                        for entry in col.models.all_names_and_ids()
+                    ),
+                    key=lambda row: (-row[2], row[0]),
+                )
             ],
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

@@ -72,19 +72,28 @@ private, that is the thing to weigh.
 
 ## Using it
 
-Pick a deck, pick a type, fill in the fields, press **Add card**. The page
-follows the run and tells you when it lands.
+Pick a deck, pick a type, fill in the fields, press **Add card**.
+
+**Nothing waits for the network.** The fields clear the instant you press it and
+the cursor goes back to the first one, so you can type the next card immediately.
+Each card you send becomes a row above the form that follows its own run on its
+own — several can be in flight at once, and a row turning green is the only
+signal you need to look at.
 
 - The **Example** field is the one that gets audio. Leave it empty and the card
   is added without any.
-- The deck and type you used last are remembered; the fields clear after each
-  card so you can keep going.
+- The deck and type you used last are remembered. The note type list is ordered
+  by how much you actually use it, so the one you want is already selected.
+- If a send fails, the row says why and offers **Put it back** — it drops
+  everything you typed back into the form. Nothing you write is ever lost.
 - Then **sync AnkiDroid**. If the card appears but the audio does not play yet,
   sync once more — Anki transfers media separately from cards, so it can arrive
   a moment later.
 
-Expect a minute or two per card. Most of that is downloading your collection;
-the audio itself takes a second or so.
+A card takes about half a minute to land, but you should never notice, because
+you are not waiting on it. Cards sent in a burst queue up on GitHub's side and
+drain one after another; that is deliberate, since two syncs at once would
+collide.
 
 ## Checking your English
 
@@ -123,12 +132,24 @@ the run says so. Untick *Check my English* on the form to skip it for one card.
 Cost is roughly a cent per card at current Claude Opus 5 pricing. Worth setting
 a spend limit on the key in the Console regardless.
 
-## If the note type still speaks
+## Turning off Anki's built-in voice
 
-If you have not yet run the **Anki TTS package** workflow, your note types still
-contain `{{tts}}`, and a new card will play both the recording and the synthetic
-voice. The run warns you when it notices. Fix it once, under
-*Cards → Back template* in AnkiDroid, by deleting the `{{tts ...}}` line.
+Out of the box your note types contain a `{{tts}}` directive, which makes
+AnkiDroid read the sentence aloud with the phone's synthetic voice at review
+time. Once a card carries a real recording, that is not a fallback — it is a
+second voice talking over the first. Every add-card run warns you while it is
+still there.
+
+Run **Actions → Anki remove built-in TTS → Run workflow** once. It deletes the
+directives and syncs, so it takes effect on every device. Tick *dry_run* first
+if you want to see what it would remove.
+
+Only template text changes: fields, field order and note type ids are left
+alone, and the job refuses to sync if it finds otherwise. It keeps a backup
+first, and running it twice is harmless — the second time it finds nothing to do.
+
+Cards that already have a `[sound:]` recording keep playing it. Cards without
+one simply go quiet, which is what the **Anki TTS package** workflow is for.
 
 ## If something goes wrong
 
