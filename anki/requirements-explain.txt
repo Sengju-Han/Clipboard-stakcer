@@ -1,0 +1,3 @@
+# Just the API client. The explainer never touches the collection, so none of
+# the Anki machinery is installed and the job starts in a few seconds.
+anthropic==1.5.0

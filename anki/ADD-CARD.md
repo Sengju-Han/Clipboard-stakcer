@@ -95,6 +95,70 @@ you are not waiting on it. Cards sent in a burst queue up on GitHub's side and
 drain one after another; that is deliberate, since two syncs at once would
 collide.
 
+## Looking the word up as you type
+
+Type into **Back** and a panel opens under it: the pronunciation in IPA, a
+**say it** button playing a human recording, definitions grouped by part of
+speech, an example sentence for each, and close synonyms.
+
+It runs in your browser against a free, keyless dictionary, so it answers in
+under a second — no key, no setup, and no round trip through GitHub.
+
+- **use as Example** drops that sentence straight into the Example field, which
+  is the one that gets audio. A dictionary sentence is usually better English
+  than one typed from scratch on a phone.
+- *No dictionary entry* is itself useful. Phrases like `put off` often have
+  none, but for a single word it usually means a typo — which is how
+  `dicimate` gives itself away before the card is ever made.
+- An English word with a Korean gloss stuck to it (`dicimate대량 학살하다`) is
+  handled: the English part is what gets looked up.
+- **Cambridge** and **Forvo** links are always shown, whether or not the
+  dictionary answered. Forvo is native speakers reading the word, which is the
+  one thing synthetic audio is genuinely worse at.
+
+If the dictionary is unreachable the panel says so and still shows those links.
+Nothing about it can stop you typing or sending a card.
+
+## What the dictionary cannot tell you
+
+Under the dictionary panel sits a second one, and it answers the questions that
+decide whether a word is actually *usable*:
+
+- **the Korean gloss**, with a button to drop it straight into Front
+- **the register** — formal, neutral, casual, slang, literary, technical
+- **the nuance**: what this word carries that a plainer synonym does not
+- **collocations** — `a resilient economy`, `bounce back from`. For sounding
+  native these matter more than the definition does.
+- **confusables**: the word you were about to reach for by mistake, and the one
+  distinction that separates them
+- **examples** at your level, each insertable into Example
+- **a memory hook** — an etymology or an image that makes it stick
+
+### Each word is paid for once
+
+Answers are cached in `docs/lookups/` as one JSON file per word, committed by
+the **Anki explain word** workflow.
+
+A word already in the cache is served straight off the page: **instant, no
+token, no API call, no cost**. Only a word nobody has met before goes to the
+model, and after that it is cached for good. Over a year of study that means
+almost every lookup is free — and the cache is a record of the vocabulary you
+have worked through.
+
+A new word takes about half a minute. The panel says so and you can keep
+typing; it fills itself in when the answer lands.
+
+To re-ask a word, delete its file or run the workflow with *force* ticked.
+
+### What it costs
+
+It uses the same `ANTHROPIC_API_KEY` secret as the sentence check, on Claude
+Sonnet 5. A word is a few hundred tokens in and a few hundred out — well under
+a cent, once, ever.
+
+Without the key the panel simply does not appear. The dictionary above it,
+which needs nothing, carries on working.
+
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled
