@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>Add to Anki</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%94%8A%3C/text%3E%3C/svg%3E">
 <style>
@@ -67,6 +69,7 @@
   .item a { color: inherit; }
   .item button { background: none; border: 1px solid currentColor; color: inherit;
                  font-size: 12px; padding: 3px 8px; border-radius: 6px; }
+  #version { color: var(--muted); font-size: 11.5px; text-align: center; margin: 0 0 12px; }
   #hint { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
   #hint:empty { display: none; }
 
@@ -150,6 +153,8 @@
     <p class="note" id="speaks"></p>
   </form>
 
+  <p id="version"></p>
+
   <details class="panel" id="settings">
     <summary>Settings</summary>
     <div class="row">
@@ -186,6 +191,11 @@
 </main>
 
 <script>
+// Bump this with every change to the page. A phone holds on to a page it has
+// been given, so "it still does not work" is unanswerable without knowing which
+// version is actually on screen.
+const VERSION = "2026-09-13.5";
+
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
 
@@ -357,11 +367,16 @@ async function lookUp(term) {
     const entries = await res.json();
     if (!Array.isArray(entries) || !entries.length) throw new Error("empty");
     renderEntry(term, entries);
-  } catch {
+  } catch (err) {
+    // A cross-origin refusal arrives as a TypeError with no status, which reads
+    // the same as being offline unless it is named.
     const why = OFFLINE_ORIGIN
       ? "This page is open as a file, so the browser blocks every lookup. " +
         "Turn on GitHub Pages and open it from there."
-      : "";
+      : err instanceof TypeError
+        ? "The dictionary refused the request from this page. Claude covers the " +
+          "definition below; these are for pronunciation:"
+        : "";
     renderLookupNote(term, why);
   }
 }
@@ -495,10 +510,11 @@ function renderExplanation(info) {
   panel.innerHTML = html;
 }
 
-function offerToAsk(term) {
+function offerToAsk(term, why = "") {
   const panel = $("brain");
   if (!panel) return;
   panel.innerHTML =
+    (why ? `<div class="waiting">${why}</div>` : "") +
     `<button type="button" class="ask" data-term="${escape(term)}">Ask Claude about “${escape(term)}”</button>`;
 }
 
@@ -558,7 +574,12 @@ async function explainTerm(term, { settled = false } = {}) {
   // Only spend once the word looks finished. Until then the button is there
   // for anyone who does not want to wait for the pause.
   if (settled && !OFFLINE_ORIGIN && $("token").value.trim()) return void askAbout(term);
-  offerToAsk(term);
+  // Being here after the word settled means something stopped the automatic
+  // ask, and the reason is worth showing rather than leaving a bare button.
+  offerToAsk(term, !settled ? ""
+    : OFFLINE_ORIGIN ? "Opened as a file, so this cannot run on its own."
+    : !$("token").value.trim() ? "Add a token under Settings and this happens on its own."
+    : "");
 }
 
 // The word is finished when you leave the field, or stop typing for long enough.
@@ -789,6 +810,7 @@ window.addEventListener("beforeunload", (event) => {
   if (items.some((i) => i.state === "sending")) event.preventDefault();
 });
 
+$("version").textContent = `v${VERSION}`;
 loadCatalog();
 </script>
 </body>

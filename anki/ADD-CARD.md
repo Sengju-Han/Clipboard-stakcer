@@ -280,6 +280,18 @@ first, and running it twice is harmless — the second time it finds nothing to 
 Cards that already have a `[sound:]` recording keep playing it. Cards without
 one simply go quiet, which is what the **Anki TTS package** workflow is for.
 
+## Which version am I looking at?
+
+The bottom of the page shows one, like `v2026-09-13.5`. A phone holds on to a
+page it has already been given, especially one added to the home screen, so
+after a change the old one can stay on screen indefinitely.
+
+If the version is not the newest, **pull down to refresh**, or close the tab and
+reopen it. On iOS a home-screen shortcut may need removing and adding again.
+
+This is worth checking first whenever something looks broken. The page cannot
+have a fix it has not been given.
+
 ## If the page cannot reach anything
 
 If every lookup fails and the page says *"This page is open as a file"*, that is
