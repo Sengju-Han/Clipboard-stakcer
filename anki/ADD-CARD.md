@@ -138,6 +138,11 @@ and not something anyone would say; a rule engine has no opinion about that.
 key at platform.claude.com → Account Settings → API keys) and it is used instead
 of LanguageTool automatically — nothing else to change.
 
+A key that exists but cannot be used — no credit on the account, expired,
+revoked — **falls back to LanguageTool** rather than giving up. Otherwise having
+a key would be worse than having none, since its presence is what switches the
+free checker off. The run says which checker actually did the work.
+
 So: it works today for free, and gets better the day you decide it is worth
 half a cent a card.
 
