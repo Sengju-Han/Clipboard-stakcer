@@ -98,14 +98,17 @@ collide.
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled
-perfectly and still not be one a native speaker would write. Both are checked
-before the card is saved, and the sentence is corrected in place. What changed
-is listed in the run summary, so you can see it and disagree.
+perfectly and still not be one a native speaker would write. The sentence is
+checked before the card is saved and corrected in place, and what changed is
+listed in the run summary so you can see it and disagree.
+
+Which of those two problems gets caught depends on the checker — see
+*Two checkers* below. The free one catches the first; Claude catches both.
 
 The audio is generated **after** the correction, so the recording says the
 corrected sentence rather than the typo.
 
-It works under deliberately tight rules. It will not:
+Either checker works under deliberately tight rules. Neither will:
 
 - change or remove the word you are practising, even for one that reads better
 - change the meaning, or add or remove information
@@ -120,24 +123,32 @@ and a run reporting no changes has not failed.
 the suggestion is reported but **not** applied — the correction comes back as
 plain text, and applying it would throw the formatting away. Fix those by hand.
 
-### Turning it on
+### Two checkers, and you already have one
 
-Everything is already wired. The one thing left is the key:
+**LanguageTool runs by default and costs nothing.** No account, no key, no
+billing — it is on right now. It reads spelling and grammar by rule, so it
+catches `recieve`, `creaet`, `clothingswaps`, and *"people who doesn't believe"*.
 
-1. Get one at **platform.claude.com → Account Settings → API keys**.
-2. Add it to this repository as a secret named exactly **`ANTHROPIC_API_KEY`**
-   (*Settings → Secrets and variables → Actions → New repository secret*).
+What it cannot do is judge whether a sentence *sounds* like English. Something
+like *"someone who nearly does well at many fields"* is perfectly grammatical
+and not something anyone would say; a rule engine has no opinion about that.
 
-That is the whole setup. The next card you add gets checked — no code change, no
-workflow edit, nothing to redeploy.
+**Claude catches that second kind.** Add an `ANTHROPIC_API_KEY` secret
+(*Settings → Secrets and variables → Actions → New repository secret*; get the
+key at platform.claude.com → Account Settings → API keys) and it is used instead
+of LanguageTool automatically — nothing else to change.
+
+So: it works today for free, and gets better the day you decide it is worth
+half a cent a card.
 
 **It stays optional.** Without the secret the card is added exactly as typed and
 the run says so. Untick *Check my English* on the form to skip it for one card.
 
-### What it costs
+### What Claude costs, if you add the key
 
-It runs on **Claude Sonnet 5** — $2 per million input tokens, $10 per million
-output. Measured against the real prompt and your average sentence:
+LanguageTool is free. With a key, it runs on **Claude Sonnet 5** — $2 per
+million input tokens, $10 per million output. Measured against the real prompt
+and your average sentence:
 
 | | per card | 100 cards | 1000 cards |
 | --- | --- | --- | --- |
@@ -152,12 +163,28 @@ great many cards.
 API billing is separate from a Claude.ai subscription — a Pro or Max plan does
 not cover it. Worth setting a spend limit on the key in the Console.
 
-### Using a different model
+### Choosing the checker yourself
 
-Set a repository **variable** (not a secret) named `ANTHROPIC_MODEL`
-(*Settings → Secrets and variables → Actions → Variables*) to any model id —
-`claude-haiku-4-5` to halve the cost again, `claude-opus-5` for the most
-capable. Leave it unset for the default.
+`--checker languagetool` or `--checker claude` forces one; the default picks
+Claude when the key is there and LanguageTool otherwise.
+
+Two optional repository **variables** (not secrets), under
+*Settings → Secrets and variables → Actions → Variables*:
+
+| Variable | Effect |
+| --- | --- |
+| `ANTHROPIC_MODEL` | Use another model — `claude-haiku-4-5` is cheaper, `claude-opus-5` more capable |
+| `LANGUAGETOOL_URL` | Point at your own LanguageTool instead of the free public one |
+
+### What LanguageTool is not allowed to change
+
+It is a rule engine with no idea what a flashcard is, so it is kept on a short
+leash. It will not touch a `' '` blank, will not "correct" Korean, will not
+rename a capitalised word it does not recognise, and its style suggestions are
+ignored outright — those are preferences, and your sentence is not prose to be
+improved. If it flags more than five things in one sentence it reports them and
+changes nothing, because that many findings usually means the checker is
+confused rather than the sentence.
 
 ## Turning off Anki's built-in voice
 
@@ -190,8 +217,8 @@ one simply go quiet, which is what the **Anki TTS package** workflow is for.
 | *AnkiWeb asked for a FULL UPLOAD* | Refused on purpose. Sync your phone with AnkiWeb first, then add the card again. Nothing was changed. |
 | *AnkiWeb needs a full download* | Another device changed something structural. The card was **not** saved. Sync your phone, then re-add. |
 | The run failed | Open it from the link. If it failed before the sync step, nothing reached your collection. |
-| *ANTHROPIC_API_KEY is not set* | The sentence check is off. Add the secret, or untick *Check my English*. The card was still added. |
-| *Could not check the sentence* | The check itself failed, so the card went in exactly as typed. Nothing was lost. |
+| *Could not check the sentence* | The checker was unreachable or rate limited, so the card went in exactly as typed. Nothing was lost, and nothing is claimed about the sentence. |
+| *N problems found, too many to apply* | LanguageTool flagged so much that it is more likely confused than the sentence is wrong — a name it does not know, or another language. It reports them and changes nothing. |
 | *Suggestions not applied* | The sentence carries formatting. The suggestion is in the log; apply it by hand. |
 
 ## Running it without the page

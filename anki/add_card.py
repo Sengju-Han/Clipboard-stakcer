@@ -28,7 +28,12 @@ from anki.notes import NoteFieldsCheckResult  # noqa: E402
 from anki.sync_pb2 import SyncCollectionResponse  # noqa: E402
 
 from build_tts_apkg import MIN_BYTES, PROVIDERS, audio_name, speakable  # noqa: E402
-from proofread import apply_correction, proofread, split_annotation  # noqa: E402
+from proofread import (  # noqa: E402
+    apply_correction,
+    check_with_languagetool,
+    proofread,
+    split_annotation,
+)
 from export_deck import (  # noqa: E402
     SOUND_TAG,
     TTS_DIRECTIVE,
@@ -65,7 +70,7 @@ async def synthesize(text: str, voice: str, attempts: int, provider: str) -> byt
     fail(f"Could not generate audio ({last}).", "Nothing was added and nothing was synced.")
 
 
-def check_sentence(values: dict[str, str], field: str) -> list[str]:
+def check_sentence(values: dict[str, str], field: str, checker: str) -> list[str]:
     """Correct the sentence in place, and say what changed.
 
     A card is worth more than a perfect sentence, so nothing here is fatal: if
@@ -75,10 +80,14 @@ def check_sentence(values: dict[str, str], field: str) -> list[str]:
     head, _ = split_annotation(raw)
     if not head.strip():
         return []
+    log(f"Checking the sentence with {checker}...")
     try:
-        import anthropic
+        if checker == "claude":
+            import anthropic
 
-        checked = proofread([head], anthropic.Anthropic(), targets=[values.get("Back", "")])[0]
+            checked = proofread([head], anthropic.Anthropic(), targets=[values.get("Back", "")])[0]
+        else:
+            checked = check_with_languagetool([head])[0]
     except Exception as exc:
         log(f"::warning::Could not check the sentence ({type(exc).__name__}: {exc}). "
             "Adding it as typed.")
@@ -175,8 +184,11 @@ def main() -> int:
                         help="edge = Microsoft neural voices; silent = offline test files.")
     parser.add_argument("--attempts", type=int, default=4)
     parser.add_argument("--no-proofread", action="store_true",
-                        help="Skip the typo and phrasing check. It is skipped anyway "
-                             "when ANTHROPIC_API_KEY is not set.")
+                        help="Skip the typo and phrasing check entirely.")
+    parser.add_argument("--checker", default="auto",
+                        choices=("auto", "claude", "languagetool"),
+                        help="auto uses Claude when ANTHROPIC_API_KEY is set and "
+                             "LanguageTool otherwise.")
     parser.add_argument("--allow-duplicate", action="store_true",
                         help="Add even if a note with the same first field exists.")
     parser.add_argument("--create-deck", action="store_true",
@@ -278,10 +290,12 @@ def main() -> int:
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     corrections: list[str] = []
-    if not args.no_proofread and os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        corrections = check_sentence(values, args.speak_field)
-    elif not args.no_proofread:
-        log("ANTHROPIC_API_KEY is not set, so the sentence was not checked.")
+    checker = ""
+    if not args.no_proofread:
+        checker = args.checker
+        if checker == "auto":
+            checker = "claude" if os.environ.get("ANTHROPIC_API_KEY", "").strip() else "languagetool"
+        corrections = check_sentence(values, args.speak_field, checker)
 
     note = col.new_note(notetype)
     for name, value in values.items():
@@ -347,7 +361,7 @@ def main() -> int:
         + [f"- `{name}`: {value[:120]}" for name, value in values.items()]
         + ([f"- Audio: `{stored}` for {len(spoken)} characters, media sync **{media_state}**"]
            if stored else ["- No audio was generated."])
-        + (["", "### The sentence was corrected", ""]
+        + ([f"", f"### The sentence was corrected — by `{checker}`", ""]
            + [f"- {issue}" for issue in corrections]
            if corrections else [])
         + ([f"- ::warning:: `{args.notetype}` still contains `{{{{tts}}}}`; the card will speak twice."]
