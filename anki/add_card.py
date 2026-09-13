@@ -70,28 +70,44 @@ async def synthesize(text: str, voice: str, attempts: int, provider: str) -> byt
     fail(f"Could not generate audio ({last}).", "Nothing was added and nothing was synced.")
 
 
-def check_sentence(values: dict[str, str], field: str, checker: str) -> list[str]:
-    """Correct the sentence in place, and say what changed.
+def run_checker(checker: str, head: str, target: str):
+    if checker == "claude":
+        import anthropic
+
+        return proofread([head], anthropic.Anthropic(), targets=[target])[0]
+    return check_with_languagetool([head])[0]
+
+
+def check_sentence(values: dict[str, str], field: str, checker: str) -> tuple[list[str], str]:
+    """Correct the sentence in place, and say what changed and who changed it.
 
     A card is worth more than a perfect sentence, so nothing here is fatal: if
-    the check cannot run, the card is added exactly as typed.
+    no checker can run, the card is added exactly as typed.
     """
     raw = values.get(field, "")
     head, _ = split_annotation(raw)
     if not head.strip():
-        return []
+        return [], checker
     log(f"Checking the sentence with {checker}...")
     try:
-        if checker == "claude":
-            import anthropic
-
-            checked = proofread([head], anthropic.Anthropic(), targets=[values.get("Back", "")])[0]
-        else:
-            checked = check_with_languagetool([head])[0]
+        checked = run_checker(checker, head, values.get("Back", ""))
     except Exception as exc:
-        log(f"::warning::Could not check the sentence ({type(exc).__name__}: {exc}). "
-            "Adding it as typed.")
-        return []
+        log(f"::warning::{checker} could not check the sentence ({type(exc).__name__}: {exc}).")
+        # A key that exists but cannot be used - no credit, expired, revoked -
+        # is worse than no key at all, because its presence is what turned the
+        # free checker off. So hand the sentence to the one that needs nothing.
+        if checker != "languagetool":
+            log("Falling back to languagetool.")
+            checker = "languagetool"
+            try:
+                checked = run_checker(checker, head, "")
+            except Exception as second:
+                log(f"::warning::languagetool could not check it either "
+                    f"({type(second).__name__}: {second}). Adding the sentence as typed.")
+                return [], checker
+        else:
+            log("Adding the sentence as typed.")
+            return [], checker
 
     updated, refused = apply_correction(raw, checked.corrected)
     if refused:
@@ -99,10 +115,10 @@ def check_sentence(values: dict[str, str], field: str, checker: str) -> list[str
             log(f"  would change: {issue}")
         if checked.issues:
             log(f"::warning::Suggestions not applied because {refused}.")
-        return []
+        return [], checker
     if updated == raw:
         log("The sentence looks fine.")
-        return []
+        return [], checker
 
     values[field] = updated
     log("Corrected the sentence:")
@@ -110,7 +126,7 @@ def check_sentence(values: dict[str, str], field: str, checker: str) -> list[str
     log(f"  now: {checked.corrected.strip()}")
     for issue in checked.issues:
         log(f"  - {issue}")
-    return checked.issues or ["rewritten"]
+    return (checked.issues or ["rewritten"]), checker
 
 
 def existing_notes(col: Collection) -> dict[int, int]:
@@ -295,7 +311,7 @@ def main() -> int:
         checker = args.checker
         if checker == "auto":
             checker = "claude" if os.environ.get("ANTHROPIC_API_KEY", "").strip() else "languagetool"
-        corrections = check_sentence(values, args.speak_field, checker)
+        corrections, checker = check_sentence(values, args.speak_field, checker)
 
     note = col.new_note(notetype)
     for name, value in values.items():
