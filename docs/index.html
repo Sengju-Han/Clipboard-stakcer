@@ -50,13 +50,25 @@
   details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   details[open] summary { margin-bottom: 12px; }
   .note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
-  #status:empty { display: none; }
-  #status { border-radius: 8px; padding: 11px 12px; font-size: 14px; margin-bottom: 14px;
-            border: 1px solid transparent; overflow-wrap: anywhere; }
-  #status.ok   { background: var(--ok-bg);   color: var(--ok);   border-color: currentColor; }
-  #status.bad  { background: var(--bad-bg);  color: var(--bad);  border-color: currentColor; }
-  #status.work { background: var(--warn-bg); color: var(--warn); border-color: currentColor; }
-  #status a { color: inherit; }
+  #feed:empty { display: none; }
+  #feed { margin-bottom: 14px; display: flex; flex-direction: column; gap: 7px; }
+  .item { display: flex; align-items: baseline; gap: 9px; padding: 9px 11px; font-size: 13.5px;
+          border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+          overflow-wrap: anywhere; }
+  .item .what { flex: 1; min-width: 0; }
+  .item .tag { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+               white-space: nowrap; }
+  .item.work .tag { color: var(--warn); }
+  .item.ok   .tag { color: var(--ok); }
+  .item.bad  { background: var(--bad-bg); border-color: var(--bad); }
+  .item.bad  .tag { color: var(--bad); }
+  .item .why { display: block; color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .item.bad .why { color: var(--bad); }
+  .item a { color: inherit; }
+  .item button { background: none; border: 1px solid currentColor; color: inherit;
+                 font-size: 12px; padding: 3px 8px; border-radius: 6px; }
+  #hint { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  #hint:empty { display: none; }
   .sep { height: 1px; background: var(--line); border: 0; margin: 14px 0; }
 </style>
 </head>
@@ -67,7 +79,8 @@
 </header>
 
 <main>
-  <div id="status" role="status" aria-live="polite"></div>
+  <p id="hint"></p>
+  <div id="feed" role="status" aria-live="polite"></div>
 
   <form id="card" class="panel" autocomplete="off">
     <div class="row two">
@@ -180,7 +193,7 @@ function renderFields() {
   }
   const speaks = chosen.fields.includes("Example");
   $("speaks").textContent = speaks
-    ? "Audio is generated for Example. Takes a minute or two, then sync AnkiDroid."
+    ? "Audio is generated for Example. Sending never blocks you — keep typing."
     : "This note type has no Example field, so no audio is generated.";
   store.set("notetype", chosen.name);
 }
@@ -205,8 +218,18 @@ $("notetype").addEventListener("change", renderFields);
 $("deck").addEventListener("change", () => store.set("deck", $("deck").value.trim()));
 
 // ---- dispatch ------------------------------------------------------------
+// A card is sent and forgotten: the fields clear at once and you carry on
+// typing. Each send becomes a row that follows its own run, so several can be
+// in flight together. The runs themselves queue server-side, which is fine -
+// nothing here waits for them.
+const feed = $("feed");
+const claimed = new Set();
+const items = [];
+let counter = 0;
+let ticking = false;
+
 async function gh(path, options = {}) {
-  const res = await fetch(API + path, {
+  return fetch(API + path, {
     ...options,
     headers: {
       Accept: "application/vnd.github+json",
@@ -215,112 +238,189 @@ async function gh(path, options = {}) {
       ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
   });
-  return res;
 }
 
 function explain(res, body) {
   if (res.status === 401) return "GitHub rejected the token. Check it has not expired.";
-  if (res.status === 403) return "The token is not allowed to run workflows on this repository. It needs <b>Actions: read and write</b>.";
+  if (res.status === 403) return "The token cannot run workflows here. It needs <b>Actions: read and write</b>.";
   if (res.status === 404)
-    return `Not found. Either the owner/repository is wrong, or <code>${WORKFLOW}</code> is not on the <b>${$("ref").value || "main"}</b> branch yet — GitHub only offers workflows that exist there.`;
+    return `Not found — wrong owner/repository, or <code>${WORKFLOW}</code> is not on <b>${$("ref").value || "main"}</b>.`;
   if (res.status === 422) return "GitHub refused the inputs: " + (body.message || "unprocessable");
   return `GitHub returned ${res.status}. ${body.message || ""}`;
 }
 
-async function findRun(since) {
-  const base = `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}`;
-  for (let tries = 0; tries < 10; tries++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const res = await gh(`${base}/actions/workflows/${WORKFLOW}/runs?per_page=5`);
-    if (!res.ok) continue;
-    const { workflow_runs = [] } = await res.json();
-    const mine = workflow_runs.find((run) => new Date(run.created_at).getTime() >= since - 10000);
-    if (mine) return mine;
-  }
-  return null;
-}
+const LABEL = { sending: "sending", queued: "queued", running: "adding", sent: "sent",
+                added: "added", failed: "failed" };
+const KIND  = { added: "ok", failed: "bad" };
 
-async function watch(run) {
-  const link = `<a href="${run.html_url}" target="_blank" rel="noopener">the run</a>`;
-  for (let tries = 0; tries < 90; tries++) {
-    const res = await gh(`/repos/${$("owner").value.trim()}/${$("repo").value.trim()}/actions/runs/${run.id}`);
-    if (res.ok) {
-      const now = await res.json();
-      if (now.status === "completed") return { conclusion: now.conclusion, link };
-      say("work", `Working — ${now.status.replace("_", " ")}. Watch ${link}.`);
+function render() {
+  feed.innerHTML = "";
+  for (const item of items.slice(0, 12)) {
+    const row = document.createElement("div");
+    row.className = "item " + (KIND[item.state] || "work");
+    const link = item.runUrl ? ` <a href="${item.runUrl}" target="_blank" rel="noopener">run</a>` : "";
+    row.innerHTML =
+      `<span class="tag">${LABEL[item.state]}</span>` +
+      `<span class="what">${item.label}` +
+      (item.why ? `<span class="why">${item.why}${link}</span>` : link) +
+      `</span>`;
+    if (item.state === "failed") {
+      const again = document.createElement("button");
+      again.textContent = "Put it back";
+      again.onclick = () => {
+        restore(item);
+        items.splice(items.indexOf(item), 1);
+        render();
+      };
+      row.appendChild(again);
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    feed.appendChild(row);
   }
-  return { conclusion: "timed_out", link };
+  const busy = items.filter((i) => !KIND[i.state]).length;
+  $("hint").textContent = busy ? `${busy} card${busy > 1 ? "s" : ""} on the way. Keep typing.` : "";
 }
 
-$("card").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  for (const key of SETTINGS) store.set(key, $(key).value.trim());
-
-  if (!$("token").value.trim() || !$("owner").value.trim() || !$("repo").value.trim()) {
-    $("settings").open = true;
-    return say("bad", "Fill in the token, owner and repository under <b>Settings</b> first.");
+function restore(item) {
+  $("deck").value = item.payload.deck;
+  if ([...$("notetype").options].some((o) => o.value === item.payload.notetype)) {
+    $("notetype").value = item.payload.notetype;
+    renderFields();
   }
-
-  const fields = {};
+  const fields = JSON.parse(item.payload.fields);
   for (const box of document.querySelectorAll("#fields textarea")) {
-    if (box.value.trim()) fields[box.dataset.field] = box.value.trim();
+    box.value = fields[box.dataset.field] || "";
   }
-  if (!Object.keys(fields).length) return say("bad", "Type something into at least one field.");
+  $("tags").value = item.payload.tags || "";
+  document.querySelector("#fields textarea")?.focus();
+}
 
-  $("go").disabled = true;
-  say("work", "Sending to GitHub…");
-  const since = Date.now();
+// One poll covers every row: the runs list already carries status, conclusion
+// and the link, so N cards in flight still cost one request per tick.
+async function tick() {
+  const base = `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}`;
+  let runs = [];
+  try {
+    const res = await gh(`${base}/actions/workflows/${WORKFLOW}/runs?per_page=15`);
+    if (res.ok) runs = (await res.json()).workflow_runs || [];
+  } catch { /* offline for a moment; the next tick retries */ }
+  runs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
+  // Runs are created in the order they were dispatched, so the oldest waiting
+  // row takes the oldest unclaimed run. Matching by time alone would let two
+  // rows sent seconds apart both point at the same run.
+  for (const run of runs) {
+    if (claimed.has(run.id)) continue;
+    const waiting = items
+      .filter((i) => !i.runId && (i.state === "queued" || i.state === "sending"))
+      .sort((a, b) => a.at - b.at)
+      .find((i) => new Date(run.created_at).getTime() >= i.at - 15000);
+    if (waiting) {
+      waiting.runId = run.id;
+      waiting.runUrl = run.html_url;
+      claimed.add(run.id);
+    }
+  }
+
+  for (const item of items) {
+    const run = runs.find((r) => r.id === item.runId);
+    if (!run) {
+      // Dispatched, but no run has shown up. It is almost certainly running
+      // anyway, so say so rather than pretending it failed.
+      if (item.state === "queued" && Date.now() - item.at > 45000) item.state = "sent";
+      continue;
+    }
+    if (run.status !== "completed") {
+      item.state = run.status === "queued" ? "queued" : "running";
+    } else if (run.conclusion === "success") {
+      item.state = "added";
+      item.why = "";
+    } else {
+      item.state = "failed";
+      item.why = `The run finished as ${run.conclusion}.`;
+    }
+  }
+  render();
+  return items.some((i) => !KIND[i.state] && i.state !== "sent");
+}
+
+async function pump() {
+  if (ticking) return;
+  ticking = true;
+  try {
+    while (await tick()) await new Promise((r) => setTimeout(r, 3000));
+  } finally {
+    ticking = false;
+  }
+}
+
+async function send(item) {
   try {
     const res = await gh(
       `/repos/${$("owner").value.trim()}/${$("repo").value.trim()}/actions/workflows/${WORKFLOW}/dispatches`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ref: $("ref").value.trim() || "main",
-          inputs: {
-            deck: $("deck").value.trim(),
-            notetype: $("notetype").value,
-            fields: JSON.stringify(fields),
-            tags: $("tags").value.trim(),
-            speak_field: "Example",
-            voice: $("voice").value.trim() || "en-US-AvaNeural",
-            allow_duplicate: String($("dupe").checked),
-            proofread: String($("proof").checked),
-          },
-        }),
-      }
+      { method: "POST", body: JSON.stringify({ ref: $("ref").value.trim() || "main", inputs: item.payload }) }
     );
     if (!res.ok) {
       let body = {};
       try { body = await res.json(); } catch {}
       throw new Error(explain(res, body));
     }
-
-    say("work", "Queued. Finding the run…");
-    const run = await findRun(since);
-    if (!run) {
-      $("go").disabled = false;
-      return say("ok", "Sent. Could not follow the run from here — check the <b>Actions</b> tab.");
-    }
-
-    const { conclusion, link } = await watch(run);
-    $("go").disabled = false;
-    if (conclusion === "success") {
-      for (const box of document.querySelectorAll("#fields textarea")) box.value = "";
-      $("dupe").checked = false;
-      document.querySelector("#fields textarea")?.focus();
-      const fixed = $("proof").checked ? " Open the run to see any wording it corrected." : "";
-      say("ok", `Added. Sync AnkiDroid to see it — if the audio is silent at first, sync again.${fixed} (${link})`);
-    } else {
-      say("bad", `The run finished as <b>${conclusion}</b>. Open ${link} to see why — nothing was added if it failed before syncing.`);
-    }
+    item.state = "queued";
+    render();
+    pump();
   } catch (err) {
-    $("go").disabled = false;
-    say("bad", err.message || String(err));
+    item.state = "failed";
+    item.why = err.message || String(err);
+    render();
   }
+}
+
+$("card").addEventListener("submit", (event) => {
+  event.preventDefault();
+  for (const key of SETTINGS) store.set(key, $(key).value.trim());
+
+  if (!$("token").value.trim() || !$("owner").value.trim() || !$("repo").value.trim()) {
+    $("settings").open = true;
+    items.unshift({ state: "failed", label: "Not sent", why: "Fill in the token, owner and repository under Settings.", payload: null, at: Date.now() });
+    render();
+    return;
+  }
+
+  const fields = {};
+  for (const box of document.querySelectorAll("#fields textarea")) {
+    if (box.value.trim()) fields[box.dataset.field] = box.value.trim();
+  }
+  if (!Object.keys(fields).length) return;
+
+  const item = {
+    id: ++counter,
+    at: Date.now(),
+    state: "sending",
+    label: (Object.values(fields)[0] || "").slice(0, 60),
+    payload: {
+      deck: $("deck").value.trim(),
+      notetype: $("notetype").value,
+      fields: JSON.stringify(fields),
+      tags: $("tags").value.trim(),
+      speak_field: "Example",
+      voice: $("voice").value.trim() || "en-US-AvaNeural",
+      allow_duplicate: String($("dupe").checked),
+      proofread: String($("proof").checked),
+    },
+  };
+  items.unshift(item);
+
+  // Cleared before the request is even made: the point is that nothing here
+  // waits on the network.
+  for (const box of document.querySelectorAll("#fields textarea")) box.value = "";
+  $("dupe").checked = false;
+  document.querySelector("#fields textarea")?.focus();
+  render();
+
+  send(item);
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (items.some((i) => i.state === "sending")) event.preventDefault();
 });
 
 loadCatalog();
