@@ -210,7 +210,8 @@ def main() -> int:
         fail("No field values were given.", "Pass at least one --field Name=value.")
 
     if args.local_collection:
-        col = Collection(args.local_collection)
+        work = Path(args.local_collection)
+        col = Collection(str(work))
         auth = None
     else:
         work = Path("anki-work") / "collection.anki2"
@@ -218,6 +219,17 @@ def main() -> int:
         col = Collection(str(work))
         auth = col.sync_login(username, password, os.environ.get("ANKIWEB_ENDPOINT") or None)
         sync_down(col, username, password, os.environ.get("ANKIWEB_ENDPOINT") or None)
+
+    # Writing a .colpkg closes the collection, so the backup is taken here and
+    # the collection reopened: at this point nothing has been built on top of it
+    # that reopening would invalidate.
+    if args.backup_dir:
+        backup = Path(args.backup_dir)
+        backup.mkdir(parents=True, exist_ok=True)
+        target = backup / "before-add.colpkg"
+        col.export_collection_package(str(target), False, True)
+        col = Collection(str(work))
+        log(f"Backup written to {target} ({target.stat().st_size // 1024}KB, no media).")
 
     notetype = col.models.by_name(args.notetype)
     if notetype is None:
@@ -294,13 +306,6 @@ def main() -> int:
     if stored and speaks:
         log(f"::warning::{args.notetype!r} still has a {{{{tts}}}} directive, so this card will "
             "play the recording and the synthetic voice. Remove it under Cards -> Back template.")
-
-    if args.backup_dir and auth:
-        backup = Path(args.backup_dir)
-        backup.mkdir(parents=True, exist_ok=True)
-        target = backup / "before-add.colpkg"
-        col.export_collection_package(str(target), False, True)
-        log(f"Backup written to {target} ({target.stat().st_size // 1024}KB, no media).")
 
     before = existing_notes(col)
     cards = col.add_note(note, deck_id)
