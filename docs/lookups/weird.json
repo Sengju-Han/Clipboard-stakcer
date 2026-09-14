@@ -1,0 +1,31 @@
+{
+  "recognised": true,
+  "word": "weird",
+  "meaning": "strange, unusual, or surprising in a way that is difficult to explain or understand.",
+  "pronunciation": "/wɪrd/",
+  "korean": "이상한, 기묘한",
+  "tone": "neutral",
+  "nuance": "Weird suggests something that defies normal categories or expectation, not just unfamiliar. It carries a note of unease or fascination that 'unusual' or 'strange' alone don't quite capture.",
+  "collocations": [
+    "that's weird",
+    "weird thing is",
+    "look weird",
+    "feel weird",
+    "a bit weird"
+  ],
+  "confusables": [
+    {
+      "word": "strange",
+      "difference": "Strange means unfamiliar or not known before; weird means actively odd or unsettling even if familiar."
+    },
+    {
+      "word": "odd",
+      "difference": "Odd is simply not matching a pattern; weird is strange in a way that troubles or fascinates you."
+    }
+  ],
+  "examples": [
+    "It's weird that she didn't reply—she usually answers texts straight away.",
+    "He gave me a weird look when I said I don't drink coffee."
+  ],
+  "memory_hook": "Old English wyrd meant 'fate' or 'destiny'—things fated to be strange and beyond control."
+}
