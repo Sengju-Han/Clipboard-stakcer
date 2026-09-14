@@ -1,0 +1,31 @@
+{
+  "recognised": true,
+  "word": "reason",
+  "meaning": "a cause or explanation for something; or the mental faculty that allows you to think logically.",
+  "pronunciation": "/ˈriːzən/",
+  "korean": "이유, 이성",
+  "tone": "neutral",
+  "nuance": "As a noun, 'reason' is more formal and logical than 'why' or 'cause'—you use it when you want to sound deliberate about explaining something. As a verb, 'reason' means to think something through step by step, not just to guess.",
+  "collocations": [
+    "the reason is",
+    "reason to believe",
+    "for some reason",
+    "reason with someone",
+    "it stands to reason"
+  ],
+  "confusables": [
+    {
+      "word": "cause",
+      "difference": "Cause is what makes something happen; reason is the explanation or justification for it. A cause is mechanical; a reason is what someone thinks."
+    },
+    {
+      "word": "excuse",
+      "difference": "An excuse is a reason you give to avoid blame, often a weak one. A reason is neutral—it can be valid or invalid on its own."
+    }
+  ],
+  "examples": [
+    "I didn't come because I had a good reason: the train was cancelled.",
+    "You can't reason with him once he's made up his mind—he won't listen to logic."
+  ],
+  "memory_hook": "From Latin 'ratio'—the root also lives in 'rational' and 'ratio'. It's about calculating, weighing things up."
+}
