@@ -232,6 +232,18 @@ the spread, so the real bill should land at or under these.
 Set an `ANTHROPIC_MODEL` repository variable to `claude-sonnet-5` to trade the
 money back for more careful judgement — worth considering for a
 whole-collection audit, where one pass reads every sentence you own.
+
+### On waiting
+
+Haiku is cheaper, not faster. Measured on one word each, the model call took
+11s on Haiku and 8s on Sonnet — the model is not what makes a lookup feel slow.
+A run is about 23 seconds end to end, and roughly two thirds of that is GitHub
+starting a runner, checking the repository out and installing Python. No model
+gets under that floor.
+
+What removes the wait is not making you sit through it. The page asks the
+moment you stop typing and lets you carry on, and a word that has been asked
+once is served from the cache instantly and free, forever.
 New accounts get a small amount of free credit, and at this rate that covers a
 great many cards.
 
