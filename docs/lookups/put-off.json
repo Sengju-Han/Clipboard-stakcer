@@ -1,0 +1,30 @@
+{
+  "word": "put off",
+  "meaning": "to delay or postpone doing something, often because you don't want to do it",
+  "pronunciation": "/pʊt ɔːf/",
+  "korean": "미루다",
+  "tone": "neutral",
+  "nuance": "Carries a hint of avoidance or reluctance that 'postpone' doesn't — you put off the dentist because you dread it, not just because of scheduling. Also has a separate sense: to make someone dislike or feel repelled by something.",
+  "collocations": [
+    "put off a decision",
+    "put off doing something",
+    "keep putting it off",
+    "put off until tomorrow",
+    "a bit put off by"
+  ],
+  "confusables": [
+    {
+      "word": "postpone",
+      "difference": "postpone is neutral and formal, used for scheduled events; put off suggests personal avoidance and works in casual speech"
+    },
+    {
+      "word": "delay",
+      "difference": "delay is often caused by external factors (traffic, weather); put off implies a choice to avoid something"
+    }
+  ],
+  "examples": [
+    "I keep putting off calling the dentist.",
+    "His rudeness put me off the whole idea of working there."
+  ],
+  "memory_hook": "Picture pushing a task 'off' your desk into tomorrow's pile."
+}
