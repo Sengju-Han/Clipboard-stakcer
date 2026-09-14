@@ -285,9 +285,9 @@ $("notetype").addEventListener("change", renderFields);
 $("deck").addEventListener("change", () => store.set("deck", $("deck").value.trim()));
 
 // ---- looking the target word up ------------------------------------------
-// Runs in this browser against a free, keyless dictionary. No account, no
-// setup, and no round trip through GitHub, so it answers while you are still
-// typing rather than half a minute later.
+// The reference links below are built from the typed word alone, so they cost
+// no request and appear while you are still typing. The short pause is only so
+// they stop flickering on every keystroke.
 const LOOKUP_PAUSE = 600;
 
 let lookupTimer = null;
@@ -385,7 +385,7 @@ const ASK_TIMEOUT = 120000;
 
 // Asking happens on its own. The risk is paying for half-typed words, so it
 // waits for a real signal that the word is finished: either leaving the field,
-// or a pause much longer than the one the dictionary uses.
+// or a pause much longer than the one the links use.
 const SETTLED_PAUSE = 2200;
 const asked = new Set();
 let settleTimer = null;

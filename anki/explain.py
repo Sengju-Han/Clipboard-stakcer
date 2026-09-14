@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from proofread import MODEL  # noqa: E402
+from proofread import MODEL, api_key, key_shape  # noqa: E402
 
 SYSTEM = """You explain English words to a Korean adult who is building \
 vocabulary flashcards. They are past beginner: they know the common words and \
@@ -121,8 +121,42 @@ def main() -> int:
 
     import anthropic
 
+    # Without this the SDK raises a TypeError about header resolution, which
+    # says nothing about what to actually do. The fix is one setting, so name it.
+    if not api_key():
+        print(
+            "::error::ANTHROPIC_API_KEY is not set for this repository. "
+            "Add it under Settings -> Secrets and variables -> Actions -> "
+            "New repository secret, named exactly ANTHROPIC_API_KEY. A secret on "
+            "your account or on an environment is not the same thing and this "
+            "workflow cannot see it.",
+            flush=True,
+        )
+        return 1
+
     print(f"Asking about {term!r}...", flush=True)
-    answer = explain(term, anthropic.Anthropic(), model=args.model)
+    try:
+        answer = explain(term, anthropic.Anthropic(api_key=api_key()), model=args.model)
+    except anthropic.AuthenticationError:
+        print(
+            f"::error::The API key was rejected: {key_shape()}. Replace the "
+            "ANTHROPIC_API_KEY secret with a key copied whole from "
+            "console.anthropic.com. The console shows a key in full only at the "
+            "moment you create it; afterwards it is masked, and the masked form "
+            "is not a usable key.",
+            flush=True,
+        )
+        return 1
+    except anthropic.BadRequestError as exc:
+        if "credit balance" in str(exc).lower():
+            print(
+                "::error::The key works, but the account has no credit. Buy credit "
+                "at console.anthropic.com -> Billing. This is separate from a "
+                "Claude subscription; a Pro or Max plan does not pay for API calls.",
+                flush=True,
+            )
+            return 1
+        raise
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(

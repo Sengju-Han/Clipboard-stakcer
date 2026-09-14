@@ -29,6 +29,7 @@ from anki.sync_pb2 import SyncCollectionResponse  # noqa: E402
 
 from build_tts_apkg import MIN_BYTES, PROVIDERS, audio_name, speakable  # noqa: E402
 from proofread import (  # noqa: E402
+    api_key,
     apply_correction,
     check_with_languagetool,
     proofread,
@@ -74,7 +75,7 @@ def run_checker(checker: str, head: str, target: str):
     if checker == "claude":
         import anthropic
 
-        return proofread([head], anthropic.Anthropic(), targets=[target])[0]
+        return proofread([head], anthropic.Anthropic(api_key=api_key()), targets=[target])[0]
     return check_with_languagetool([head])[0]
 
 

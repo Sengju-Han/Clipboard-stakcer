@@ -38,6 +38,59 @@ BLOCK_BOUNDARY = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6])\b[^>]*>", re.IGNOREC
 
 MARKUP = re.compile(r"<[^>]+>|&[a-zA-Z]+;|&#\d+;")
 
+# A key pasted on a phone arrives damaged in a handful of predictable ways, and
+# the API answers every one of them with the same "API key is invalid." Stripping
+# is the repair; the rest is so the log can say which damage it was without ever
+# printing the key.
+KEY_ALPHABET = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def api_key() -> str:
+    """The key, with the whitespace a paste picks up removed."""
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+
+
+def key_shape() -> str:
+    """Why a key looks wrong, said without revealing it."""
+    raw = os.environ.get("ANTHROPIC_API_KEY", "")
+    key = raw.strip()
+    if not key:
+        return "it is empty"
+
+    # Whatever whitespace the paste carried was stripped before the key was
+    # sent, so it is never the reason one is rejected. Say it as an aside, not
+    # as the cause, or it sends you off cleaning a secret that is not at fault.
+    aside = (
+        " (the stored secret also has spaces or a line break around it, which "
+        "were ignored)"
+        if raw != key
+        else ""
+    )
+
+    faults = []
+    if not key.startswith("sk-ant-"):
+        faults.append(
+            f"it does not begin with 'sk-ant-' (it is {len(key)} characters long), "
+            "so it may be a different kind of token altogether"
+        )
+    body = key[len("sk-ant-"):] if key.startswith("sk-ant-") else key
+    if not KEY_ALPHABET.match(body or "x"):
+        faults.append(
+            "it contains characters a key never has - if it shows as dots or "
+            "asterisks, that is the console's masked display, not the key itself"
+        )
+    elif key.startswith("sk-ant-") and len(key) < 90:
+        faults.append(
+            f"it is only {len(key)} characters, which is short for a key, so the "
+            "paste was probably cut off"
+        )
+    if not faults:
+        return (
+            f"it looks well formed ({len(key)} characters), so it has most likely "
+            "been revoked or belongs to a different organization" + aside
+        )
+    return "; ".join(faults) + aside
+
 # LanguageTool: free, no account, no key. It reads grammar and spelling by rule,
 # which is a different thing from judging whether a sentence sounds like English.
 LANGUAGETOOL_URL = (
