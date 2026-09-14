@@ -208,7 +208,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.2";
+const VERSION = "2026-09-14.3";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -928,7 +928,44 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 $("version").textContent = `v${VERSION}`;
+
+// ---- noticing that this copy is stale ------------------------------------
+// A phone holds on to a page hard. It had been serving a copy from the day
+// before while the site had moved on twice, which makes every report of "it
+// still does not work" unanswerable - the fix was deployed and simply never
+// arrived.
+//
+// So the page checks itself. It re-fetches its own URL with the cache refused,
+// reads the VERSION out of what comes back, and if that is not the version
+// running here, reloads through a URL the cache has never seen. There is no
+// second file to keep in step: the deployed page is its own source of truth.
+const RELOADED = "stale-reload";
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(`${location.pathname}?fresh=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const found = (await res.text()).match(/const VERSION = "([^"]+)"/);
+    if (!found || found[1] === VERSION) return;
+    const fresh = found[1];
+
+    // Reloading once is the fix; reloading twice for the same version means
+    // the browser is handing back the old copy no matter what is asked, and
+    // looping on it would be worse than saying so.
+    if (sessionStorage.getItem(RELOADED) === fresh) {
+      note(`Version ${fresh} is published, but this browser keeps serving ${VERSION}. ` +
+           `Clear this site's data, or open it once with ?v=${escape(fresh)} on the end.`);
+      return;
+    }
+    sessionStorage.setItem(RELOADED, fresh);
+    location.replace(`${location.pathname}?v=${encodeURIComponent(fresh)}`);
+  } catch { /* offline, or opened as a file: the copy in hand is the only one */ }
+}
+
 loadCatalog();
+// After the form is up, not before: a stale page still works, and a check that
+// blocked the first paint would cost every load to save a rare one.
+if (!OFFLINE_ORIGIN) setTimeout(checkForUpdate, 1500);
 </script>
 </body>
 </html>
