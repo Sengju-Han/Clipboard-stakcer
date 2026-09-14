@@ -1,0 +1,25 @@
+{
+  "recognised": true,
+  "word": "halcyon",
+  "meaning": "a time of peace and prosperity, or characterizing such a time.",
+  "pronunciation": "/ˈhælsiən/",
+  "korean": "태평한, 평화로운 시대",
+  "tone": "literary",
+  "nuance": "Always used of the past and tinged with nostalgia. You reach for it when you want to suggest that an earlier period was not just good but almost impossibly calm and fortunate—often implying loss.",
+  "collocations": [
+    "halcyon days",
+    "in halcyon times",
+    "the halcyon years of"
+  ],
+  "confusables": [
+    {
+      "word": "idyllic",
+      "difference": "Idyllic is about perfect beauty and contentment; halcyon adds the weight of peace after trouble, and is more nostalgic."
+    }
+  ],
+  "examples": [
+    "She talked about the halcyon days of the 1950s, before everything got complicated.",
+    "Those halcyon years before the pandemic now feel like a different world."
+  ],
+  "memory_hook": "From the halcyon bird of Greek myth, which nested on calm seas during winter—a rare, precious stillness."
+}
