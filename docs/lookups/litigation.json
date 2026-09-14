@@ -1,0 +1,31 @@
+{
+  "recognised": true,
+  "word": "litigation",
+  "meaning": "the process of taking a legal dispute to court and fighting it out there rather than settling it between yourselves.",
+  "pronunciation": "/lɪtɪˈɡeɪʃən/",
+  "korean": "소송",
+  "tone": "formal",
+  "nuance": "It emphasizes the formal court battle itself, not just any legal problem. A company avoids litigation by settling quietly; litigation means the case went public and expensive.",
+  "collocations": [
+    "costly litigation",
+    "ongoing litigation",
+    "litigation over",
+    "avoid litigation",
+    "threaten litigation"
+  ],
+  "confusables": [
+    {
+      "word": "lawsuit",
+      "difference": "Lawsuit is the legal action itself; litigation is the whole messy process and business of fighting it out."
+    },
+    {
+      "word": "legal dispute",
+      "difference": "A dispute is the disagreement; litigation is what happens when you drag it into court instead of resolving it yourself."
+    }
+  ],
+  "examples": [
+    "The company faced lengthy litigation over the patent, costing them millions.",
+    "They wanted to avoid litigation, so they settled the contract dispute out of court."
+  ],
+  "memory_hook": "Latin litigare — to quarrel; the -tion ending turns the verb into the noun for the whole drawn-out quarrel in court."
+}
