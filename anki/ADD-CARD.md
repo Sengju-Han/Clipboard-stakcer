@@ -141,11 +141,23 @@ To re-ask a word, delete its file or run the workflow with *force* ticked.
 ### What it costs
 
 It uses the same `ANTHROPIC_API_KEY` secret as the sentence check, on Claude
-Sonnet 5. A word is a few hundred tokens in and a few hundred out — well under
+Haiku 4.5. A word is a few hundred tokens in and a few hundred out — well under
 a cent, once, ever.
 
-Without the key the panel simply does not appear. The dictionary above it,
-which needs nothing, carries on working.
+Without the key the panel simply does not appear. The reference links above it,
+which need no request at all, carry on working.
+
+### Nothing is given away until you ask
+
+The answer is fetched the moment you stop typing, so it is ready and waiting,
+but the panel shows only the word, its pronunciation and its register. Tap
+**Show meaning** and the rest appears: the Korean gloss, the definition, the
+nuance, the collocations, the confusables, the examples.
+
+The fetch is eager so there is no waiting. The reveal is deliberate so you get
+the moment where you try to remember the word yourself, which is most of what
+makes it stick. Everything below the headword is behind the same tap, because
+an example sentence gives the meaning away as surely as the definition does.
 
 ## Checking your English
 
@@ -203,17 +215,23 @@ the run says so. Untick *Check my English* on the form to skip it for one card.
 
 ### What Claude costs, if you add the key
 
-LanguageTool is free. With a key, it runs on **Claude Sonnet 5** — $2 per
-million input tokens, $10 per million output. Measured against the real prompt
-and your average sentence:
+LanguageTool is free. With a key, it runs on **Claude Haiku 4.5** — $1 per
+million input tokens, $5 per million output.
+
+The figures below were measured on Claude Sonnet 5, at exactly twice those
+rates, then halved. Treat them as a ceiling rather than a measurement: Haiku
+does no thinking unless it is asked to, and the thinking tokens were most of
+the spread, so the real bill should land at or under these.
 
 | | per card | 100 cards | 1000 cards |
 | --- | --- | --- | --- |
-| light | $0.002 | $0.21 | $2.12 |
-| typical | $0.005 | $0.46 | $4.62 |
-| heavy | $0.010 | $0.96 | $9.62 |
+| light | $0.001 | $0.11 | $1.06 |
+| typical | $0.002 | $0.23 | $2.31 |
+| heavy | $0.005 | $0.48 | $4.81 |
 
-The spread is thinking tokens, billed as output, which vary with the sentence.
+Set an `ANTHROPIC_MODEL` repository variable to `claude-sonnet-5` to trade the
+money back for more careful judgement — worth considering for a
+whole-collection audit, where one pass reads every sentence you own.
 New accounts get a small amount of free credit, and at this rate that covers a
 great many cards.
 

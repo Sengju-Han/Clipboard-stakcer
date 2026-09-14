@@ -83,7 +83,7 @@ def slug(term: str) -> str:
 def explain(term: str, client, *, model: str = "") -> Explanation:
     response = client.messages.parse(
         model=model or MODEL,
-        max_tokens=16000,
+        max_tokens=4000,
         system=SYSTEM,
         messages=[{"role": "user", "content": term.strip()}],
         output_format=Explanation,

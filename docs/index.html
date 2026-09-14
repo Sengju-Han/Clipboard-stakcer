@@ -101,6 +101,10 @@
   .brain .ipa2 { color: var(--muted); font-family: ui-monospace, monospace; margin-left: 7px;
                  font-size: 12px; }
   .brain .meaning { margin: 6px 0 0; font-weight: 600; }
+  .brain .reveal { margin-top: 7px; width: 100%; padding: 7px; font-size: 13px;
+    border: 1px dashed var(--accent); border-radius: 7px; background: transparent;
+    color: var(--accent); cursor: pointer; }
+  .brain .body { margin-top: 4px; }
   .brain .nuance { margin: 6px 0 0; }
   .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
               letter-spacing: .04em; color: var(--muted); font-weight: 700; }
@@ -194,7 +198,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-13.6";
+const VERSION = "2026-09-14.1";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -419,39 +423,58 @@ async function freshExplanation(key) {
   }
 }
 
+// The answer is fetched the moment you stop typing, but it is not shown until
+// you ask for it. Being told what a word means the instant you type it costs
+// you the one moment you were about to try to remember it yourself, and that
+// attempt is most of what makes the word stick. So the fetch is eager and the
+// reveal is deliberate: no waiting, no spoiling.
 function renderExplanation(info) {
   const panel = $("brain");
   if (!panel) return;
   const wantsExample = Boolean(document.getElementById("f-Example"));
   const wantsFront = Boolean(document.getElementById("f-Front"));
 
-  let html = `<div><span class="gloss">${escape(info.korean || "")}</span>`;
+  // The headword is what you just typed, so it gives nothing away, and it is
+  // proof the answer is here and waiting.
+  let html = `<div><span class="gloss">${escape(info.word || "")}</span>`;
   if (info.tone) html += `<span class="reg">${escape(info.tone)}</span>`;
   if (info.pronunciation) html += `<span class="ipa2">${escape(info.pronunciation)}</span>`;
-  if (wantsFront && info.korean) {
-    html += `<button type="button" class="put" data-into="f-Front" data-text="${escape(info.korean)}">use as Front</button>`;
-  }
   html += `</div>`;
-  if (info.meaning) html += `<p class="meaning">${escape(info.meaning)}</p>`;
-  if (info.nuance) html += `<p class="nuance">${escape(info.nuance)}</p>`;
+  html += `<button type="button" class="reveal">Show meaning</button>`;
 
+  let body = "";
+  if (info.korean) {
+    body += `<div><span class="gloss">${escape(info.korean)}</span>`;
+    if (wantsFront) {
+      body += `<button type="button" class="put" data-into="f-Front" data-text="${escape(info.korean)}">use as Front</button>`;
+    }
+    body += `</div>`;
+  }
+  if (info.meaning) body += `<p class="meaning">${escape(info.meaning)}</p>`;
+  if (info.nuance) body += `<p class="nuance">${escape(info.nuance)}</p>`;
+
+  // Everything below states or strongly implies the meaning - a collocation
+  // spells out how it is used, an example sentence shows it in action - so it
+  // all lives behind the same tap. Splitting hairs over which field counts as
+  // a spoiler would just leak the answer through whichever half stayed out.
   if ((info.collocations || []).length) {
-    html += `<h4>goes with</h4><div>` +
+    body += `<h4>goes with</h4><div>` +
       info.collocations.map((c) => `<code>${escape(c)}</code>`).join(" ") + `</div>`;
   }
   if ((info.confusables || []).length) {
-    html += `<h4>not to be confused with</h4><ul>` +
+    body += `<h4>not to be confused with</h4><ul>` +
       info.confusables.map((c) => `<li><b>${escape(c.word)}</b> — ${escape(c.difference)}</li>`).join("") +
       `</ul>`;
   }
   if ((info.examples || []).length) {
-    html += `<h4>examples</h4><ul>` + info.examples.map((e) =>
+    body += `<h4>examples</h4><ul>` + info.examples.map((e) =>
       `<li>${escape(e)}` +
       (wantsExample ? `<button type="button" class="put" data-into="f-Example" data-text="${escape(e)}">use</button>` : "") +
       `</li>`).join("") + `</ul>`;
   }
-  if (info.memory_hook) html += `<div class="hook">${escape(info.memory_hook)}</div>`;
-  panel.innerHTML = html;
+  if (info.memory_hook) body += `<div class="hook">${escape(info.memory_hook)}</div>`;
+
+  panel.innerHTML = html + `<div class="body" hidden>${body}</div>`;
 }
 
 function offerToAsk(term, why = "") {
@@ -540,6 +563,13 @@ function wireBrain() {
   panel.addEventListener("click", (event) => {
     const ask = event.target.closest("button.ask");
     if (ask) return void askAbout(ask.dataset.term);
+    const reveal = event.target.closest("button.reveal");
+    if (reveal) {
+      const body = panel.querySelector(".body");
+      if (body) body.hidden = false;
+      reveal.remove();
+      return;
+    }
     const put = event.target.closest("button.put");
     if (put) {
       const field = document.getElementById(put.dataset.into);
