@@ -210,7 +210,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.7";
+const VERSION = "2026-09-14.8";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -484,6 +484,35 @@ function rememberExplanation(key, info) {
   try { localStorage.setItem(LOCAL_CACHE + key, JSON.stringify(info)); } catch { /* full or blocked */ }
 }
 
+// A key pasted on a phone arrives damaged in a handful of predictable ways, and
+// the API answers every one of them with the same 401. anki/proofread.py works
+// this out for the key in the repository secret; a key typed into this page
+// deserves the same, since a bare "rejected" reads as "the box is ignored".
+// Nothing here reveals the key: only its length and whether it has the shape
+// one has.
+const KEY_BODY = /^[A-Za-z0-9_-]+$/;
+
+function keyShape() {
+  const key = $("anthropic").value.trim();
+  if (!key) return "the box is empty";
+  if (!key.startsWith("sk-ant-")) {
+    return `it does not begin with "sk-ant-" (it is ${key.length} characters), ` +
+      "so it may be a different kind of token altogether";
+  }
+  const body = key.slice("sk-ant-".length);
+  if (!KEY_BODY.test(body || "x")) {
+    return "it contains characters a key never has — if it shows as dots or " +
+      "asterisks, that is the console's masked display, not the key itself. " +
+      "The console shows a key in full only when you create it";
+  }
+  if (key.length < 90) {
+    return `it is only ${key.length} characters, which is short for a key, ` +
+      "so the paste was probably cut off";
+  }
+  return `it looks well formed (${key.length} characters), so it has most likely ` +
+    "been revoked, or belongs to a different organisation than the one with credit";
+}
+
 async function askAnthropic(term) {
   const { system, schema, max_tokens } = await explainContract();
   const res = await fetch(ANTHROPIC_URL, {
@@ -507,8 +536,9 @@ async function askAnthropic(term) {
   if (!res.ok) {
     const said = payload?.error?.message || `${res.status}`;
     throw new Error(
-      res.status === 401 ? "Claude rejected the key in Settings."
+      res.status === 401 ? `Claude rejected the key in Settings: ${keyShape()}`
       : res.status === 429 ? "Claude is rate limiting; it will work again shortly."
+      : /workspace/i.test(said) ? "That key belongs to the organisation rather than a workspace. Make a new key from inside a workspace."
       : /credit balance/i.test(said) ? "The Anthropic account is out of credit."
       : said);
   }
