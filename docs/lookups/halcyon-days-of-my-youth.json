@@ -1,0 +1,30 @@
+{
+  "word": "halcyon days of my youth",
+  "meaning": "a peaceful, happy period in the past, remembered fondly",
+  "pronunciation": "/ˈhælsiən deɪz əv maɪ juːθ/",
+  "korean": "내 젊은 시절의 평화롭고 행복했던 나날들",
+  "tone": "literary",
+  "nuance": "Idealizes the past as calm and carefree, often with an undertone that such times are gone and won't return. Reach for this over 'good old days' when you want a wistful, slightly poetic register rather than a casual one.",
+  "collocations": [
+    "halcyon days of youth",
+    "those halcyon days",
+    "recall the halcyon days",
+    "halcyon days before [event]",
+    "in one's halcyon days"
+  ],
+  "confusables": [
+    {
+      "word": "good old days",
+      "difference": "same nostalgia but plain and conversational, not literary"
+    },
+    {
+      "word": "heyday",
+      "difference": "heyday means peak of success or influence, not necessarily peace or happiness"
+    }
+  ],
+  "examples": [
+    "She often drifts back to the halcyon days of her youth, when every summer felt endless.",
+    "He wrote a memoir about the halcyon days before the company grew too big to feel like family."
+  ],
+  "memory_hook": "From Greek myth: the halcyon (kingfisher) bird supposedly calmed the sea while nesting — hence 'halcyon' meaning calm and golden."
+}
