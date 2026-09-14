@@ -208,7 +208,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.2";
+const VERSION = "2026-09-14.4";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -312,6 +312,26 @@ let lookedUp = "";
 function lookupTerm(raw) {
   const found = (raw || "").trim().match(/^[A-Za-z][A-Za-z'\u2019\- ]*/);
   return found ? found[0].trim().toLowerCase() : "";
+}
+
+// Asking happens on its own, which means it also happens for things that are
+// not words. It has already paid to be told that "fjadslf" is random keyboard
+// input, and to have a whole remembered clause treated as vocabulary. Neither
+// needed a model to rule out.
+//
+// The test is deliberately loose. It is here to catch a mash of the keyboard
+// and a sentence, not to referee English: a real word wrongly refused is worse
+// than a wasted fraction of a cent, so anything arguable gets asked.
+const VOWEL = /[aeiouy]/;
+const UNSAYABLE = /[bcdfghjklmnpqrstvwxz]{5}/;
+
+function worthAsking(term) {
+  if (term.length < 2 || term.length > 30) return false;
+  const words = term.split(/[\s-]+/).filter(Boolean);
+  // Phrasal verbs and short idioms are the point; a remembered clause is not.
+  if (words.length > 3) return false;
+  // Every English word has a vowel in it, and none has five consonants in a row.
+  return words.every((w) => VOWEL.test(w) && !UNSAYABLE.test(w));
 }
 
 function escape(text) {
@@ -496,10 +516,15 @@ async function askAnthropic(term) {
   return JSON.parse(text);
 }
 
-// Answers still belong in the repository, so the other device has them too and
-// so a reinstalled browser does not start from nothing. Writing the file here
-// costs one request and no second trip to the model - going back through the
-// workflow would pay for the whole answer twice.
+// Answers belong in the repository so the tablet has them too, and so a
+// reinstalled browser does not start from nothing. But not every answer: a
+// word looked at and abandoned, or a misspelling corrected a second later,
+// should not become a commit in a collection meant to last. Only the word a
+// card was actually made for earns that, which is why this is called from the
+// submit handler and not from the lookup.
+//
+// Writing the file here costs one request and no second trip to the model -
+// going back through the workflow would pay for the whole answer twice.
 async function saveExplanation(key, info) {
   const owner = $("owner").value.trim(), repo = $("repo").value.trim();
   if (!owner || !repo || !$("token").value.trim()) return;
@@ -657,9 +682,16 @@ async function askDirect(term) {
     return;
   }
 
+  if (info.recognised === false) {
+    // Claude was asked and said it is not a word. Worth showing, not worth
+    // keeping: cached, it would answer for the correct spelling too.
+    if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) {
+      panel.innerHTML = `<div class="waiting">${escape(info.meaning || "That does not look like an English word.")}</div>`;
+    }
+    return;
+  }
   rememberExplanation(key, info);
   if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(info);
-  saveExplanation(key, info);
 }
 
 async function explainTerm(term, { settled = false } = {}) {
@@ -682,6 +714,8 @@ async function explainTerm(term, { settled = false } = {}) {
   }
   // Only spend once the word looks finished. Until then the button is there
   // for anyone who does not want to wait for the pause.
+  // Nothing below this line is free, so the obvious non-words stop here.
+  if (settled && !worthAsking(term)) return;
   if (settled && !OFFLINE_ORIGIN && $("anthropic").value.trim()) return void askDirect(term);
   if (settled && !OFFLINE_ORIGIN && $("token").value.trim()) return void askAbout(term);
   // Being here after the word settled means something stopped the automatic
@@ -895,6 +929,14 @@ $("card").addEventListener("submit", (event) => {
   }
   if (!Object.keys(fields).length) return;
 
+  // This word is being kept, so its explanation is worth sharing to the other
+  // device. It is already in this browser; this only promotes it.
+  const kept = slug(lookupTerm(fields.Back || ""));
+  if (kept) {
+    const known = localExplanation(kept);
+    if (known) saveExplanation(kept, known);
+  }
+
   const item = {
     id: ++counter,
     at: Date.now(),
@@ -928,7 +970,44 @@ window.addEventListener("beforeunload", (event) => {
 });
 
 $("version").textContent = `v${VERSION}`;
+
+// ---- noticing that this copy is stale ------------------------------------
+// A phone holds on to a page hard. It had been serving a copy from the day
+// before while the site had moved on twice, which makes every report of "it
+// still does not work" unanswerable - the fix was deployed and simply never
+// arrived.
+//
+// So the page checks itself. It re-fetches its own URL with the cache refused,
+// reads the VERSION out of what comes back, and if that is not the version
+// running here, reloads through a URL the cache has never seen. There is no
+// second file to keep in step: the deployed page is its own source of truth.
+const RELOADED = "stale-reload";
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(`${location.pathname}?fresh=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const found = (await res.text()).match(/const VERSION = "([^"]+)"/);
+    if (!found || found[1] === VERSION) return;
+    const fresh = found[1];
+
+    // Reloading once is the fix; reloading twice for the same version means
+    // the browser is handing back the old copy no matter what is asked, and
+    // looping on it would be worse than saying so.
+    if (sessionStorage.getItem(RELOADED) === fresh) {
+      note(`Version ${fresh} is published, but this browser keeps serving ${VERSION}. ` +
+           `Clear this site's data, or open it once with ?v=${escape(fresh)} on the end.`);
+      return;
+    }
+    sessionStorage.setItem(RELOADED, fresh);
+    location.replace(`${location.pathname}?v=${encodeURIComponent(fresh)}`);
+  } catch { /* offline, or opened as a file: the copy in hand is the only one */ }
+}
+
 loadCatalog();
+// After the form is up, not before: a stale page still works, and a check that
+// blocked the first paint would cost every load to save a rare one.
+if (!OFFLINE_ORIGIN) setTimeout(checkForUpdate, 1500);
 </script>
 </body>
 </html>
