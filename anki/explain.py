@@ -52,6 +52,11 @@ genuinely competes.
 showing different senses or registers if the word has them.
 - memory_hook: one line. An etymology, a cognate, or an image that makes it \
 stick. Skip it rather than force something weak.
+- recognised: false if what you were given is not a real English word or \
+phrase at all - a mash of the keyboard, a fragment, a stray line of text. A \
+misspelling of a real word is not this: explain the word that was meant and \
+leave recognised true. When it is false, say so in meaning and leave the rest \
+empty rather than inventing an entry.
 
 Be specific and brief. This goes on a flashcard that will be read hundreds of \
 times, so every word has to earn its place."""
@@ -63,6 +68,7 @@ class Confusable(BaseModel):
 
 
 class Explanation(BaseModel):
+    recognised: bool
     word: str
     meaning: str
     pronunciation: str
@@ -193,6 +199,17 @@ def main() -> int:
             )
             return 1
         raise
+
+    # An answer that says "this is not a word" is not worth a file in the
+    # repository, and caching it means never being asked again about a word the
+    # learner might later spell correctly.
+    if not answer.recognised:
+        print(
+            f"::warning::{term!r} is not an English word, so nothing was cached. "
+            f"Claude said: {answer.meaning}",
+            flush=True,
+        )
+        return 0
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
