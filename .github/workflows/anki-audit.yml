@@ -74,6 +74,9 @@ jobs:
           ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          # Only needed for a key that belongs to the organization rather
+          # than to a workspace. A key made inside a workspace needs none.
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           # Passed as environment variables, never interpolated into the shell.
           DECK: ${{ inputs.deck }}
           FIELD: ${{ inputs.field }}

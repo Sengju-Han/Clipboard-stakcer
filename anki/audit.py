@@ -35,8 +35,8 @@ from export_deck import (  # noqa: E402
     write_summary,
 )
 from proofread import (  # noqa: E402
-    api_key,
     apply_correction,
+    client,
     check_with_languagetool,
     has_markup,
     proofread,
@@ -193,16 +193,14 @@ def main() -> int:
         if count:
             log(f"  skipped, {reason}: {count}")
 
-    client = None
+    checker_client = None
     if args.checker == "claude" and pending:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=api_key())
+        checker_client = client()
 
     for start in range(0, len(pending), args.batch):
         batch = pending[start : start + args.batch]
         try:
-            results = check_batch(batch, args.checker, client)
+            results = check_batch(batch, args.checker, checker_client)
         except Exception as exc:
             log(f"::warning::Batch starting at {start} failed ({type(exc).__name__}: {exc}). "
                 "Stopping here; re-run to carry on from this point.")

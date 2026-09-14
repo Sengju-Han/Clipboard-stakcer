@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from proofread import MODEL, api_key, key_shape  # noqa: E402
+from proofread import MODEL, api_key, client, key_shape  # noqa: E402
 
 SYSTEM = """You explain English words to a Korean adult who is building \
 vocabulary flashcards. They are past beginner: they know the common words and \
@@ -136,7 +136,7 @@ def main() -> int:
 
     print(f"Asking about {term!r}...", flush=True)
     try:
-        answer = explain(term, anthropic.Anthropic(api_key=api_key()), model=args.model)
+        answer = explain(term, client(), model=args.model)
     except anthropic.AuthenticationError:
         print(
             f"::error::The API key was rejected: {key_shape()}. Replace the "
@@ -148,7 +148,20 @@ def main() -> int:
         )
         return 1
     except anthropic.BadRequestError as exc:
-        if "credit balance" in str(exc).lower():
+        note = str(exc).lower()
+        if "workspace" in note:
+            print(
+                "::error::The key works, but it belongs to the organization rather "
+                "than to any one workspace, and the API will not pick a workspace "
+                "for it. Two ways out, either is fine: make a new key from inside a "
+                "workspace at console.anthropic.com (it carries the workspace with "
+                "it, and nothing else needs changing), or add the workspace's ID as "
+                "a repository variable named ANTHROPIC_WORKSPACE_ID and this will "
+                "send it.",
+                flush=True,
+            )
+            return 1
+        if "credit balance" in note:
             print(
                 "::error::The key works, but the account has no credit. Buy credit "
                 "at console.anthropic.com -> Billing. This is separate from a "
