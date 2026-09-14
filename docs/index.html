@@ -101,10 +101,10 @@
   .brain .ipa2 { color: var(--muted); font-family: ui-monospace, monospace; margin-left: 7px;
                  font-size: 12px; }
   .brain .meaning { margin: 6px 0 0; font-weight: 600; }
-  .brain .reveal { margin-top: 7px; width: 100%; padding: 7px; font-size: 13px;
-    border: 1px dashed var(--accent); border-radius: 7px; background: transparent;
-    color: var(--accent); cursor: pointer; }
-  .brain .body { margin-top: 4px; }
+  .brain .reveal { margin-left: 7px; padding: 1px 8px; font-size: 12px;
+    border: 1px dashed var(--accent); border-radius: 999px; background: transparent;
+    color: var(--accent); cursor: pointer; vertical-align: middle; }
+  .brain .ko { margin-left: 7px; }
   .brain .nuance { margin: 6px 0 0; }
   .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
               letter-spacing: .04em; color: var(--muted); font-weight: 700; }
@@ -208,7 +208,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.4";
+const VERSION = "2026-09-14.5";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -569,29 +569,23 @@ function renderExplanation(info) {
   const wantsExample = Boolean(document.getElementById("f-Example"));
   const wantsFront = Boolean(document.getElementById("f-Front"));
 
-  // The headword is what you just typed, so it gives nothing away, and it is
-  // proof the answer is here and waiting.
+  // Only the Korean is held back. Thinking in English about an English word -
+  // reading the definition, the nuance, the way it is used - is the work; being
+  // handed the Korean is what ends it early. So everything that makes you think
+  // in the language is shown, and the one line that lets you stop is a tap away.
   let html = `<div><span class="gloss">${escape(info.word || "")}</span>`;
   if (info.tone) html += `<span class="reg">${escape(info.tone)}</span>`;
   if (info.pronunciation) html += `<span class="ipa2">${escape(info.pronunciation)}</span>`;
+  if (info.korean) {
+    html += `<button type="button" class="reveal" data-korean="${escape(info.korean)}"` +
+      `${wantsFront ? ' data-front="1"' : ""}>한국어</button>`;
+  }
   html += `</div>`;
-  html += `<button type="button" class="reveal">Show meaning</button>`;
 
   let body = "";
-  if (info.korean) {
-    body += `<div><span class="gloss">${escape(info.korean)}</span>`;
-    if (wantsFront) {
-      body += `<button type="button" class="put" data-into="f-Front" data-text="${escape(info.korean)}">use as Front</button>`;
-    }
-    body += `</div>`;
-  }
   if (info.meaning) body += `<p class="meaning">${escape(info.meaning)}</p>`;
   if (info.nuance) body += `<p class="nuance">${escape(info.nuance)}</p>`;
 
-  // Everything below states or strongly implies the meaning - a collocation
-  // spells out how it is used, an example sentence shows it in action - so it
-  // all lives behind the same tap. Splitting hairs over which field counts as
-  // a spoiler would just leak the answer through whichever half stayed out.
   if ((info.collocations || []).length) {
     body += `<h4>goes with</h4><div>` +
       info.collocations.map((c) => `<code>${escape(c)}</code>`).join(" ") + `</div>`;
@@ -609,7 +603,7 @@ function renderExplanation(info) {
   }
   if (info.memory_hook) body += `<div class="hook">${escape(info.memory_hook)}</div>`;
 
-  panel.innerHTML = html + `<div class="body" hidden>${body}</div>`;
+  panel.innerHTML = html + body;
 }
 
 function offerToAsk(term, why = "") {
@@ -742,9 +736,11 @@ function wireBrain() {
     if (ask) return void askAbout(ask.dataset.term);
     const reveal = event.target.closest("button.reveal");
     if (reveal) {
-      const body = panel.querySelector(".body");
-      if (body) body.hidden = false;
-      reveal.remove();
+      const korean = reveal.dataset.korean || "";
+      const front = reveal.dataset.front
+        ? `<button type="button" class="put" data-into="f-Front" data-text="${escape(korean)}">use as Front</button>`
+        : "";
+      reveal.outerHTML = `<span class="gloss ko">${escape(korean)}</span>${front}`;
       return;
     }
     const put = event.target.closest("button.put");
