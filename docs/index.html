@@ -105,6 +105,8 @@
     border: 1px dashed var(--accent); border-radius: 999px; background: transparent;
     color: var(--accent); cursor: pointer; vertical-align: middle; }
   .brain .ko { margin-left: 7px; }
+  .brain .route { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 11px; }
   .brain .nuance { margin: 6px 0 0; }
   .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
               letter-spacing: .04em; color: var(--muted); font-weight: 700; }
@@ -208,7 +210,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.6";
+const VERSION = "2026-09-14.7";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -614,7 +616,7 @@ function offerToAsk(term, why = "") {
     `<button type="button" class="ask" data-term="${escape(term)}">Ask Claude about “${escape(term)}”</button>`;
 }
 
-async function askAbout(term) {
+async function askAbout(term, why = "No Anthropic key in Settings") {
   const panel = $("brain");
   const key = slug(term);
   if (!panel || !key) return;
@@ -624,7 +626,11 @@ async function askAbout(term) {
     return;
   }
   asked.add(key);
-  panel.innerHTML = `<div class="waiting">Asking about “${escape(term)}”… this one is new, so it takes about half a minute. Keep typing.</div>`;
+  // Whoever is waiting half a minute deserves to know it is half a minute and
+  // what put them on this route, while they are waiting rather than afterwards.
+  panel.innerHTML =
+    `<div class="waiting">Asking through a workflow — about half a minute. Keep typing.</div>` +
+    `<div class="route">${escape(why)}</div>`;
 
   try {
     const res = await gh(
@@ -647,11 +653,27 @@ async function askAbout(term) {
     const info = await freshExplanation(key);
     if (info) {
       // Only paint it if the word in the box is still this one.
-      if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(info);
+      if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) {
+        renderExplanation(info);
+        routeNote(`came through a workflow · ${why}`);
+      }
       return;
     }
   }
   panel.innerHTML = `<div class="waiting">Still working. Check the Actions tab, or type the word again in a minute.</div>`;
+}
+
+// "It still goes through a workflow" is impossible to answer from the outside:
+// there are two routes, several reasons to take the slow one, and nothing on
+// screen ever said which had happened. So every ask now leaves a line saying
+// which route it took and, when it was the slow one, why.
+function routeNote(text) {
+  const panel = $("brain");
+  if (!panel) return;
+  const line = document.createElement("div");
+  line.className = "route";
+  line.textContent = text;
+  panel.appendChild(line);
 }
 
 async function askDirect(term) {
@@ -659,22 +681,23 @@ async function askDirect(term) {
   const key = slug(term);
   if (!panel || !key || asked.has(key)) return;
   asked.add(key);
-  panel.innerHTML = `<div class="waiting">Asking about “${escape(term)}”…</div>`;
+  panel.innerHTML = `<div class="waiting">Asking Claude directly about “${escape(term)}”…</div>`;
 
   let info;
+  const started = Date.now();
   try {
     info = await askAnthropic(term);
   } catch (err) {
     // The workflow is slower but does not depend on the key in this browser
     // being right, so a failure here falls back to it rather than giving up.
+    // Quietly, though, it would look exactly like the key never being read.
     asked.delete(key);
-    if ($("token").value.trim()) {
-      note(`Claude could not be reached directly (${err.message || err}); using the workflow.`);
-      return void askAbout(term);
-    }
-    panel.innerHTML = `<div class="waiting">${escape(err.message || String(err))}</div>`;
+    const why = err.message || String(err);
+    if ($("token").value.trim()) return void askAbout(term, `Claude could not be reached directly — ${why}`);
+    panel.innerHTML = `<div class="waiting">${escape(why)}</div>`;
     return;
   }
+  const took = ((Date.now() - started) / 1000).toFixed(1);
 
   if (info.recognised === false) {
     // Claude was asked and said it is not a word. Worth showing, not worth
@@ -685,7 +708,10 @@ async function askDirect(term) {
     return;
   }
   rememberExplanation(key, info);
-  if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(info);
+  if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) {
+    renderExplanation(info);
+    routeNote(`asked Claude directly · ${took}s`);
+  }
 }
 
 async function explainTerm(term, { settled = false } = {}) {
