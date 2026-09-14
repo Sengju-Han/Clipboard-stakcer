@@ -1,0 +1,29 @@
+{
+  "word": "bring up",
+  "meaning": "to raise a child from infancy to adulthood; to mention a topic in conversation.",
+  "pronunciation": "/brɪŋ ˈʌp/",
+  "korean": "자녀를 양육하다; 화제를 꺼내다",
+  "tone": "neutral",
+  "nuance": "As 'raise a child', it's more personal and intimate than the formal 'raise'—you bring up someone you know and care for. As 'mention', it suggests introducing something for discussion without warning, often at an inopportune moment.",
+  "collocations": [
+    "brought up in poverty",
+    "bring up a subject",
+    "bring up children",
+    "bring up the issue"
+  ],
+  "confusables": [
+    {
+      "word": "raise",
+      "difference": "'Raise' is more formal and institutional; 'bring up' is personal and everyday. You raise funds or animals; you bring up a child you live with."
+    },
+    {
+      "word": "mention",
+      "difference": "'Mention' is neutral; 'bring up' implies you're introducing something for active discussion or debate."
+    }
+  ],
+  "examples": [
+    "She was brought up in a small village and never lost her accent.",
+    "Don't bring up politics at dinner—you know how your uncle gets."
+  ],
+  "memory_hook": "The image of physically bringing a child up—lifting them from the ground, helping them grow upward."
+}
