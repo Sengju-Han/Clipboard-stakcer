@@ -1,0 +1,26 @@
+{
+  "recognised": true,
+  "word": "beat around the bush",
+  "meaning": "to avoid talking directly about the main point; to use evasive language instead of being straightforward.",
+  "pronunciation": "/ˌbiːt əˈraʊnd ðə ˈbʊʃ/",
+  "korean": "우회적으로 말하다",
+  "tone": "neutral",
+  "nuance": "It suggests deliberate avoidance born of reluctance, embarrassment, or caution—not mere wordiness. A native speaker uses it when someone is wasting time getting to an uncomfortable truth.",
+  "collocations": [
+    "stop beating around the bush",
+    "quit beating around the bush",
+    "don't beat around the bush",
+    "beating around the bush won't help"
+  ],
+  "confusables": [
+    {
+      "word": "hedge",
+      "difference": "hedge means to be cautiously noncommittal; beating around the bush means to delay saying something you know you must say"
+    }
+  ],
+  "examples": [
+    "Just tell me whether I got the job—stop beating around the bush.",
+    "She kept beating around the bush, but eventually admitted she wanted a divorce."
+  ],
+  "memory_hook": "A hunter beating the bush to flush out a bird instead of aiming straight at it—taking the indirect route."
+}
