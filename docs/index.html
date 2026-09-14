@@ -208,7 +208,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.5";
+const VERSION = "2026-09-14.6";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -710,14 +710,27 @@ async function explainTerm(term, { settled = false } = {}) {
   // for anyone who does not want to wait for the pause.
   // Nothing below this line is free, so the obvious non-words stop here.
   if (settled && !worthAsking(term)) return;
-  if (settled && !OFFLINE_ORIGIN && $("anthropic").value.trim()) return void askDirect(term);
-  if (settled && !OFFLINE_ORIGIN && $("token").value.trim()) return void askAbout(term);
+  if (settled && !OFFLINE_ORIGIN && canAsk()) return void ask(term);
   // Being here after the word settled means something stopped the automatic
   // ask, and the reason is worth showing rather than leaving a bare button.
   offerToAsk(term, !settled ? ""
     : OFFLINE_ORIGIN ? "Opened as a file, so this cannot run on its own."
-    : !$("token").value.trim() ? "Add a token under Settings and this happens on its own."
+    : !canAsk() ? "Add a key or a token under Settings and this happens on its own."
     : "");
+}
+
+// Which way a question goes is one decision, and it has to be the same
+// decision whether the pause asked or you pressed the button. It was not: the
+// button went to the workflow whatever was in Settings, so a key sat there
+// unused while every tap took the slow path. The button is the one you reach
+// for when you do not want to wait, which made it exactly the wrong thing to
+// send the long way round.
+function canAsk() {
+  return Boolean($("anthropic").value.trim() || $("token").value.trim());
+}
+
+function ask(term) {
+  return $("anthropic").value.trim() ? askDirect(term) : askAbout(term);
 }
 
 // The word is finished when you leave the field, or stop typing for long enough.
@@ -732,8 +745,8 @@ function wireBrain() {
   const panel = $("brain");
   if (!panel) return;
   panel.addEventListener("click", (event) => {
-    const ask = event.target.closest("button.ask");
-    if (ask) return void askAbout(ask.dataset.term);
+    const wants = event.target.closest("button.ask");
+    if (wants) return void ask(wants.dataset.term);
     const reveal = event.target.closest("button.reveal");
     if (reveal) {
       const korean = reveal.dataset.korean || "";
