@@ -121,8 +121,40 @@ def main() -> int:
 
     import anthropic
 
+    # Without this the SDK raises a TypeError about header resolution, which
+    # says nothing about what to actually do. The fix is one setting, so name it.
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        print(
+            "::error::ANTHROPIC_API_KEY is not set for this repository. "
+            "Add it under Settings -> Secrets and variables -> Actions -> "
+            "New repository secret, named exactly ANTHROPIC_API_KEY. A secret on "
+            "your account or on an environment is not the same thing and this "
+            "workflow cannot see it.",
+            flush=True,
+        )
+        return 1
+
     print(f"Asking about {term!r}...", flush=True)
-    answer = explain(term, anthropic.Anthropic(), model=args.model)
+    try:
+        answer = explain(term, anthropic.Anthropic(), model=args.model)
+    except anthropic.AuthenticationError:
+        print(
+            "::error::The API key was rejected. It is set, but it is not a valid "
+            "key - most often a partial paste, or a key that has been revoked. "
+            "Make a new one at console.anthropic.com and save it again.",
+            flush=True,
+        )
+        return 1
+    except anthropic.BadRequestError as exc:
+        if "credit balance" in str(exc).lower():
+            print(
+                "::error::The key works, but the account has no credit. Buy credit "
+                "at console.anthropic.com -> Billing. This is separate from a "
+                "Claude subscription; a Pro or Max plan does not pay for API calls.",
+                flush=True,
+            )
+            return 1
+        raise
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
