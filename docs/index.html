@@ -165,6 +165,10 @@
       <label for="token">GitHub token <span class="hint">fine-grained, Actions: read and write on this repo only</span></label>
       <input id="token" type="password" placeholder="github_pat_...">
     </div>
+    <div class="row">
+      <label for="anthropic">Anthropic key <span class="hint">optional — lookups go straight to Claude instead of through a workflow, seconds instead of half a minute</span></label>
+      <input id="anthropic" type="password" placeholder="sk-ant-...">
+    </div>
     <div class="row two">
       <div>
         <label for="owner">Owner</label>
@@ -187,9 +191,15 @@
     </div>
     <hr class="sep">
     <p class="note">
-      The token is kept in this browser only, and is sent to api.github.com and nowhere
-      else. It never reaches this page's source, the repository, or anyone else. Clear it
-      by emptying the box and adding a card, or by clearing this site's data.
+      Both keys are kept in this browser only. The GitHub token is sent to api.github.com
+      and the Anthropic key to api.anthropic.com, each to nowhere else. Neither reaches
+      this page's source, the repository, or anyone else. Clear either by emptying its box
+      and adding a card, or by clearing this site's data.
+    </p>
+    <p class="note">
+      A key held in a browser is only as private as the device holding it, so it is worth
+      giving the Anthropic key a spend limit in the Console. Leave the box empty and
+      lookups go through a workflow instead: slower, but nothing is stored here.
     </p>
   </details>
 </main>
@@ -198,7 +208,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.1";
+const VERSION = "2026-09-14.2";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -225,7 +235,7 @@ function note(html) {
 }
 
 // ---- settings ------------------------------------------------------------
-const SETTINGS = ["token", "owner", "repo", "ref", "voice"];
+const SETTINGS = ["token", "anthropic", "owner", "repo", "ref", "voice"];
 const DEFAULTS = { ref: "main", voice: "en-US-AvaNeural" };
 for (const key of SETTINGS) $(key).value = store.get(key, DEFAULTS[key] || "");
 // Owner and repo can be inferred from the Pages URL, so most people never open this.
@@ -407,6 +417,106 @@ async function cachedExplanation(key) {
   return null;
 }
 
+// ---- asking Claude from here ---------------------------------------------
+// A workflow takes about twenty-three seconds, and roughly two thirds of that
+// is GitHub finding a runner, checking the repository out and installing
+// Python before a single word is asked. None of that work is for us. With a
+// key in this browser the question goes straight to the API and comes back in
+// a few seconds, which is the difference between a pause you notice and one
+// you do not.
+//
+// The key is yours, held in this browser, sent to api.anthropic.com and
+// nowhere else - the arrangement Anthropic calls bring-your-own-key, and the
+// reason the header below has "dangerous" in its name: it would be reckless on
+// a site serving other people, because the key would be the operator's. Here
+// the only key at risk is your own, on your own phone. Leave the field empty
+// and none of this happens; the workflow path still works.
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_VERSION = "2023-06-01";
+const EXPLAIN_MODEL = "claude-haiku-4-5";
+
+// The prompt and the schema live in one file that anki/explain.py writes, so
+// the page and the workflow cannot drift into asking for different things.
+let contractPromise = null;
+function explainContract() {
+  if (!contractPromise) {
+    contractPromise = fetch("explain-contract.json", { cache: "no-cache" })
+      .then((res) => { if (!res.ok) throw new Error("contract " + res.status); return res.json(); });
+  }
+  return contractPromise;
+}
+
+// Reading a word twice should never cost anything, and should never wait. The
+// repository cache is shared across devices but needs a round trip; this one is
+// local and instant, and is written the moment an answer arrives.
+const LOCAL_CACHE = "explain:";
+
+function localExplanation(key) {
+  try {
+    const raw = localStorage.getItem(LOCAL_CACHE + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function rememberExplanation(key, info) {
+  try { localStorage.setItem(LOCAL_CACHE + key, JSON.stringify(info)); } catch { /* full or blocked */ }
+}
+
+async function askAnthropic(term) {
+  const { system, schema, max_tokens } = await explainContract();
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": $("anthropic").value.trim(),
+      "anthropic-version": ANTHROPIC_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: EXPLAIN_MODEL,
+      max_tokens,
+      system,
+      messages: [{ role: "user", content: term }],
+      output_config: { format: { type: "json_schema", schema } },
+    }),
+  });
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const said = payload?.error?.message || `${res.status}`;
+    throw new Error(
+      res.status === 401 ? "Claude rejected the key in Settings."
+      : res.status === 429 ? "Claude is rate limiting; it will work again shortly."
+      : /credit balance/i.test(said) ? "The Anthropic account is out of credit."
+      : said);
+  }
+  if (payload.stop_reason === "refusal") throw new Error("Claude declined to explain that one.");
+  const text = (payload.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  if (!text) throw new Error("Claude sent nothing back.");
+  return JSON.parse(text);
+}
+
+// Answers still belong in the repository, so the other device has them too and
+// so a reinstalled browser does not start from nothing. Writing the file here
+// costs one request and no second trip to the model - going back through the
+// workflow would pay for the whole answer twice.
+async function saveExplanation(key, info) {
+  const owner = $("owner").value.trim(), repo = $("repo").value.trim();
+  if (!owner || !repo || !$("token").value.trim()) return;
+  const body = JSON.stringify(info, null, 2) + "\n";
+  const content = btoa(String.fromCharCode(...new TextEncoder().encode(body)));
+  try {
+    await gh(`/repos/${owner}/${repo}/contents/${CACHE_PATH}${key}.json`, {
+      method: "PUT",
+      body: JSON.stringify({
+        message: `Explain ${key}`,
+        content,
+        branch: $("ref").value.trim() || "main",
+      }),
+    });
+  } catch { /* the answer is already on screen and in this browser; this is a bonus */ }
+}
+
 // A freshly written answer is in git before the site has rebuilt, so it is read
 // from the API rather than waiting for a deploy.
 async function freshExplanation(key) {
@@ -525,6 +635,33 @@ async function askAbout(term) {
   panel.innerHTML = `<div class="waiting">Still working. Check the Actions tab, or type the word again in a minute.</div>`;
 }
 
+async function askDirect(term) {
+  const panel = $("brain");
+  const key = slug(term);
+  if (!panel || !key || asked.has(key)) return;
+  asked.add(key);
+  panel.innerHTML = `<div class="waiting">Asking about “${escape(term)}”…</div>`;
+
+  let info;
+  try {
+    info = await askAnthropic(term);
+  } catch (err) {
+    // The workflow is slower but does not depend on the key in this browser
+    // being right, so a failure here falls back to it rather than giving up.
+    asked.delete(key);
+    if ($("token").value.trim()) {
+      note(`Claude could not be reached directly (${err.message || err}); using the workflow.`);
+      return void askAbout(term);
+    }
+    panel.innerHTML = `<div class="waiting">${escape(err.message || String(err))}</div>`;
+    return;
+  }
+
+  rememberExplanation(key, info);
+  if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(info);
+  saveExplanation(key, info);
+}
+
 async function explainTerm(term, { settled = false } = {}) {
   const panel = $("brain");
   if (!panel) return;
@@ -533,13 +670,19 @@ async function explainTerm(term, { settled = false } = {}) {
   if (asked.has(key)) return;   // already on its way; leave the waiting text alone
   if (!settled) panel.innerHTML = "";
 
-  const cached = (await cachedExplanation(key)) || (await freshExplanation(key));
+  // Cheapest first: this browser, then the deployed site, then the API. The
+  // first two cost nothing and the local one does not even wait for a network.
+  const cached = localExplanation(key)
+    || (await cachedExplanation(key))
+    || (await freshExplanation(key));
   if (cached) {
+    rememberExplanation(key, cached);
     if (slug(lookupTerm(document.getElementById("f-Back")?.value || "")) === key) renderExplanation(cached);
     return;
   }
   // Only spend once the word looks finished. Until then the button is there
   // for anyone who does not want to wait for the pause.
+  if (settled && !OFFLINE_ORIGIN && $("anthropic").value.trim()) return void askDirect(term);
   if (settled && !OFFLINE_ORIGIN && $("token").value.trim()) return void askAbout(term);
   // Being here after the word settled means something stopped the automatic
   // ask, and the reason is worth showing rather than leaving a bare button.

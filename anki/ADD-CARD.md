@@ -235,15 +235,32 @@ whole-collection audit, where one pass reads every sentence you own.
 
 ### On waiting
 
-Haiku is cheaper, not faster. Measured on one word each, the model call took
-11s on Haiku and 8s on Sonnet — the model is not what makes a lookup feel slow.
-A run is about 23 seconds end to end, and roughly two thirds of that is GitHub
-starting a runner, checking the repository out and installing Python. No model
-gets under that floor.
+A workflow lookup takes about 23 seconds, and roughly two thirds of that is
+GitHub finding a runner, checking the repository out and installing Python
+before a single word is asked. The model is 8–11 seconds of it, and swapping
+models does not help: Haiku measured 11s against Sonnet's 8s. Haiku is cheaper,
+not faster.
 
-What removes the wait is not making you sit through it. The page asks the
-moment you stop typing and lets you carry on, and a word that has been asked
-once is served from the cache instantly and free, forever.
+**Put an Anthropic key in Settings and the workflow is skipped entirely.** The
+question goes from your browser straight to the API, which removes all of the
+runner overhead and leaves only the model. Leave the box empty and the workflow
+path still works exactly as before.
+
+The key is yours, held in this browser, sent to `api.anthropic.com` and nowhere
+else — what Anthropic calls the bring-your-own-key pattern, enabled by the
+`anthropic-dangerous-direct-browser-access` header. The word "dangerous" is
+about sites that ship *the operator's* key to strangers; here the only key at
+risk is your own, on your own phone. Give it a spend limit in the Console
+anyway.
+
+Answers are cached in three places, cheapest first: this browser (instant, no
+network), the deployed site, then the repository. A word asked once is free and
+immediate forever after, on this device and — because the page writes the
+answer back to `docs/lookups/` — on your others too.
+
+Even so, the wait you actually feel is usually zero: the question goes the
+moment you stop typing, while you carry on to the example sentence, and the
+answer sits behind **Show meaning** until you ask for it.
 New accounts get a small amount of free credit, and at this rate that covers a
 great many cards.
 
