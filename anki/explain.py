@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from proofread import MODEL  # noqa: E402
+from proofread import MODEL, api_key, key_shape  # noqa: E402
 
 SYSTEM = """You explain English words to a Korean adult who is building \
 vocabulary flashcards. They are past beginner: they know the common words and \
@@ -123,7 +123,7 @@ def main() -> int:
 
     # Without this the SDK raises a TypeError about header resolution, which
     # says nothing about what to actually do. The fix is one setting, so name it.
-    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+    if not api_key():
         print(
             "::error::ANTHROPIC_API_KEY is not set for this repository. "
             "Add it under Settings -> Secrets and variables -> Actions -> "
@@ -136,12 +136,14 @@ def main() -> int:
 
     print(f"Asking about {term!r}...", flush=True)
     try:
-        answer = explain(term, anthropic.Anthropic(), model=args.model)
+        answer = explain(term, anthropic.Anthropic(api_key=api_key()), model=args.model)
     except anthropic.AuthenticationError:
         print(
-            "::error::The API key was rejected. It is set, but it is not a valid "
-            "key - most often a partial paste, or a key that has been revoked. "
-            "Make a new one at console.anthropic.com and save it again.",
+            f"::error::The API key was rejected: {key_shape()}. Replace the "
+            "ANTHROPIC_API_KEY secret with a key copied whole from "
+            "console.anthropic.com. The console shows a key in full only at the "
+            "moment you create it; afterwards it is masked, and the masked form "
+            "is not a usable key.",
             flush=True,
         )
         return 1

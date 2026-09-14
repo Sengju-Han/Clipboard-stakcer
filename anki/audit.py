@@ -35,6 +35,7 @@ from export_deck import (  # noqa: E402
     write_summary,
 )
 from proofread import (  # noqa: E402
+    api_key,
     apply_correction,
     check_with_languagetool,
     has_markup,
@@ -196,7 +197,7 @@ def main() -> int:
     if args.checker == "claude" and pending:
         import anthropic
 
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(api_key=api_key())
 
     for start in range(0, len(pending), args.batch):
         batch = pending[start : start + args.batch]
