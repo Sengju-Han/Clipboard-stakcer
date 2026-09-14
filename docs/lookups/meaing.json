@@ -1,0 +1,30 @@
+{
+  "word": "meaning",
+  "meaning": "the sense or significance that something conveys; what something is intended to express or represent",
+  "pronunciation": "/ˈmiːnɪŋ/",
+  "korean": "의미",
+  "tone": "neutral",
+  "nuance": "Used for both concrete definitions (word meaning) and deeper significance (life's meaning) — context tells you which. Prefer 'significance' when talking about importance, and 'meaning' when talking about interpretation or intent.",
+  "collocations": [
+    "the meaning of life",
+    "lose meaning",
+    "take on new meaning",
+    "convey meaning",
+    "the true meaning behind"
+  ],
+  "confusables": [
+    {
+      "word": "significance",
+      "difference": "significance emphasizes importance or consequence; meaning emphasizes interpretation or sense"
+    },
+    {
+      "word": "definition",
+      "difference": "definition is the formal, dictionary-style explanation; meaning is broader and can be personal or contextual"
+    }
+  ],
+  "examples": [
+    "I don't understand the meaning of this word.",
+    "After his son was born, work took on a whole new meaning for him."
+  ],
+  "memory_hook": "From Old English 'mænan' (to intend) — meaning is what someone intends you to understand."
+}
