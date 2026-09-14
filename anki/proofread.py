@@ -50,6 +50,26 @@ def api_key() -> str:
     return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
+def workspace_id() -> str:
+    """Optional. Only keys that are not already tied to a workspace need it."""
+    return os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+
+
+def client():
+    """The Anthropic client, built from a repaired key.
+
+    An organization-level key belongs to no workspace, and the API will not
+    guess one: it refuses the request and asks for the workspace in a header.
+    A key made inside a workspace carries it already and needs none of this,
+    which is why ANTHROPIC_WORKSPACE_ID is optional.
+    """
+    import anthropic
+
+    workspace = workspace_id()
+    headers = {"anthropic-workspace-id": workspace} if workspace else None
+    return anthropic.Anthropic(api_key=api_key(), default_headers=headers)
+
+
 def key_shape() -> str:
     """Why a key looks wrong, said without revealing it."""
     raw = os.environ.get("ANTHROPIC_API_KEY", "")

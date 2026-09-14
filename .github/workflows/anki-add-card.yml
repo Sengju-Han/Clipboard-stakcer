@@ -81,6 +81,9 @@ jobs:
           # different model; LANGUAGETOOL_URL points at your own LanguageTool
           # instead of the free public one.
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          # Only needed for a key that belongs to the organization rather
+          # than to a workspace. A key made inside a workspace needs none.
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           LANGUAGETOOL_URL: ${{ vars.LANGUAGETOOL_URL }}
           # Passed as environment variables, never interpolated into the shell.
           DECK: ${{ inputs.deck }}
