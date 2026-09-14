@@ -210,7 +210,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.8";
+const VERSION = "2026-09-14.9";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -318,20 +318,25 @@ function lookupTerm(raw) {
 
 // Asking happens on its own, which means it also happens for things that are
 // not words. It has already paid to be told that "fjadslf" is random keyboard
-// input, and to have a whole remembered clause treated as vocabulary. Neither
-// needed a model to rule out.
+// input, which did not need a model to rule out.
 //
-// The test is deliberately loose. It is here to catch a mash of the keyboard
-// and a sentence, not to referee English: a real word wrongly refused is worse
-// than a wasted fraction of a cent, so anything arguable gets asked.
+// The test is deliberately loose, and the first version was not loose enough:
+// a three-word cap meant to stop a remembered clause silently refused "beating
+// around the bush", "a blessing in disguise" and every other idiom worth
+// learning - no panel, no message, nothing, which is far worse than the wasted
+// fraction of a cent it was saving. Six words covers the long ones ("kill two
+// birds with one stone") and even the long ones ("the straw that broke the
+// camel's back"); what gets through is for the model to judge, which it does:
+// an answer that comes back unrecognised is never cached. The length cap is
+// what actually stops a rambling clause, and pressing the button skips this
+// test altogether, so nothing is ever permanently out of reach.
 const VOWEL = /[aeiouy]/;
 const UNSAYABLE = /[bcdfghjklmnpqrstvwxz]{5}/;
 
 function worthAsking(term) {
-  if (term.length < 2 || term.length > 30) return false;
+  if (term.length < 2 || term.length > 60) return false;
   const words = term.split(/[\s-]+/).filter(Boolean);
-  // Phrasal verbs and short idioms are the point; a remembered clause is not.
-  if (words.length > 3) return false;
+  if (words.length > 8) return false;
   // Every English word has a vowel in it, and none has five consonants in a row.
   return words.every((w) => VOWEL.test(w) && !UNSAYABLE.test(w));
 }
