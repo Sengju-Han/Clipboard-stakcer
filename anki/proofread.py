@@ -26,10 +26,21 @@ import urllib.request
 
 from pydantic import BaseModel
 
-# Claude Sonnet 5: $2 per million input tokens, $10 per million output, which is
-# roughly a fifth of Opus for a job that is mostly spotting typos. Override it
-# with an ANTHROPIC_MODEL repository variable rather than editing this line.
-MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-sonnet-5"
+# Claude Haiku 4.5: $1 per million input tokens, $5 per million output - half
+# of Sonnet 5, for work that is mostly spotting typos and writing a dictionary
+# entry.
+#
+# It is not chosen for speed, and it did not deliver any: one word on each
+# model measured 11s on Haiku against 8s on Sonnet. The model is not what makes
+# a lookup feel slow. A run is about 23 seconds end to end and roughly two
+# thirds of that is GitHub starting a runner, checking out and installing -
+# a floor no model can get under. What actually removes the wait is that the
+# page asks while you keep typing, and never asks twice for the same word.
+#
+# Set an ANTHROPIC_MODEL repository variable to "claude-sonnet-5" to trade the
+# money back for more careful judgement, particularly on a whole-collection
+# audit; do not edit this line.
+MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-haiku-4-5"
 
 # Everything after the first block break is the learner's own note - a gloss, a
 # definition, often in another language. It is not part of the sentence and is

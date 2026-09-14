@@ -75,6 +75,18 @@ class Explanation(BaseModel):
     memory_hook: str
 
 
+# The page asks Claude directly now, so the prompt and the schema have two
+# consumers in two languages. Rather than keep a copy in each and watch them
+# drift, this writes the pair out as one file the page reads. Python stays the
+# source of truth; --write-contract regenerates it.
+def contract() -> dict:
+    schema = Explanation.model_json_schema()
+    schema["additionalProperties"] = False
+    for sub in schema.get("$defs", {}).values():
+        sub["additionalProperties"] = False
+    return {"system": SYSTEM, "schema": schema, "max_tokens": 4000}
+
+
 def slug(term: str) -> str:
     """Cache key. Stable, lowercase, and safe as a filename."""
     return re.sub(r"[^a-z0-9]+", "-", term.strip().lower()).strip("-")
@@ -83,7 +95,7 @@ def slug(term: str) -> str:
 def explain(term: str, client, *, model: str = "") -> Explanation:
     response = client.messages.parse(
         model=model or MODEL,
-        max_tokens=16000,
+        max_tokens=4000,
         system=SYSTEM,
         messages=[{"role": "user", "content": term.strip()}],
         output_format=Explanation,
@@ -95,15 +107,26 @@ def explain(term: str, client, *, model: str = "") -> Explanation:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Explain a word and cache the answer.")
-    parser.add_argument("--word", required=True)
+    parser.add_argument("--word", default="")
     parser.add_argument("--cache-dir", default="docs/lookups")
     parser.add_argument("--model", default="")
     parser.add_argument("--force", action="store_true", help="Re-ask even if it is cached.")
+    parser.add_argument("--write-contract", default="", metavar="PATH",
+                        help="Write the prompt and schema the page reads, then stop.")
     args = parser.parse_args()
+
+    if args.write_contract:
+        target = Path(args.write_contract)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(contract(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"Wrote {target}", flush=True)
+        return 0
 
     term = args.word.strip()
     if not term:
-        print("::error::No word was given.", flush=True)
+        print("::error::No word was given. Pass --word.", flush=True)
         return 1
     if len(term) > 80:
         print("::error::That is too long to be a word or a phrase.", flush=True)
