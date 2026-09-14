@@ -1,0 +1,30 @@
+{
+  "recognised": true,
+  "word": "matter",
+  "meaning": "to be important or significant; to have consequence or weight in someone's decision or feelings.",
+  "pronunciation": "/ˈmætə(r)/",
+  "korean": "중요하다",
+  "tone": "neutral",
+  "nuance": "Signals that something carries real weight—not just that it exists, but that it shapes what happens next or how someone feels. A native speaker uses it when stakes are real, not for small preferences.",
+  "collocations": [
+    "it matters (to me)",
+    "what matters most",
+    "doesn't matter much",
+    "matter of life and death"
+  ],
+  "confusables": [
+    {
+      "word": "mind",
+      "difference": "Mind means to object or be bothered; matter means to have importance. 'Does it matter?' asks if it's significant; 'Do you mind?' asks if you object."
+    },
+    {
+      "word": "care",
+      "difference": "Care is about personal concern or attention; matter is about objective importance. 'I don't care' is dismissal; 'It doesn't matter' is that the outcome won't change anything."
+    }
+  ],
+  "examples": [
+    "What matters is that you show up on time, not what you wear.",
+    "When you're raising children, your decisions matter in ways they didn't before."
+  ],
+  "memory_hook": "Same root as material and matter (the substance)—what matters is the stuff that is actually there and makes a real difference."
+}
