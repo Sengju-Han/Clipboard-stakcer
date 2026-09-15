@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.11";
+const VERSION = "2026-09-15.12";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -662,8 +662,9 @@ $("add-form").addEventListener("submit", async (event) => {
 // Whatever else this app is, it must never be a place data goes into and
 // cannot come out of. Two ways out: everything, losslessly, for coming back
 // here; and a CSV Anki imports, for leaving.
-function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(name, body, type) {
+  // Text from the JSON and CSV exports, an already-built Blob from the .apkg.
+  const url = URL.createObjectURL(body instanceof Blob ? body : new Blob([body], { type }));
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
@@ -690,6 +691,37 @@ $("export-json-btn").addEventListener("click", async () => {
     reviews: log,
   }, null, 1), "application/json");
   $("settings-note").textContent = `${cards.length} cards and ${log.length} reviews saved to your downloads.`;
+});
+
+// A deck you cannot get back out is a deck you are renting. This writes the
+// real thing — every card, deck, tag and, unlike a CSV, every card's schedule
+// and the whole review history — in the container every Anki ever shipped
+// reads. The guids travel with it, so importing this into the collection it
+// came from updates those notes rather than doubling them.
+$("export-apkg-btn").addEventListener("click", async () => {
+  const button = $("export-apkg-btn");
+  if (button.disabled) return;
+  button.disabled = true;
+  const say = (text) => { $("settings-note").textContent = text; };
+  try {
+    const [cards, log, mod] = await Promise.all([
+      store.allCards(), store.history(), import("./apkgout.js"),
+    ]);
+    const blob = await mod.buildApkg(cards, log, { onProgress: say });
+    download(`lexis-${stamp()}.apkg`, blob, "application/octet-stream");
+    const sounds = cards.filter((c) => c.audio).length;
+    say(`${cards.length} cards and ${log.length} reviews written as an .apkg, ` +
+      `with their decks, tags and scheduling. In Anki: File → Import, and turn on ` +
+      `“Import any learning progress” — left off, Anki resets every card to new on purpose. ` +
+      (sounds ? `The ${sounds} audio references point at files already in that collection, ` +
+        `so the mp3s are not in here and it stays small. ` : "") +
+      `The note ids travel too, so importing this back into the collection these came from ` +
+      `updates those notes rather than doubling them.`);
+  } catch (err) {
+    say(err.message || String(err));
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("export-csv-btn").addEventListener("click", async () => {
@@ -729,7 +761,7 @@ $("export-csv-btn").addEventListener("click", async () => {
   $("settings-note").textContent =
     `${cards.length} cards written as CSV, with their decks and tags. Anki reads the header, ` +
     `so File → Import needs nothing set by hand. Scheduling cannot travel in a CSV — ` +
-    `the JSON backup is what keeps that.`;
+    `the .apkg export carries that, and so does the JSON backup.`;
 });
 
 // ---- importing an .apkg --------------------------------------------------
