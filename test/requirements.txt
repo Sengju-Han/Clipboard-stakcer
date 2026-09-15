@@ -1,2 +1,6 @@
 playwright>=1.40
 pytest>=8.0
+# The explanation helpers describe their schema with pydantic and import it at
+# module level. Nothing here needs the Anthropic SDK: the client is built
+# inside the function that calls it, so these tests never reach for a key.
+pydantic>=2.0
