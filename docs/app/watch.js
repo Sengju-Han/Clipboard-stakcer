@@ -301,7 +301,9 @@ export function mountWatch(hooks) {
     if (!cue || button.disabled) return;
     button.disabled = true;
     try {
-      const clip = await import("./clip.js");
+      const clip = await import("./clip.js").catch(() => {
+        throw new Error("The recorder has not been downloaded yet. Open this once with a connection.");
+      });
       if (!clip.canCapture(media)) throw new Error("This browser cannot record from a video.");
       const { blob, extension, seconds } = await clip.captureLine(media, cue.start, cue.end, {
         onProgress: (text) => { button.textContent = text; },
@@ -332,7 +334,9 @@ export function mountWatch(hooks) {
     const panel = $("w-sheet-why");
     panel.innerHTML = `<div class="waiting">Looking up “${esc(sheetWord)}”…</div>`;
     try {
-      const mod = await import("./explain.js");
+      const mod = await import("./explain.js").catch(() => {
+        throw new Error("Explanations have not been downloaded yet. Open this once with a connection.");
+      });
       const { info, from } = await mod.explain(sheetWord, { apiKey: deps.apiKey() });
       panel.innerHTML = mod.render(info, from) || `<div class="waiting">Nothing more to add.</div>`;
     } catch (err) {

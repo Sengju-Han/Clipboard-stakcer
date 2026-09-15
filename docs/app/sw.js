@@ -5,17 +5,34 @@
 // reviewing yesterday's cards forever. The deck lives in IndexedDB, which is
 // the right place for it, and is refetched only when asked for.
 
-const CACHE = "lexis-2026-09-15.20";
+const CACHE = "lexis-2026-09-15.21";
+// Everything the app can do without a network, which is nearly all of it. Each
+// screen beyond the review loop is a module loaded on demand, and a module
+// that has never been loaded is a module that is not in the cache — so on a
+// train, the first tap on Watch used to do nothing at all and Progress opened
+// blank. They are listed here so the first tap works wherever it happens.
 const SHELL = [
   "./", "./index.html", "./style.css", "./app.js",
   "./store.js", "./review.js", "./vendor/ts-fsrs.mjs",
-  // apkg.js and its libraries are fetched on demand, not pre-cached: the
-  // SQLite engine alone is most of a megabyte and most sessions never import.
+  "./stats.js",                                  // the charts
+  "./watch.js", "./subs.js", "./lex.js", "./clip.js",  // a downloaded episode and its subtitles
+  "./explain.js", "../explain-contract.json",    // what is already explained, after an Again
+  "./talk.js",                                   // opens and says what it needs
+  "./sync.js", "./account.js",                   // ditto
   "./manifest.webmanifest", "./icon.svg",
+  // apkg.js, apkgout.js and their libraries stay out: the SQLite engine alone
+  // is most of a megabyte, it is useless without the wasm beside it, and most
+  // sessions never import or export a file.
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(async (cache) => {
+    // One at a time rather than addAll, which is all or nothing: a single file
+    // that 404s would leave the app with no offline story whatever instead of
+    // one missing screen. The list is checked in the tests, so a path that has
+    // gone stale is caught there rather than silently here.
+    await Promise.all(SHELL.map((url) => cache.add(url).catch(() => {})));
+  }).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {
