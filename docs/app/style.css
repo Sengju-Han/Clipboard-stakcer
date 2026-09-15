@@ -1,0 +1,200 @@
+/* Lexis — a review screen for a phone held in one hand, often in the dark.
+   Dark by default and deliberately: this gets opened on a sofa at night more
+   than at a desk at noon. A light theme follows the system where asked for. */
+
+:root {
+  --ground: #101116;
+  --raised: #191A21;
+  --sunk: #0B0C10;
+  --ink: #F0EEE9;
+  --muted: #8E8B93;
+  --line: #2A2B34;
+  --accent: #E0A33F;
+  --again: #D9614C;
+  --hard: #C08A3E;
+  --good: #4C9E8A;
+  --easy: #5B8ED9;
+  --radius: 12px;
+  --pad: 20px;
+  --body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #FAF9F6;
+    --raised: #FFFFFF;
+    --sunk: #F0EEE8;
+    --ink: #1A1A1E;
+    --muted: #6C6A72;
+    --line: #DEDAD1;
+    --accent: #A9691F;
+    --again: #B4402B;
+    --hard: #916315;
+    --good: #2E7462;
+    --easy: #38609F;
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.5;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { min-height: 100%; display: flex; flex-direction: column; }
+.screen { flex: 1; display: flex; flex-direction: column; }
+.screen[hidden] { display: none; }
+
+.pad {
+  padding: max(24px, env(safe-area-inset-top)) var(--pad) calc(24px + env(safe-area-inset-bottom));
+  max-width: 560px; width: 100%; margin: 0 auto; flex: 1;
+  display: flex; flex-direction: column;
+}
+.pad.centre { justify-content: center; align-items: center; text-align: center; gap: 4px; }
+
+.wordmark {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0;
+}
+.lede { color: var(--muted); margin: 8px 0 0; }
+.fine { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+.hint { color: var(--muted); font-weight: 400; font-size: 12.5px; display: block; }
+
+/* buttons ---------------------------------------------------------------- */
+button { font: inherit; cursor: pointer; border-radius: var(--radius); }
+.primary {
+  background: var(--accent); color: var(--sunk); border: 0; font-weight: 650;
+  padding: 14px 18px; width: 100%;
+}
+.primary.big { padding: 18px; font-size: 17px; }
+.primary:active { filter: brightness(0.92); }
+.ghost {
+  background: transparent; color: var(--ink); border: 1px solid var(--line);
+  padding: 11px 14px;
+}
+.ghost.danger { color: var(--again); border-color: var(--again); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* home ------------------------------------------------------------------- */
+.home-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+.home-head .ghost { border: 0; font-size: 22px; padding: 4px 10px; color: var(--muted); }
+
+.figures { display: flex; gap: 10px; margin-bottom: 22px; }
+.figure {
+  flex: 1; background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px 12px; text-align: center;
+}
+.figure .n { display: block; font-size: 30px; font-weight: 700; line-height: 1.1;
+             font-variant-numeric: tabular-nums; }
+.figure .l { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.figure.due .n { color: var(--accent); }
+.figure.fresh .n { color: var(--easy); }
+
+.decks { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+.deck-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 13px 15px; width: 100%; text-align: left; color: var(--ink);
+}
+.deck-row .name { font-weight: 600; }
+.deck-row .tally { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.deck-row .tally b { color: var(--accent); font-weight: 600; }
+
+/* settings --------------------------------------------------------------- */
+.panel {
+  margin-top: 26px; background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 4px 15px;
+}
+.panel summary { cursor: pointer; padding: 11px 0; font-weight: 600; font-size: 15px; }
+.panel .row { padding: 10px 0; display: flex; flex-direction: column; gap: 7px; }
+.panel label { font-size: 14px; font-weight: 600; }
+.panel input[type="text"], .panel input[type="number"] {
+  background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 9px; padding: 10px 12px; font: inherit; font-size: 15px; width: 100%;
+}
+.panel input[type="range"] { width: 100%; accent-color: var(--accent); }
+.panel output { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.panel .ghost { width: 100%; margin-bottom: 8px; }
+.sep { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+
+/* review ----------------------------------------------------------------- */
+.screen.review { justify-content: space-between; }
+.review-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) var(--pad) 0;
+  max-width: 560px; width: 100%; margin: 0 auto;
+}
+.review-head .ghost { border: 0; font-size: 20px; padding: 6px 10px; color: var(--muted); }
+.progress { flex: 1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress .bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.25s ease; }
+.left { font-family: var(--mono); font-size: 13px; color: var(--muted);
+        font-variant-numeric: tabular-nums; min-width: 2ch; text-align: right; }
+
+.card-area {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  padding: 24px var(--pad); max-width: 560px; width: 100%; margin: 0 auto; gap: 14px;
+}
+.deck-tag {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin: 0;
+}
+.clue { font-size: 20px; line-height: 1.45; margin: 0; white-space: pre-line; }
+.word {
+  font-size: clamp(30px, 8vw, 40px); font-weight: 700; letter-spacing: -0.02em;
+  color: var(--accent); margin: 6px 0 0; line-height: 1.15;
+}
+.hook {
+  font-size: 15px; color: var(--muted); margin: 2px 0 0; font-style: italic;
+}
+.hook[hidden] { display: none; }
+.example {
+  font-size: 16px; color: var(--ink); margin: 0; padding-top: 12px;
+  border-top: 1px solid var(--line); line-height: 1.55;
+}
+.audio { align-self: flex-start; padding: 8px 14px; font-size: 14px; color: var(--muted); }
+
+.actions {
+  padding: 0 var(--pad) calc(20px + env(safe-area-inset-bottom));
+  max-width: 560px; width: 100%; margin: 0 auto;
+}
+.grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.grade {
+  background: var(--raised); border: 1px solid var(--line); color: var(--ink);
+  padding: 14px 4px 11px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.grade span { font-size: 14px; font-weight: 600; }
+.grade em {
+  font-style: normal; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.grade.again { border-color: var(--again); } .grade.again span { color: var(--again); }
+.grade.hard  { border-color: var(--hard);  } .grade.hard span  { color: var(--hard); }
+.grade.good  { border-color: var(--good);  } .grade.good span  { color: var(--good); }
+.grade.easy  { border-color: var(--easy);  } .grade.easy span  { color: var(--easy); }
+.grade:active { filter: brightness(1.25); }
+
+/* done ------------------------------------------------------------------- */
+.tick { font-size: 44px; color: var(--good); margin: 0; }
+#screen-done h2 { margin: 6px 0 0; font-size: 24px; }
+#screen-done .primary { max-width: 280px; margin-top: 22px; }
+
+/* boot ------------------------------------------------------------------- */
+.spinner {
+  width: 22px; height: 22px; margin-top: 20px; border-radius: 50%;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
