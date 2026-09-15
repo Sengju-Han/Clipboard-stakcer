@@ -2,10 +2,10 @@ name: Test the app
 
 on:
   pull_request:
-    paths: ["docs/app/**", "docs/deck/**", "test/**", ".github/workflows/app-test.yml"]
+    paths: ["docs/app/**", "docs/deck/**", "anki/**", "test/**", ".github/workflows/app-test.yml"]
   push:
     branches: [main]
-    paths: ["docs/app/**", "docs/deck/**", "test/**"]
+    paths: ["docs/app/**", "docs/deck/**", "anki/**", "test/**"]
   workflow_dispatch:
 
 jobs:
@@ -21,5 +21,10 @@ jobs:
         run: |
           pip install -r test/requirements.txt
           playwright install --with-deps chromium
-      - name: Run
+      # The quick ones first: they need no browser and they fail in a tenth of
+      # a second, so a broken conversion is not waiting behind a browser
+      # download to tell you.
+      - name: The Python side
+        run: python3 -m pytest test/python -q
+      - name: The app in a browser
         run: python3 test/run.py
