@@ -47,6 +47,28 @@ Anki's files.
 Verified by round trip: 1,177 cards exported as CSV and imported into a fresh
 Anki collection — 1177 new, 0 duplicates, 0 empty, decks preserved.
 
+## Your cards on both devices
+
+*Settings → Sync.* A token, an owner and a repository, on each device. Cards
+and reviews are kept as one JSON file in your own private repository — no
+account to make, no server to pay for, and the data stays somewhere you already
+control.
+
+Merging is per card, by when each was actually changed. Last-write-wins would
+keep whichever device pushed most recently, which can easily be the one that
+answered *first*; every card carries its own modification time instead, so a
+review answered on the tablet at nine beats one answered on the phone at eight
+whichever order they sync in. Reviews are events rather than state, so the two
+logs are unioned and the history ends up complete on both devices.
+
+Nothing is deleted by a sync, and the write is guarded by the file's sha — if
+the other device wrote while this one was merging, GitHub refuses and the app
+says to try again rather than overwriting their work.
+
+The backend sits behind a two-method interface, so when this outgrows a
+repository only the adapter changes. The merge is the hard part and it is not
+GitHub-specific.
+
 ## Browsing and fixing
 
 *Browse deck* searches word, hook, clue and example at once — including Korean,

@@ -126,8 +126,28 @@ export async function record(entry) {
   return run(["log"], "readwrite", (log) => log.put(entry));
 }
 
+// Every write stamps the card. Two devices reviewing the same word is the whole
+// reason sync is hard, and without a per-card modification time there is no way
+// to tell which answer happened later - only which device pushed last, which is
+// not the same thing and loses real reviews.
 export async function saveCard(card) {
-  return run(["cards"], "readwrite", (cards) => cards.put(card));
+  const stamped = { ...card, mod: Date.now() };
+  await run(["cards"], "readwrite", (cards) => cards.put(stamped));
+  return stamped;
+}
+
+// Bulk write for sync, which must not stamp: a card arriving from another
+// device already carries the time it was actually changed there.
+export async function putCards(list) {
+  return run(["cards"], "readwrite", (cards) => {
+    for (const card of list) cards.put(card);
+  });
+}
+
+export async function putLog(entries) {
+  return run(["log"], "readwrite", (log) => {
+    for (const entry of entries) log.put(entry);
+  });
 }
 
 // Deleting is the one action here that destroys something a learner made, so
