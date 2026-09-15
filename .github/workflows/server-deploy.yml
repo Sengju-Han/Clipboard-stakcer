@@ -20,21 +20,33 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check the secrets are there
+      # Not set up yet is not a failure. Until somebody has made a Cloudflare
+      # account there is nothing to deploy to, and a red cross on every push
+      # for a thing nobody has asked for yet is how people learn to ignore a
+      # red cross. It says what is missing and stops.
+      - name: Is there anywhere to deploy to?
+        id: ready
         run: |
           missing=""
           [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || missing="$missing CLOUDFLARE_API_TOKEN"
           [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          grep -q REPLACE_WITH_YOUR_D1_DATABASE_ID server/wrangler.toml && missing="$missing the-database-id"
           if [ -n "$missing" ]; then
-            echo "::error::Missing repository secret(s):$missing — see server/README.md, step 4."
-            exit 1
-          fi
-          if grep -q REPLACE_WITH_YOUR_D1_DATABASE_ID server/wrangler.toml; then
-            echo "::error::server/wrangler.toml still has the placeholder database id — see server/README.md, steps 1 and 2."
-            exit 1
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+            {
+              echo "### The server is not set up yet"
+              echo ""
+              echo "Still to do:\`$missing\`"
+              echo ""
+              echo "Four steps, no terminal: see [server/README.md](../blob/main/server/README.md)."
+              echo "Nothing was deployed, and nothing is broken — the app works without a server."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Test it before deploying it
+        if: steps.ready.outputs.ready == 'yes'
         working-directory: server
         run: |
           npm install --no-audit --no-fund
@@ -43,6 +55,7 @@ jobs:
       # Every statement is CREATE TABLE IF NOT EXISTS, so this is safe to run
       # on every deploy and does nothing on the second one.
       - name: Make sure the tables exist
+        if: steps.ready.outputs.ready == 'yes'
         working-directory: server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -50,6 +63,7 @@ jobs:
         run: npx --yes wrangler@4 d1 execute lexis --remote --yes --file=schema.sql
 
       - name: Deploy
+        if: steps.ready.outputs.ready == 'yes'
         working-directory: server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -57,6 +71,7 @@ jobs:
         run: npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
 
       - name: Say where it is
+        if: steps.ready.outputs.ready == 'yes'
         working-directory: server
         run: |
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
