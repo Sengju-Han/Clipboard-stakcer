@@ -1,0 +1,16 @@
+name = "lexis"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# Created once with:  wrangler d1 create lexis
+# then the id below is filled in. The deploy workflow does not create it: a
+# database is the one thing that must not be made by accident twice.
+[[d1_databases]]
+binding = "DB"
+database_name = "lexis"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# Where the app is served from. Anything else is refused at the CORS check, so
+# a page on another domain cannot quietly use somebody's session.
+ALLOWED_ORIGIN = "https://sengju-han.github.io"
