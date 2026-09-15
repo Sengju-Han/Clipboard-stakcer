@@ -19,7 +19,8 @@
       <p class="lede" id="boot-note">Opening your deck…</p>
       <div class="spinner" id="boot-spin" aria-hidden="true"></div>
       <div id="boot-actions" hidden>
-        <button class="primary" id="import-btn" type="button">Import my deck</button>
+        <button class="primary" id="import-btn" type="button">Import the published deck</button>
+        <button class="ghost wide" id="apkg-boot-btn" type="button">Open an .apkg file instead</button>
         <p class="fine" id="boot-detail"></p>
       </div>
     </div>
@@ -40,6 +41,7 @@
       </div>
 
       <button class="primary big" id="start-btn" type="button">Start reviewing</button>
+      <button class="ghost wide" id="add-btn" type="button">+ Add a card</button>
       <p class="fine" id="home-note"></p>
 
       <div class="decks" id="deck-list"></div>
@@ -60,6 +62,9 @@
           <input type="text" id="media-base" placeholder="../media/">
         </div>
         <hr class="sep">
+        <button class="ghost" id="apkg-btn" type="button">Import an .apkg from Anki</button>
+        <button class="ghost" id="export-json-btn" type="button">Back everything up (JSON)</button>
+        <button class="ghost" id="export-csv-btn" type="button">Export for Anki (CSV)</button>
         <button class="ghost" id="refresh-btn" type="button">Check for a newer deck</button>
         <button class="ghost danger" id="reset-btn" type="button">Erase local progress</button>
         <p class="fine" id="settings-note"></p>
@@ -99,6 +104,42 @@
     </footer>
   </section>
 
+  <!-- Add: a card typed here, saved here, due immediately. -->
+  <section class="screen" id="screen-add" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Add a card</h1>
+        <button class="ghost" id="add-close" type="button" aria-label="Back">✕</button>
+      </header>
+
+      <form id="add-form" autocomplete="off">
+        <div class="row">
+          <label for="a-word">Word or phrase</label>
+          <input type="text" id="a-word" required placeholder="beat around the bush">
+        </div>
+        <div class="row">
+          <label for="a-hook">Memory hook <span class="hint">optional — what makes it stick</span></label>
+          <input type="text" id="a-hook" placeholder="a hunter beating the bush instead of aiming">
+        </div>
+        <div class="row">
+          <label for="a-clue">Clue <span class="hint">what you will see before trying to recall it</span></label>
+          <textarea id="a-clue" rows="2" placeholder="우회적으로 말하다"></textarea>
+        </div>
+        <div class="row">
+          <label for="a-example">Example sentence</label>
+          <textarea id="a-example" rows="2" placeholder="Just tell me — stop beating around the bush."></textarea>
+        </div>
+        <div class="row">
+          <label for="a-deck">Deck</label>
+          <input type="text" id="a-deck" list="deck-options" placeholder="duo">
+          <datalist id="deck-options"></datalist>
+        </div>
+        <button class="primary big" type="submit">Add it</button>
+        <p class="fine" id="add-note"></p>
+      </form>
+    </div>
+  </section>
+
   <!-- Done -->
   <section class="screen" id="screen-done" hidden>
     <div class="pad centre">
@@ -111,6 +152,7 @@
 
 </main>
 
+<input type="file" id="apkg-file" accept=".apkg,.colpkg,application/zip" hidden>
 <script type="module" src="app.js"></script>
 </body>
 </html>

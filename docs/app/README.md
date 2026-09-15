@@ -23,6 +23,36 @@ its own icon, and it opens with no signal.
   on one line and a hook underneath. They are separated, and the hook appears
   with the answer, never with the clue.
 
+## Anki compatibility, precisely
+
+**In: yes, directly.** *Settings → Import an .apkg from Anki* reads the file
+AnkiDroid exports — unzipped, zstd-decompressed and queried in the browser.
+Nothing is uploaded. It handles the modern `collection.anki21b` format and the
+older `collection.anki21` / `collection.anki2`, and deliberately ignores the
+decoy `collection.anki2` that modern exports include so pre-2.1.50 Anki says
+"upgrade" instead of crashing — reading that would import one junk card and
+report success.
+
+**Out: content yes, scheduling no.** *Export for Anki (CSV)* writes a file Anki
+imports with nothing set by hand: decks and tags travel by declared column,
+the answer keeps its word, hook and example stacked. Scheduling cannot travel
+in a CSV. *Back everything up (JSON)* is the lossless one — every card, its
+FSRS state, and the full review log.
+
+**Not compatible:** this does not write `.apkg`, does not sync with AnkiWeb
+from the app, and does not use Anki's database format internally. It is not a
+drop-in replacement for Anki; it is a different app that reads and writes
+Anki's files.
+
+Verified by round trip: 1,177 cards exported as CSV and imported into a fresh
+Anki collection — 1177 new, 0 duplicates, 0 empty, decks preserved.
+
+## Adding cards
+
+*+ Add a card* on the home screen. Word, memory hook, clue, example, deck. It
+saves straight to this browser and is due immediately, so it works with no
+signal. A word already in the deck is refused rather than quietly duplicated.
+
 ## Getting your cards in
 
 Run **Build the review deck** under Actions. It pulls the collection from
@@ -51,7 +81,9 @@ conversion is approximate and the deck file records which cards it applied to.
 | `app.js` | The review loop and every screen. |
 | `review.js` | FSRS wiring, the queue, and what each grade button will do. |
 | `store.js` | IndexedDB: cards, an append-only review log, and settings. |
+| `apkg.js` | Reads an Anki `.apkg` in the browser. Loaded only when you import one. |
 | `vendor/ts-fsrs.mjs` | The scheduler. MIT, from Open Spaced Repetition, vendored rather than fetched from a CDN so it works offline. |
+| `vendor/fflate.mjs` · `vendor/fzstd.mjs` · `vendor/sql-wasm.*` | Zip, zstd and SQLite, all MIT. Fetched on demand, never pre-cached — the SQLite engine alone is most of a megabyte and most sessions never import a file. |
 | `sw.js` | Caches the app's own files. Never the deck — a stale deck cached behind the app's back is how you end up reviewing yesterday's cards forever. |
 
 The review log is append-only and never rewritten. It is the record that lets a
@@ -61,5 +93,4 @@ scheduler arrives later.
 ## What it does not do yet
 
 No accounts, no sync between devices, no capture from video, no speaking
-practice. Those are the later phases. This one exists so you can stop opening
-AnkiDroid.
+practice, and no `.apkg` writing. Those are the later phases.

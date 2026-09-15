@@ -8,11 +8,11 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.3";
+const VERSION = "2026-09-15.6";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
-const screens = ["boot", "home", "review", "done"];
+const screens = ["boot", "home", "add", "review", "done"];
 
 function show(name) {
   for (const s of screens) $(`screen-${s}`).hidden = s !== name;
@@ -304,6 +304,186 @@ $("import-btn").addEventListener("click", async () => {
   if (r.ok) await goHome(); else $("boot-detail").textContent = r.why;
 });
 $("audio-btn").addEventListener("click", () => current && speak(current));
+
+// ---- adding a card -------------------------------------------------------
+// Typed here, saved here, due immediately. No network, so it works on a train
+// and a card added offline is not a card lost.
+function openAdd() {
+  const list = $("deck-options");
+  list.innerHTML = "";
+  for (const name of [...new Set(cache.map((c) => c.deck))].sort()) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    list.appendChild(opt);
+  }
+  $("a-deck").value = prefs.read().deck || (cache[0] && cache[0].deck) || "Default";
+  $("add-note").textContent = "";
+  show("add");
+  $("a-word").focus();
+}
+
+$("add-btn").addEventListener("click", openAdd);
+$("add-close").addEventListener("click", goHome);
+
+$("add-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const word = $("a-word").value.trim();
+  if (!word) return;
+
+  // A card typed twice is a card reviewed twice for no reason, so a repeat of
+  // a word already in the deck is refused rather than quietly duplicated.
+  const already = cache.find((c) => c.word.toLowerCase() === word.toLowerCase());
+  if (already) {
+    $("add-note").textContent = `"${already.word}" is already in ${already.deck}. Nothing was added.`;
+    return;
+  }
+
+  const card = {
+    // Not a guid from Anki, so it is marked as ours and cannot collide with one.
+    id: `lexis-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    guid: "",
+    deck: $("a-deck").value.trim() || "Default",
+    word,
+    hook: $("a-hook").value.trim(),
+    clue: $("a-clue").value.trim(),
+    example: $("a-example").value.trim(),
+    audio: "",
+    tags: ["lexis"],
+    notetype: "",
+    created: new Date().toISOString().slice(0, 10),
+    fsrs: {
+      due: new Date().toISOString(),
+      stability: 0, difficulty: 0, elapsed_days: 0, scheduled_days: 0,
+      learning_steps: 0, reps: 0, lapses: 0, state: State.New, last_review: null,
+    },
+    imported: { interval_days: 0, ease_pct: 0, had_fsrs_state: false },
+    reviewedHere: 0,
+  };
+
+  await store.saveCard(card);
+  cache.push(card);
+
+  $("add-form").reset();
+  $("a-deck").value = card.deck;
+  $("a-word").focus();
+  $("add-note").textContent = `"${card.word}" added to ${card.deck}. It is due now.`;
+});
+
+// ---- getting your cards back out -----------------------------------------
+// Whatever else this app is, it must never be a place data goes into and
+// cannot come out of. Two ways out: everything, losslessly, for coming back
+// here; and a CSV Anki imports, for leaving.
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function stamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+$("export-json-btn").addEventListener("click", async () => {
+  const cards = await store.allCards();
+  const log = await store.history();
+  download(`lexis-backup-${stamp()}.json`, JSON.stringify({
+    exported_at: new Date().toISOString(),
+    version: VERSION,
+    card_count: cards.length,
+    review_count: log.length,
+    cards,
+    // The log goes too: it is what lets a schedule be rebuilt from nothing.
+    reviews: log,
+  }, null, 1), "application/json");
+  $("settings-note").textContent = `${cards.length} cards and ${log.length} reviews saved to your downloads.`;
+});
+
+$("export-csv-btn").addEventListener("click", async () => {
+  const cards = await store.allCards();
+  const cell = (v) => {
+    const text = String(v ?? "");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  // Anki maps a CSV onto whatever notetype it picks, and it picks Basic, which
+  // has two fields. Four columns of content therefore does not give you four
+  // fields — the extras spill into tags, which is exactly what happened the
+  // first time this was tested: every example sentence arrived as nine tags.
+  //
+  // So it is written the way Anki actually reads it. Two field columns onto
+  // Basic's two fields, and the deck and tags columns declared by position so
+  // they land where they are meant to rather than being guessed at.
+  const lines = [
+    "#separator:Comma",
+    "#html:true",
+    "#notetype:Basic",
+    "#columns:Front,Back,Tags,Deck",
+    "#tags column:3",
+    "#deck column:4",
+  ];
+  const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  for (const c of cards) {
+    // The answer keeps its parts, stacked, because a CSV has nowhere else to
+    // put them and losing the example would be worse than losing the structure.
+    const back = [
+      esc(c.word),
+      c.hook ? `<i>${esc(c.hook)}</i>` : "",
+      c.example ? `<br>${esc(c.example)}` : "",
+    ].filter(Boolean).join("<br>");
+    lines.push([esc(c.clue), back, (c.tags || []).join(" "), c.deck].map(cell).join(","));
+  }
+  download(`lexis-for-anki-${stamp()}.csv`, lines.join("\n") + "\n", "text/csv");
+  $("settings-note").textContent =
+    `${cards.length} cards written as CSV, with their decks and tags. Anki reads the header, ` +
+    `so File → Import needs nothing set by hand. Scheduling cannot travel in a CSV — ` +
+    `the JSON backup is what keeps that.`;
+});
+
+// ---- importing an .apkg --------------------------------------------------
+// The file never leaves the phone: it is unzipped, decompressed and read in
+// this tab. Nothing is uploaded, so nothing has to be trusted with it.
+let importing = false;
+
+function pickApkg(where) {
+  if (importing) return;
+  $("apkg-file").dataset.report = where;
+  $("apkg-file").click();
+}
+
+$("apkg-btn").addEventListener("click", () => pickApkg("settings-note"));
+$("apkg-boot-btn").addEventListener("click", () => pickApkg("boot-detail"));
+
+$("apkg-file").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = "";                       // so the same file can be picked twice
+  if (!file) return;
+
+  const say = (text) => { const el = $($("apkg-file").dataset.report || "settings-note"); if (el) el.textContent = text; };
+  importing = true;
+  say("Reading…");
+
+  try {
+    // Loaded only when an import actually happens: the SQLite engine is the
+    // better part of a megabyte and most sessions never open a file.
+    const { readApkg } = await import("./apkg.js");
+    const deck = await readApkg(file, say);
+    const result = await store.importDeck(deck);
+    const s = deck.scheduling;
+    say(`${result.added} added, ${result.refreshed} refreshed from ${file.name}. ` +
+        `${s.carried_fsrs_state} kept their FSRS state, ${s.converted_from_ease} were converted ` +
+        `from interval and ease, ${s.new} are new.` +
+        (deck.skipped ? ` ${deck.skipped} skipped (no word, or a duplicate of another card).` : ""));
+    await goHome();
+  } catch (err) {
+    say(err.message || String(err));
+  } finally {
+    importing = false;
+  }
+});
 
 for (const b of document.querySelectorAll(".grade")) {
   b.addEventListener("click", () => grade(Number(b.dataset.rating)));
