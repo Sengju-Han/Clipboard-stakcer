@@ -1,0 +1,77 @@
+name: Build the review deck
+
+# Pulls the collection from AnkiWeb, converts it into the deck the review app
+# opens, and commits it. Read-only as far as AnkiWeb is concerned: it syncs
+# down, reads, and never writes back.
+#
+# The app keeps its own scheduling once a card is in it, so running this again
+# refreshes wording and adds new cards without resetting progress you earned
+# in the app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck name(s), comma-separated. * = the whole collection.'
+        required: false
+        default: '*'
+      timezone:
+        description: 'IANA timezone for due dates, e.g. Asia/Seoul'
+        required: false
+        default: 'Asia/Seoul'
+
+permissions:
+  contents: write
+
+# Shares the read lock with the other workflows that sync down.
+concurrency:
+  group: anki-write
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build deck.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements.txt
+
+      - name: Export the collection
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          TZ_NAME: ${{ inputs.timezone }}
+        run: |
+          python anki/export_deck.py \
+            --deck "$DECK" \
+            --out-dir anki-export \
+            --timezone "$TZ_NAME"
+
+      - name: Build the deck the app reads
+        run: python anki/build_deck.py --export anki-export/cards.json --out docs/deck
+
+      - name: Commit it
+        run: |
+          if [ -n "$(git status --porcelain docs/deck)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/deck
+            git commit -m "Rebuild the review deck"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+            echo "Deck updated. Open the app and it will pick this up." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The deck has not changed." >> "$GITHUB_STEP_SUMMARY"
+          fi

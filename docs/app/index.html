@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14151a">
+<title>Lexis</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main id="app">
+
+  <!-- Boot: the only screen that can appear before the deck is known. -->
+  <section class="screen" id="screen-boot">
+    <div class="pad">
+      <h1 class="wordmark">Lexis</h1>
+      <p class="lede" id="boot-note">Opening your deck…</p>
+      <div class="spinner" id="boot-spin" aria-hidden="true"></div>
+      <div id="boot-actions" hidden>
+        <button class="primary" id="import-btn" type="button">Import my deck</button>
+        <p class="fine" id="boot-detail"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Home: what is owed, and the way in. -->
+  <section class="screen" id="screen-home" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Lexis</h1>
+        <button class="ghost" id="settings-btn" type="button" aria-label="Settings">⋯</button>
+      </header>
+
+      <div class="figures">
+        <div class="figure due"><span class="n" id="n-due">0</span><span class="l">due</span></div>
+        <div class="figure fresh"><span class="n" id="n-new">0</span><span class="l">new</span></div>
+        <div class="figure known"><span class="n" id="n-known">0</span><span class="l">resting</span></div>
+      </div>
+
+      <button class="primary big" id="start-btn" type="button">Start reviewing</button>
+      <p class="fine" id="home-note"></p>
+
+      <div class="decks" id="deck-list"></div>
+
+      <details class="panel" id="settings">
+        <summary>Settings</summary>
+        <div class="row">
+          <label for="retention">Target retention <span class="hint">how much you want to remember — higher means more reviews</span></label>
+          <input type="range" id="retention" min="0.80" max="0.97" step="0.01" value="0.90">
+          <output id="retention-out">90%</output>
+        </div>
+        <div class="row">
+          <label for="new-per-day">New cards a day</label>
+          <input type="number" id="new-per-day" min="0" max="100" value="15">
+        </div>
+        <div class="row">
+          <label for="media-base">Audio location <span class="hint">where the mp3 files are served from; blank uses your phone's voice</span></label>
+          <input type="text" id="media-base" placeholder="../media/">
+        </div>
+        <hr class="sep">
+        <button class="ghost" id="refresh-btn" type="button">Check for a newer deck</button>
+        <button class="ghost danger" id="reset-btn" type="button">Erase local progress</button>
+        <p class="fine" id="settings-note"></p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Review: one card, nothing else on screen. -->
+  <section class="screen review" id="screen-review" hidden>
+    <header class="review-head">
+      <button class="ghost" id="quit-btn" type="button" aria-label="Back">←</button>
+      <div class="progress"><div class="bar" id="progress-bar"></div></div>
+      <span class="left" id="left-count">0</span>
+    </header>
+
+    <div class="card-area">
+      <p class="deck-tag" id="card-deck"></p>
+      <p class="clue" id="card-clue"></p>
+
+      <div id="answer" hidden>
+        <p class="word" id="card-word"></p>
+        <p class="hook" id="card-hook"></p>
+        <p class="example" id="card-example"></p>
+        <button class="ghost audio" id="audio-btn" type="button">▶ Hear it</button>
+      </div>
+    </div>
+
+    <footer class="actions">
+      <button class="primary big" id="reveal-btn" type="button">Show the word</button>
+      <div class="grades" id="grades" hidden>
+        <button class="grade again" data-rating="1" type="button"><span>Again</span><em id="i-1"></em></button>
+        <button class="grade hard"  data-rating="2" type="button"><span>Hard</span><em id="i-2"></em></button>
+        <button class="grade good"  data-rating="3" type="button"><span>Good</span><em id="i-3"></em></button>
+        <button class="grade easy"  data-rating="4" type="button"><span>Easy</span><em id="i-4"></em></button>
+      </div>
+    </footer>
+  </section>
+
+  <!-- Done -->
+  <section class="screen" id="screen-done" hidden>
+    <div class="pad centre">
+      <p class="tick">✓</p>
+      <h2 id="done-head">Session done</h2>
+      <p class="lede" id="done-note"></p>
+      <button class="primary" id="again-btn" type="button">Back to the deck</button>
+    </div>
+  </section>
+
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
