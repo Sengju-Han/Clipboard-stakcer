@@ -47,6 +47,21 @@ Anki's files.
 Verified by round trip: 1,177 cards exported as CSV and imported into a fresh
 Anki collection — 1177 new, 0 duplicates, 0 empty, decks preserved.
 
+## Browsing and fixing
+
+*Browse deck* searches word, hook, clue and example at once — including Korean,
+so the clue you half-remember finds the card. Each result shows its deck and
+what the scheduler thinks: new, due now, or how far off.
+
+Tap one to edit or delete it. **Editing the wording leaves scheduling alone** —
+scheduling is evidence about how well a word is known, and fixing a typo is not
+evidence about anything. Deleting takes the card's history with it and says so
+before it does.
+
+This matters more than it sounds: the audit found real typos already in this
+collection (`pradoxcial`, `succesfully`, `threatend`). Before this, an app you
+could add to but never correct would have reviewed each of them a hundred times.
+
 ## Adding cards
 
 *+ Add a card* on the home screen. Word, memory hook, clue, example, deck. It
