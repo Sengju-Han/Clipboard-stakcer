@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.14";
+const VERSION = "2026-09-15.15";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -56,7 +56,10 @@ function introducedToday() {
 function noteIntroduced(n = 1) {
   const today = new Date().toISOString().slice(0, 10);
   try {
-    localStorage.setItem("lexis:new", JSON.stringify({ day: today, count: introducedToday() + n }));
+    // Undo gives one back, and the count must not go under zero on a card
+    // introduced yesterday and undone today.
+    const count = Math.max(0, introducedToday() + n);
+    localStorage.setItem("lexis:new", JSON.stringify({ day: today, count }));
   } catch { /* blocked */ }
 }
 
@@ -219,9 +222,50 @@ function reveal() {
   speak(current);
 }
 
+// The last few answers, as they were before they were given. Anki has had undo
+// since forever and it is the first thing missed without it: a mis-tap on Again
+// is otherwise a card you have just told the scheduler you have forgotten.
+const undoable = [];
+const UNDO_DEPTH = 20;
+
+function offerUndo() {
+  $("undo-btn").hidden = undoable.length === 0;
+}
+
+async function undo() {
+  const step = undoable.pop();
+  offerUndo();
+  if (!step) return;
+
+  await store.unrecord(step.log.at);
+  await store.saveCard(step.before);
+
+  const i = cache.findIndex((c) => c.id === step.before.id);
+  if (i >= 0) cache[i] = step.before;
+
+  if (session) {
+    // An Again put the card back at the end of the queue; taking the answer
+    // back has to take that copy with it, or the card is owed twice.
+    if (step.requeued) session.cards.pop();
+    session.index = step.index;
+    session.answered = Math.max(0, session.answered - 1);
+    session.cards[step.index] = step.before;
+    if (step.wasNew) noteIntroduced(-1);
+  }
+
+  current = step.before;
+  nextCard();
+  // Straight back to where the mis-tap happened: the answer showing, the
+  // buttons live. Undo that dumps you on the question is undo you have to
+  // redo.
+  reveal();
+}
+
 async function grade(rating) {
   if (!current) return;
   const wasNew = current.fsrs.state === State.New;
+  const before = current;
+  const at = session ? session.index : 0;
   const { card, log } = answer(engine, current, rating);
 
   // The log first: an answer that was given and not scheduled can be replayed,
@@ -235,6 +279,10 @@ async function grade(rating) {
 
   session.answered += 1;
   session.index += 1;
+
+  undoable.push({ before, log, index: at, wasNew, requeued: rating === Rating.Again });
+  if (undoable.length > UNDO_DEPTH) undoable.shift();
+  offerUndo();
 
   // Again means it is not learned; it comes back before the session ends
   // rather than at whatever minute FSRS nominated, which may be after you
@@ -263,6 +311,8 @@ function moveOn() {
 }
 
 function finish() {
+  undoable.length = 0;
+  offerUndo();
   const n = session ? session.answered : 0;
   $("done-head").textContent = n ? "Session done" : "Nothing reviewed";
   $("done-note").textContent = n
@@ -322,7 +372,13 @@ function applySettingsToForm(s) {
 $("start-btn").addEventListener("click", startSession);
 $("reveal-btn").addEventListener("click", reveal);
 $("again-btn").addEventListener("click", goHome);
-$("quit-btn").addEventListener("click", () => { session = null; goHome(); });
+$("quit-btn").addEventListener("click", () => {
+  session = null;
+  undoable.length = 0;
+  offerUndo();
+  goHome();
+});
+$("undo-btn").addEventListener("click", undo);
 $("settings-btn").addEventListener("click", () => {
   $("settings").open = !$("settings").open;
   $("settings").scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -488,7 +544,9 @@ $("sync-btn").addEventListener("click", async () => {
   try {
     const { github, sync } = await import("./sync.js");
     const cards = await store.allCards();
-    const reviews = await store.history();
+    // The whole log, undone rows included: the mark has to travel, or the
+    // other device hands the taken-back answer straight back.
+    const reviews = await store.wholeLog();
     const result = await sync(github({ token, owner, repo }), { cards, reviews }, say);
 
     // Write the merged state back before reporting success: a sync that says it
@@ -742,7 +800,8 @@ function stamp() {
 
 $("export-json-btn").addEventListener("click", async () => {
   const cards = await store.allCards();
-  const log = await store.history();
+  // A backup restores this browser exactly, so it takes the log as stored.
+  const log = await store.wholeLog();
   download(`lexis-backup-${stamp()}.json`, JSON.stringify({
     exported_at: new Date().toISOString(),
     version: VERSION,
@@ -906,6 +965,7 @@ document.addEventListener("keydown", (e) => {
     else if (!$("next-btn").hidden) moveOn();
     return;
   }
+  if (e.key === "z" && !$("undo-btn").hidden) { undo(); return; }
   if (!$("grades").hidden && ["1", "2", "3", "4"].includes(e.key)) {
     e.preventDefault();
     grade(Number(e.key));

@@ -158,7 +158,39 @@ export async function deleteCard(id) {
   return run(["cards"], "readwrite", (cards) => cards.delete(id));
 }
 
+// Undo. The log is append-only and stays that way: an undone answer is marked
+// rather than deleted, which keeps two things true that deleting would break.
+// Sync unions the two devices' logs by timestamp, so a row deleted here would
+// simply come back from the other device the next time they met; and a review
+// that was given and then taken back is itself a fact about the evening, which
+// the row still records. Everything that counts answers - the statistics, the
+// history written into an .apkg - skips the marked ones.
+export async function unrecord(at) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const store = db.transaction("log", "readwrite").objectStore("log");
+    const req = store.get(at);
+    req.onsuccess = () => {
+      if (!req.result) return resolve(false);
+      const put = store.put({ ...req.result, undone: true });
+      put.onsuccess = () => resolve(true);
+      put.onerror = () => reject(put.error);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Every answer that still stands. Undone ones are in the database and are not
+// in here, because every caller wants the answers that count.
 export async function history() {
+  const db = await open();
+  const rows = await all(db.transaction("log").objectStore("log"));
+  return rows.filter((row) => !row.undone);
+}
+
+// The log exactly as stored, undone rows included. Only sync wants this: the
+// mark has to travel, or the other device hands the answer back.
+export async function wholeLog() {
   const db = await open();
   return all(db.transaction("log").objectStore("log"));
 }
