@@ -12,7 +12,7 @@
 // scheduler arrives later.
 
 const DB_NAME = "lexis";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let ready = null;
 
@@ -34,6 +34,14 @@ function open() {
       }
       if (!db.objectStoreNames.contains("meta")) {
         db.createObjectStore("meta", { keyPath: "key" });
+      }
+      // Audio captured off a video while mining a line. Kept out of the card
+      // row on purpose: a card is read on every queue build and a few hundred
+      // audio clips alongside it would make that read the slow part of the
+      // morning. Created here rather than in a migration because an upgrade
+      // that only adds a store leaves every existing row exactly where it was.
+      if (!db.objectStoreNames.contains("media")) {
+        db.createObjectStore("media", { keyPath: "name" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -195,8 +203,37 @@ export async function wholeLog() {
   return all(db.transaction("log").objectStore("log"));
 }
 
+// ---- captured audio -------------------------------------------------------
+
+export async function putMedia(name, blob) {
+  return run(["media"], "readwrite", (media) => media.put({ name, blob, at: Date.now() }));
+}
+
+export async function getMedia(name) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("media").objectStore("media").get(name);
+    req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function allMedia() {
+  const db = await open();
+  return all(db.transaction("media").objectStore("media"));
+}
+
+export async function deleteMedia(name) {
+  return run(["media"], "readwrite", (media) => media.delete(name));
+}
+
+export async function mediaSize() {
+  const rows = await allMedia();
+  return { count: rows.length, bytes: rows.reduce((n, r) => n + (r.blob?.size || 0), 0) };
+}
+
 export async function wipe() {
-  return run(["cards", "log", "meta"], "readwrite", (cards, log, meta) => {
-    cards.clear(); log.clear(); meta.clear();
+  return run(["cards", "log", "meta", "media"], "readwrite", (cards, log, meta, media) => {
+    cards.clear(); log.clear(); meta.clear(); media.clear();
   });
 }

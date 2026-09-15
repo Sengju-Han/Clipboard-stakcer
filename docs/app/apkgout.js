@@ -185,7 +185,7 @@ function startOfToday(now) {
 
 // ---- building it ---------------------------------------------------------
 
-export async function buildApkg(cards, reviews = [], { now = Date.now(), onProgress = () => {} } = {}) {
+export async function buildApkg(cards, reviews = [], { now = Date.now(), media = [], onProgress = () => {} } = {}) {
   onProgress("Opening a collection…");
   const SQL = await loadSql();
   const db = new SQL.Database();
@@ -311,12 +311,26 @@ export async function buildApkg(cards, reviews = [], { now = Date.now(), onProgr
   const bytes = db.export();
   db.close();
 
-  // Legacy container: a plain SQLite collection and an empty media map. Read
-  // by every Anki ever shipped, including AnkiDroid and AnkiMobile.
-  const zip = zipSync({
-    "collection.anki2": bytes,
-    "media": strToU8("{}"),
-  }, { level: 6 });
+  // Media travels as numbered files plus a map from those numbers to the real
+  // names, which is how every .apkg has always carried it. Only audio captured
+  // here is included: the mp3s that came out of the person's own collection are
+  // already on the other side, and sending them back would turn a 200KB file
+  // into most of a gigabyte for no gain.
+  const files = { "collection.anki2": bytes };
+  const names = {};
+  let n = 0;
+  for (const { name, blob } of media) {
+    if (!name || !blob) continue;
+    onProgress(`Packing audio ${n + 1} of ${media.length}…`);
+    files[String(n)] = new Uint8Array(await blob.arrayBuffer());
+    names[String(n)] = name;
+    n += 1;
+  }
+  files.media = strToU8(JSON.stringify(names));
+
+  // Legacy container: a plain SQLite collection. Read by every Anki ever
+  // shipped, including AnkiDroid and AnkiMobile.
+  const zip = zipSync(files, { level: 6 });
 
   return new Blob([zip], { type: "application/octet-stream" });
 }
