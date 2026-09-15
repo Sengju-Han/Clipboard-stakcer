@@ -65,15 +65,23 @@ class Server:
         return f"http://127.0.0.1:{self.port}/app/index.html"
 
 
-CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"
+PREINSTALLED = Path("/opt/pw-browsers")
 
 
 def chromium_path():
-    """The browser this environment already has, when it has one."""
-    if Path(CHROME).exists():
-        return CHROME
-    for candidate in Path("/opt/pw-browsers").glob("chromium*/chrome-linux/chrome"):
-        return str(candidate)
+    """A browser this machine already has, or None to let Playwright find its own.
+
+    Some environments ship Chromium somewhere Playwright does not look and set
+    PLAYWRIGHT_BROWSERS_PATH to point at it; everywhere else, `playwright
+    install chromium` puts one exactly where Playwright expects. Returning None
+    for the second case is the whole point — an earlier version of this
+    hard-coded the first, and the workflow failed in twenty-nine seconds with
+    "No Chromium found" on a runner that had just downloaded one.
+    """
+    if PREINSTALLED.is_dir():
+        for candidate in sorted(PREINSTALLED.glob("chromium*/chrome-linux/chrome")):
+            if candidate.exists():
+                return str(candidate)
     return None
 
 

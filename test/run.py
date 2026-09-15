@@ -48,16 +48,13 @@ def main():
         print(f"No such suite: {', '.join(unknown)}\nThere is: {', '.join(SUITES)}")
         return 2
 
-    browser_path = chromium_path()
-    if not browser_path:
-        print("No Chromium found. Try: playwright install chromium")
-        return 2
-
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         print("Playwright is not installed. Try: pip install -r test/requirements.txt")
         return 2
+
+    browser_path = chromium_path()
 
     work = Path(tempfile.mkdtemp(prefix="lexis-test-"))
     built = fixtures.build_all(work / "fixtures")
@@ -68,8 +65,15 @@ def main():
     trouble = []
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=browser_path,
-                                     args=["--no-sandbox", "--autoplay-policy=no-user-gesture-required"])
+        launch = {"args": ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"]}
+        if browser_path:
+            launch["executable_path"] = browser_path
+        try:
+            browser = pw.chromium.launch(**launch)
+        except Exception as why:
+            print(f"Could not start Chromium: {why}\nTry: playwright install chromium")
+            server.stop()
+            return 2
         for name in chosen:
             print(f"\n— {name} —")
             suite = importlib.import_module(f"suites.{name}")
