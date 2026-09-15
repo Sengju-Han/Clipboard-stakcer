@@ -78,7 +78,36 @@
         </div>
         <hr class="sep">
         <div class="row">
-          <label for="gh-token">Sync <span class="hint">optional — your cards on both devices, through your own repository. Needs a token with Contents: read and write.</span></label>
+          <label for="acct-base">Account <span class="hint">your deck on both phones, with an email and a password. Optional — everything works without one.</span></label>
+          <input id="acct-base" type="url" placeholder="https://lexis.yourname.workers.dev">
+        </div>
+        <div id="acct-out">
+          <div class="row two">
+            <input id="acct-email" type="email" placeholder="email" autocomplete="username">
+            <input id="acct-pw" type="password" placeholder="password" autocomplete="current-password">
+          </div>
+          <div class="pair">
+            <button class="ghost" id="acct-in-btn" type="button">Sign in</button>
+            <button class="ghost" id="acct-new-btn" type="button">Create one</button>
+          </div>
+          <div class="row two">
+            <input id="acct-code" type="text" placeholder="pairing code" autocomplete="off">
+            <button class="ghost" id="acct-claim-btn" type="button">Use code</button>
+          </div>
+        </div>
+        <div id="acct-in" hidden>
+          <p class="fine" id="acct-who"></p>
+          <div class="pair">
+            <button class="ghost" id="acct-sync-btn" type="button">Sync now</button>
+            <button class="ghost" id="acct-pair-btn" type="button">Add a phone</button>
+          </div>
+          <button class="ghost wide" id="acct-out-btn" type="button">Sign out</button>
+          <button class="ghost danger wide" id="acct-forget-btn" type="button">Delete this account</button>
+        </div>
+        <p class="fine" id="acct-note"></p>
+        <hr class="sep">
+        <div class="row">
+          <label for="gh-token">Sync through a repository <span class="hint">optional — your cards on both devices, through your own repository. Needs a token with Contents: read and write.</span></label>
           <input id="gh-token" type="password" placeholder="github_pat_...">
         </div>
         <div class="row two">

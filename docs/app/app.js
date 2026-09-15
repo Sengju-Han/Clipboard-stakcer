@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.16";
+const VERSION = "2026-09-15.17";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -411,6 +411,7 @@ $("quit-btn").addEventListener("click", () => {
 $("undo-btn").addEventListener("click", undo);
 $("settings-btn").addEventListener("click", () => {
   $("settings").open = !$("settings").open;
+  if ($("settings").open) showAccount().catch(() => { /* not signed in */ });
   $("settings").scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 $("import-btn").addEventListener("click", async () => {
@@ -556,6 +557,88 @@ for (const id of ["gh-token", "gh-owner", "gh-repo"]) {
     prefs.write({ [key]: e.target.value.trim() });
   });
 }
+
+// ---- an account ----------------------------------------------------------
+// Optional, and always second to the deck already in this browser: signing in
+// adds a place for the cards to meet, it does not move them anywhere.
+let accountBusy = false;
+
+function accountBase() {
+  return $("acct-base").value.trim();
+}
+
+async function showAccount() {
+  const mod = await import("./account.js");
+  const account = mod.saved();
+  $("acct-in").hidden = !account;
+  $("acct-out").hidden = Boolean(account);
+  if (account) {
+    $("acct-base").value = account.base;
+    $("acct-who").textContent = account.email ? `Signed in as ${account.email}.` : "Signed in.";
+  }
+  return mod;
+}
+
+async function account(what, run) {
+  if (accountBusy) return;
+  accountBusy = true;
+  const say = (text) => { $("acct-note").textContent = text; };
+  say(what);
+  try {
+    const mod = await import("./account.js");
+    await run(mod, say);
+  } catch (err) {
+    say(err.message || String(err));
+  } finally {
+    accountBusy = false;
+    await showAccount();
+  }
+}
+
+$("acct-new-btn").addEventListener("click", () => account("Creating the account…", async (mod, say) => {
+  const out = await mod.register(accountBase(), $("acct-email").value.trim(), $("acct-pw").value);
+  $("acct-pw").value = "";
+  say(`Account created for ${out.email}. Sync to send this deck up.`);
+}));
+
+$("acct-in-btn").addEventListener("click", () => account("Signing in…", async (mod, say) => {
+  const out = await mod.signIn(accountBase(), $("acct-email").value.trim(), $("acct-pw").value);
+  $("acct-pw").value = "";
+  say(`Signed in as ${out.email}.`);
+}));
+
+$("acct-claim-btn").addEventListener("click", () => account("Using the code…", async (mod, say) => {
+  const who = await mod.usePairCode(accountBase(), $("acct-code").value.trim());
+  $("acct-code").value = "";
+  say(`This phone is now on ${who.email}. Sync to bring the deck down.`);
+}));
+
+$("acct-pair-btn").addEventListener("click", () => account("Asking for a code…", async (mod, say) => {
+  const { code, minutes } = await mod.pairCode();
+  say(`On the other phone: put the same address in, then type ${code}. It works once, within ${minutes} minutes.`);
+}));
+
+$("acct-out-btn").addEventListener("click", () => account("Signing out…", async (mod, say) => {
+  await mod.signOut();
+  say("Signed out. The deck stays on this phone.");
+}));
+
+$("acct-forget-btn").addEventListener("click", () => account("", async (mod, say) => {
+  // Deleting the account is the one action here that destroys something on
+  // another machine, so it is asked twice and says exactly what goes.
+  const sure = confirm("Delete the account on the server?\n\nThe cards and reviews stored there go with it, " +
+    "for every phone signed in. The deck in this browser is untouched. This cannot be undone.");
+  if (!sure) { say("Nothing was deleted."); return; }
+  await mod.forgetMe();
+  say("The account is gone. The deck in this browser is exactly as it was.");
+}));
+
+$("acct-sync-btn").addEventListener("click", () => account("Syncing…", async (mod, say) => {
+  const result = await mod.syncAccount(store, say);
+  await goHome();
+  say(`Synced. ${result.pushed} sent, ${result.pulled} came down. ` +
+    `The account holds ${result.held.cards} cards and ${result.held.reviews} reviews.`);
+}));
 
 $("sync-btn").addEventListener("click", async () => {
   if (syncing) return;
