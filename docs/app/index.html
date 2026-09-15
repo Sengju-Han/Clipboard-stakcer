@@ -49,6 +49,7 @@
         <button class="ghost" id="stats-btn" type="button">Progress</button>
         <button class="ghost" id="watch-btn" type="button">Watch &amp; mine</button>
       </div>
+      <button class="ghost wide" id="talk-btn" type="button">Speak with what you have learned</button>
       <p class="fine" id="home-note"></p>
 
       <div class="decks" id="deck-list"></div>
@@ -164,6 +165,35 @@
         <h2>Where the deck stands</h2>
         <table class="tally-table" id="s-maturity"></table>
       </section>
+    </div>
+  </section>
+
+  <!-- Speak: a conversation built out of the words you are in the middle of
+       learning, so they get used out loud before they settle as recognition. -->
+  <section class="screen" id="screen-talk" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Speak</h1>
+        <button class="ghost" id="talk-close" type="button" aria-label="Back">✕</button>
+      </header>
+
+      <div class="targets" id="t-words"></div>
+      <p class="fine" id="t-progress"></p>
+
+      <div class="log" id="t-log"></div>
+      <div class="thinking" id="t-thinking" hidden><span></span><span></span><span></span></div>
+      <div class="brain" id="t-recap" hidden></div>
+
+      <div id="t-input">
+        <button class="primary big" id="t-mic" type="button">🎤 Speak</button>
+        <div class="talk-say">
+          <input type="text" id="t-say" placeholder="…or type it" autocomplete="off">
+          <button class="ghost" id="t-send" type="button">Send</button>
+        </div>
+        <button class="ghost wide" id="t-repeat" type="button">Say that again</button>
+        <p class="fine" id="t-note"></p>
+      </div>
+      <button class="ghost wide" id="t-again" type="button">Another conversation</button>
     </div>
   </section>
 

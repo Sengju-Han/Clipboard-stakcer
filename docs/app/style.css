@@ -351,3 +351,37 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-size: 15px; color: var(--muted); line-height: 1.55; margin: 10px 0 12px;
   padding-left: 11px; border-left: 2px solid var(--line);
 }
+
+/* saying it out loud ------------------------------------------------------- */
+
+.targets { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.chip.target { margin: 0; font-size: 13px; }
+.chip.target.on { background: var(--good); border-color: var(--good); color: #fff; }
+
+.log { margin: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+.bubble { max-width: 86%; border-radius: 15px; padding: 11px 14px; font-size: 16px; line-height: 1.5; }
+.bubble p { margin: 0; }
+.bubble.them { background: var(--raised); border: 1px solid var(--line); align-self: flex-start; border-bottom-left-radius: 5px; }
+.bubble.me { background: var(--accent); color: #fff; align-self: flex-end; border-bottom-right-radius: 5px; }
+.bubble.note { background: none; border: 1px dashed var(--line); color: var(--muted); font-size: 14px; align-self: stretch; max-width: 100%; }
+
+.fix { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 14px; }
+.fix s { color: var(--muted); }
+.fix b { display: block; color: var(--good); margin-top: 2px; }
+.fix span { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.why li s { color: var(--muted); }
+.why li span { color: var(--muted); font-size: 12.5px; }
+
+.thinking { display: flex; gap: 5px; padding: 6px 2px 12px; }
+.thinking span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+.thinking span:nth-child(2) { animation-delay: 0.15s; }
+.thinking span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pulse { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+
+#t-mic.live { background: var(--again); }
+.talk-say { display: flex; gap: 8px; margin-top: 9px; }
+.talk-say input { flex: 1; min-width: 0; }
+.talk-say button { flex: none; }

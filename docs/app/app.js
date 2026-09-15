@@ -8,11 +8,11 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.13";
+const VERSION = "2026-09-15.14";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
-const screens = ["boot", "home", "stats", "watch", "browse", "edit", "add", "review", "done"];
+const screens = ["boot", "home", "stats", "watch", "talk", "browse", "edit", "add", "review", "done"];
 
 function show(name) {
   for (const s of screens) $(`screen-${s}`).hidden = s !== name;
@@ -429,6 +429,26 @@ async function openWatchScreen() {
 }
 
 $("watch-btn").addEventListener("click", openWatchScreen);
+
+// ---- speaking ------------------------------------------------------------
+let talkMounted = false;
+
+async function openTalkScreen() {
+  const mod = await import("./talk.js");
+  if (!talkMounted) {
+    mod.mountTalk({ cards: () => cache, apiKey: () => prefs.read().anthropic });
+    talkMounted = true;
+  }
+  show("talk");
+  mod.openTalk();
+}
+
+$("talk-btn").addEventListener("click", openTalkScreen);
+$("talk-close").addEventListener("click", async () => {
+  const mod = await import("./talk.js");
+  mod.hush();                                   // nothing should keep talking
+  goHome();
+});
 $("watch-close").addEventListener("click", goHome);
 
 $("stats-btn").addEventListener("click", openStats);
