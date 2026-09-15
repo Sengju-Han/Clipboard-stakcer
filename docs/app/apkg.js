@@ -57,7 +57,7 @@ let sqlReady = null;
 // sql.js ships as a classic script that hangs initSqlJs on window, so it is
 // injected rather than imported, and only when an import actually happens —
 // it is the better part of a megabyte and most sessions never need it.
-function loadSql() {
+export function loadSql() {
   if (sqlReady) return sqlReady;
   sqlReady = new Promise((resolve, reject) => {
     if (window.initSqlJs) return resolve(window.initSqlJs);
