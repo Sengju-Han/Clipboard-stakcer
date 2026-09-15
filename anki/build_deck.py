@@ -124,6 +124,23 @@ def stability_from(card: dict) -> float:
     return round(max(S_MIN, interval), 4)
 
 
+def at_noon(day: date) -> str:
+    """A due date as an instant that still means that day wherever it is read.
+
+    Midnight UTC is the obvious choice and it is wrong twice over. Read in
+    Seoul it is nine in the morning, so a card due today only turned up
+    mid-morning — somebody reviewing before breakfast was told nothing was
+    owed. And the app compares review cards by Anki's day, which begins at
+    four, so midnight UTC read anywhere west of here fell into the day before
+    and the card arrived early.
+
+    Noon has neither problem: 12:00 UTC is the same calendar day everywhere
+    from UTC-8 to UTC+15 and stays on that day after the four-hour shift.
+    Hawaii and Samoa are the exceptions, and would see a card a day late.
+    """
+    return datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc).isoformat()
+
+
 def due_from(card: dict, today: date, tally: dict | None = None) -> str:
     """When the card is next owed, as an ISO timestamp.
 
@@ -140,7 +157,7 @@ def due_from(card: dict, today: date, tally: dict | None = None) -> str:
             # Anki writes a far-future date for cards it will never show again;
             # a century out is not a schedule, it is a tombstone.
             if when.year < today.year + 50:
-                return datetime(when.year, when.month, when.day, tzinfo=timezone.utc).isoformat()
+                return at_noon(when)
             if tally is not None:
                 tally["far_future"] = tally.get("far_future", 0) + 1
         except ValueError:
@@ -150,7 +167,7 @@ def due_from(card: dict, today: date, tally: dict | None = None) -> str:
         tally["missing"] = tally.get("missing", 0) + 1
     if tally is not None:
         tally["fell_back"] = tally.get("fell_back", 0) + 1
-    return datetime(today.year, today.month, today.day, tzinfo=timezone.utc).isoformat()
+    return at_noon(today)
 
 
 def last_review_from(card: dict):
