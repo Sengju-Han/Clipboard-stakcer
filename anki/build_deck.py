@@ -124,8 +124,15 @@ def stability_from(card: dict) -> float:
     return round(max(S_MIN, interval), 4)
 
 
-def due_from(card: dict, today: date) -> str:
-    """When the card is next owed, as an ISO timestamp."""
+def due_from(card: dict, today: date, tally: dict | None = None) -> str:
+    """When the card is next owed, as an ISO timestamp.
+
+    Falling back to today is right but it is not nothing: a card that says it
+    is due now when it is not is a card in tonight's session that should not
+    be. `tally` counts how often that happens so the build can say so — 1,004
+    cards out of 1,177 landing on today once went unremarked, and the deck
+    that came out of it told somebody a thousand cards were owed.
+    """
     raw = (card.get("due_date") or "").strip()
     if raw:
         try:
@@ -134,8 +141,15 @@ def due_from(card: dict, today: date) -> str:
             # a century out is not a schedule, it is a tombstone.
             if when.year < today.year + 50:
                 return datetime(when.year, when.month, when.day, tzinfo=timezone.utc).isoformat()
+            if tally is not None:
+                tally["far_future"] = tally.get("far_future", 0) + 1
         except ValueError:
-            pass
+            if tally is not None:
+                tally["unreadable"] = tally.get("unreadable", 0) + 1
+    elif tally is not None:
+        tally["missing"] = tally.get("missing", 0) + 1
+    if tally is not None:
+        tally["fell_back"] = tally.get("fell_back", 0) + 1
     return datetime(today.year, today.month, today.day, tzinfo=timezone.utc).isoformat()
 
 
@@ -150,7 +164,7 @@ def last_review_from(card: dict):
     return datetime(when.year, when.month, when.day, tzinfo=timezone.utc).isoformat()
 
 
-def build_card(card: dict, today: date) -> dict | None:
+def build_card(card: dict, today: date, tally: dict | None = None) -> dict | None:
     fields = card.get("fields_raw") or card.get("fields") or {}
     if not isinstance(fields, dict) or not fields:
         return None
@@ -189,7 +203,7 @@ def build_card(card: dict, today: date) -> dict | None:
     else:
         stability = stability_from(card)
         difficulty = difficulty_from(card)
-        due = due_from(card, today)
+        due = due_from(card, today, tally)
         last_review = last_review_from(card)
 
     return {
@@ -247,9 +261,10 @@ def main() -> int:
         return 1
 
     today = date.today()
+    tally: dict[str, int] = {}
     cards, skipped = [], 0
     for row in rows:
-        built = build_card(row, today)
+        built = build_card(row, today, tally)
         if built is None:
             skipped += 1
             continue
@@ -283,6 +298,12 @@ def main() -> int:
             "carried_fsrs_state": carried,
             "converted_from_ease": converted,
             "new": fresh,
+            # How many due dates could not be used, and why. The app reads this
+            # and so does anybody looking at the file.
+            "due_date_fell_back": tally.get("fell_back", 0),
+            "due_date_far_future": tally.get("far_future", 0),
+            "due_date_missing": tally.get("missing", 0),
+            "due_date_unreadable": tally.get("unreadable", 0),
         },
         "cards": unique,
     }
@@ -300,6 +321,24 @@ def main() -> int:
     print(f"  new, never reviewed: {fresh}", flush=True)
     if skipped:
         print(f"  skipped (no fields, no word, or duplicate): {skipped}", flush=True)
+
+    # The loudest thing this build can tell you. A deck where most cards had no
+    # usable due date is a deck that will say a thousand cards are owed on the
+    # morning it is opened, and the only honest moment to say so is here.
+    fell_back = tally.get("fell_back", 0)
+    if fell_back:
+        why = ", ".join(
+            f"{tally[k]} {name}" for k, name in
+            [("far_future", "dated a lifetime away"), ("missing", "with no date at all"),
+             ("unreadable", "with a date that could not be read")] if tally.get(k)
+        )
+        share = fell_back / len(unique)
+        level = "warning" if share >= 0.2 else "notice"
+        print(f"::{level}::{fell_back} of {len(unique)} cards had no usable due date "
+              f"({why}) and are scheduled for today. "
+              + ("Most of this deck, so the app will say almost everything is owed. "
+                 "That normally means the export did not come from AnkiWeb. "
+                 if share >= 0.5 else ""), flush=True)
     return 0
 
 

@@ -122,9 +122,27 @@ def small_apkg(path: Path):
               "conf": 1, "collapsed": False, "lrnToday": [0, 0], "revToday": [0, 0],
               "newToday": [0, 0], "timeToday": [0, 0]},
     }
-    con.execute("INSERT INTO col VALUES (1,?,?,?,11,0,-1,0,?,?,?,?,'')",
-                (crt, now, now, json.dumps({"nextPos": 1, "curModel": str(mid)}),
-                 json.dumps(model), json.dumps(decks), json.dumps({"1": {"id": 1, "name": "Default"}})))
+    # A full deck configuration, not a stub. The app's reader goes straight to
+    # the SQLite and never looks at this, but real Anki refuses a package whose
+    # config is missing a field — and a fixture real Anki will not open is a
+    # fixture that proves less than it appears to.
+    dconf = {
+        "1": {
+            "id": 1, "name": "Default", "mod": now, "usn": -1, "maxTaken": 60,
+            "autoplay": True, "timer": 0, "replayq": True, "dyn": 0,
+            "new": {"bury": False, "delays": [1, 10], "initialFactor": 2500,
+                    "ints": [1, 4, 0], "order": 1, "perDay": 20},
+            "rev": {"bury": False, "ease4": 1.3, "ivlFct": 1, "maxIvl": 36500,
+                    "perDay": 200, "hardFactor": 1.2},
+            "lapse": {"delays": [10], "leechAction": 1, "leechFails": 8,
+                      "minInt": 1, "mult": 0},
+        }
+    }
+    # The last column is the tag list, and it is JSON like the four before it.
+    # An empty string there reads as end-of-input and Anki refuses the file.
+    con.execute("INSERT INTO col VALUES (1,?,?,?,11,0,-1,0,?,?,?,?,'{}')",
+                (crt, now, now, json.dumps({"nextPos": 1, "curModel": str(mid), "schedVer": 2}),
+                 json.dumps(model), json.dumps(decks), json.dumps(dconf)))
 
     today = (int(time.time()) - crt) // 86400
     for i, (word, hook, clue, example, ctype, ivl, factor, lapses) in enumerate(SAMPLE):
