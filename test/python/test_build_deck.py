@@ -76,6 +76,16 @@ def test_due_ignores_a_date_a_century_away():
     assert bd.due_from({"due_date": "not a date"}, today).startswith("2026-09-15")
 
 
+def test_a_due_date_is_written_at_noon_so_it_survives_being_read_elsewhere():
+    # Midnight UTC is nine in the morning in Seoul, which held every card due
+    # today back until mid-morning; and after the four-hour shift the app's day
+    # begins with, it falls into the day before anywhere west of UTC. Noon does
+    # neither, from UTC-8 to UTC+15.
+    written = bd.due_from({"due_date": "2026-10-01"}, date(2026, 9, 15))
+    assert written == "2026-10-01T12:00:00+00:00"
+    assert bd.at_noon(date(2026, 1, 2)) == "2026-01-02T12:00:00+00:00"
+
+
 def test_last_review_is_none_rather_than_a_guess():
     assert bd.last_review_from({"last_review": ""}) is None
     assert bd.last_review_from({}) is None

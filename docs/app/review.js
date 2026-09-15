@@ -150,7 +150,7 @@ export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.max
   const pool = deck ? awake.filter((c) => c.deck === deck) : awake;
 
   const due = pool
-    .filter((c) => c.fsrs.state !== State.New && new Date(c.fsrs.due).getTime() <= stamp)
+    .filter((c) => isDue(c, stamp))
     .sort((a, b) => new Date(a.fsrs.due) - new Date(b.fsrs.due));
 
   const fresh = pool
@@ -178,6 +178,38 @@ export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.max
 // the same day. That is a deck where nothing is genuinely owed and everything
 // says it is, which is worth saying out loud rather than handing somebody
 // 1,109 cards and letting them believe it.
+// ---- when a card is actually owed ----------------------------------------
+//
+// Anki schedules a review card for a *day*, not for an instant, and its day
+// runs from four in the morning. Both of those matter here and neither is
+// pedantry.
+//
+// The deck writes a due date as midnight UTC, which in Seoul is nine in the
+// morning. Comparing instants therefore held every card due "today" back until
+// nine — somebody reviewing before breakfast opened the app and was told
+// nothing was owed, and the deck arrived mid-morning. Measured, not guessed.
+//
+// Four rather than midnight because that is Anki's line and it is the right
+// one for somebody who studies at night: at one in the morning you are still
+// finishing yesterday, not being handed tomorrow.
+const ROLLOVER_HOUR = 4;
+
+export function ankiDay(when) {
+  const d = new Date(when);
+  d.setHours(d.getHours() - ROLLOVER_HOUR);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+export function isDue(card, now = Date.now()) {
+  const state = card.fsrs?.state;
+  if (state === State.New) return false;
+  const due = new Date(card.fsrs.due).getTime();
+  // Learning and relearning are timed in minutes, so the minute is the point.
+  if (state === State.Learning || state === State.Relearning) return due <= now;
+  return ankiDay(due) <= ankiDay(now);
+}
+
 export function scheduleLooksReal(cards) {
   const reviewed = cards.filter((c) => c.fsrs.state !== State.New);
   if (reviewed.length < 20) return true;              // too few to tell
@@ -197,7 +229,7 @@ export function counts(cards, now = new Date()) {
     if (resting(c, stamp)) { asleep += 1; continue; }
     if (c.fsrs.state === State.New) { fresh += 1; continue; }
     if (c.fsrs.state === State.Learning || c.fsrs.state === State.Relearning) learning += 1;
-    if (new Date(c.fsrs.due).getTime() <= stamp) due += 1;
+    if (isDue(c, stamp)) due += 1;
     else known += 1;
   }
   return { due, fresh, learning, known, asleep, total: cards.length };
