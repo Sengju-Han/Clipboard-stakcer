@@ -45,7 +45,10 @@
         <button class="ghost" id="add-btn" type="button">+ Add a card</button>
         <button class="ghost" id="browse-btn" type="button">Browse deck</button>
       </div>
-      <button class="ghost wide" id="stats-btn" type="button">Progress</button>
+      <div class="pair">
+        <button class="ghost" id="stats-btn" type="button">Progress</button>
+        <button class="ghost" id="watch-btn" type="button">Watch &amp; mine</button>
+      </div>
       <p class="fine" id="home-note"></p>
 
       <div class="decks" id="deck-list"></div>
@@ -164,6 +167,47 @@
     </div>
   </section>
 
+  <!-- Watch: a show, a podcast, or just a transcript — with every word in it
+       marked against the deck, and one tap to take a word out of it. -->
+  <section class="screen" id="screen-watch" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Watch</h1>
+        <button class="ghost" id="watch-close" type="button" aria-label="Back">✕</button>
+      </header>
+
+      <div class="pair">
+        <button class="ghost" id="w-subs-btn" type="button">Open subtitles</button>
+        <button class="ghost" id="w-media-btn" type="button">Open video or audio</button>
+      </div>
+      <button class="ghost wide" id="w-paste-btn" type="button">Paste a transcript</button>
+      <div class="row" id="w-paste-row" hidden>
+        <label for="w-paste">Paste it here <span class="hint">On YouTube: Show transcript, select all, copy. Subtitle text or plain writing works too.</span></label>
+        <textarea id="w-paste" rows="5" placeholder="0:03&#10;so here we are in front of the elephants"></textarea>
+        <button class="primary" id="w-paste-use" type="button">Use this</button>
+      </div>
+
+      <div id="w-player" hidden></div>
+      <p class="fine" id="w-note"></p>
+
+      <div class="w-tools" id="w-tools" hidden>
+        <button class="chip" id="w-filter" type="button">Only lines with one new word</button>
+        <button class="chip on" id="w-follow" type="button">Following along</button>
+        <p class="fine" id="w-tally"></p>
+        <div class="legend">
+          <span class="key s-new">not in your deck</span>
+          <span class="key s-fresh">in it, not met</span>
+          <span class="key s-learning">being learned</span>
+          <span class="key s-young">coming back</span>
+          <span class="key s-known">settled</span>
+        </div>
+      </div>
+
+      <div class="transcript" id="w-lines"></div>
+      <button class="ghost wide" id="w-more" type="button" hidden>Show more lines</button>
+    </div>
+  </section>
+
   <!-- Browse: find any card, fix it, or remove it. -->
   <section class="screen" id="screen-browse" hidden>
     <div class="pad">
@@ -263,7 +307,28 @@
 
 </main>
 
+<div class="sheet" id="w-sheet" hidden>
+  <div class="sheet-card">
+    <header class="sheet-head">
+      <div>
+        <p class="sheet-word" id="w-sheet-word"></p>
+        <p class="fine" id="w-sheet-state"></p>
+      </div>
+      <button class="ghost" id="w-sheet-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <p class="sheet-line" id="w-sheet-line"></p>
+    <div class="brain" id="w-sheet-why"></div>
+    <div class="pair">
+      <button class="primary" id="w-sheet-add" type="button">Make a card</button>
+      <button class="ghost" id="w-sheet-explain" type="button">Why this word</button>
+    </div>
+    <button class="ghost wide" id="w-sheet-known" type="button">I already know this one</button>
+  </div>
+</div>
+
 <input type="file" id="apkg-file" accept=".apkg,.colpkg,application/zip" hidden>
+<input type="file" id="w-media-file" accept="video/*,audio/*" hidden>
+<input type="file" id="w-subs-file" accept=".srt,.vtt,.ass,.ssa,.sub,text/plain" hidden>
 <script type="module" src="app.js"></script>
 </body>
 </html>

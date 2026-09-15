@@ -283,3 +283,71 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* watching something, and taking the words out of it ------------------------ */
+
+#w-player { margin: 12px 0 4px; }
+#w-player video, #w-player audio { width: 100%; border-radius: var(--radius); background: #000; display: block; }
+#w-player audio { background: transparent; }
+
+.w-tools { margin: 10px 0 4px; }
+.chip {
+  background: var(--raised); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 14px; font-size: 13px; font-family: inherit;
+  margin: 0 6px 6px 0;
+}
+.chip.on { color: var(--ground); background: var(--accent); border-color: var(--accent); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 2px; }
+.legend .key { font-size: 11px; color: var(--muted); }
+.legend .key::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 5px; vertical-align: middle; background: var(--line);
+}
+.legend .s-new::before { background: var(--accent); }
+.legend .s-fresh::before { background: var(--muted); }
+.legend .s-learning::before { background: var(--again); }
+.legend .s-young::before { background: var(--easy); }
+.legend .s-known::before { background: var(--good); }
+
+.transcript { margin-top: 10px; }
+.line {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 7px 8px; border-radius: 9px; margin: 0 -8px;
+}
+.line.on { background: var(--raised); }
+.line .at {
+  flex: none; background: none; border: 0; padding: 0; font-family: var(--mono);
+  font-size: 11.5px; color: var(--muted); min-width: 40px; text-align: right;
+}
+.line .said { margin: 0; font-size: 16px; line-height: 1.6; }
+
+/* A word carries its standing in the deck, and nothing else on the line does,
+   so the marking is an underline rather than a colour: colour on a whole word
+   at this size is what makes a transcript unreadable. */
+.w { border-bottom: 2px solid transparent; padding-bottom: 1px; }
+.w.s-new { border-bottom-color: var(--accent); border-bottom-width: 3px; color: var(--ink); }
+.w.s-fresh { border-bottom-color: var(--muted); }
+.w.s-learning { border-bottom-color: var(--again); }
+.w.s-young { border-bottom-color: var(--easy); }
+.w.s-known { border-bottom-color: var(--good); }
+.w.s-familiar, .w.s-common { color: var(--muted); }
+.w.in-phrase { background: rgba(224, 163, 63, 0.09); }
+
+/* the word sheet ----------------------------------------------------------- */
+.sheet {
+  position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+}
+.sheet-card {
+  width: 100%; max-width: 560px; margin: 0 auto; background: var(--ground);
+  border-radius: 18px 18px 0 0; border-top: 1px solid var(--line);
+  padding: 18px var(--pad) calc(18px + env(safe-area-inset-bottom));
+  max-height: 86vh; overflow-y: auto;
+}
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.sheet-word { font-size: 25px; font-weight: 700; margin: 0; }
+.sheet-line {
+  font-size: 15px; color: var(--muted); line-height: 1.55; margin: 10px 0 12px;
+  padding-left: 11px; border-left: 2px solid var(--line);
+}
