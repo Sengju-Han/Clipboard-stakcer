@@ -65,6 +65,17 @@
           <input type="text" id="media-base" placeholder="../media/">
         </div>
         <hr class="sep">
+        <div class="row">
+          <label for="gh-token">Sync <span class="hint">optional — your cards on both devices, through your own repository. Needs a token with Contents: read and write.</span></label>
+          <input id="gh-token" type="password" placeholder="github_pat_...">
+        </div>
+        <div class="row two">
+          <input id="gh-owner" type="text" placeholder="owner">
+          <input id="gh-repo" type="text" placeholder="repository">
+        </div>
+        <button class="ghost" id="sync-btn" type="button">Sync now</button>
+        <p class="fine" id="sync-note"></p>
+        <hr class="sep">
         <button class="ghost" id="apkg-btn" type="button">Import an .apkg from Anki</button>
         <button class="ghost" id="export-json-btn" type="button">Back everything up (JSON)</button>
         <button class="ghost" id="export-csv-btn" type="button">Export for Anki (CSV)</button>

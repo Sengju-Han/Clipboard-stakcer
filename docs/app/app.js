@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.7";
+const VERSION = "2026-09-15.8";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +30,9 @@ const prefs = {
       newPerDay: Number.isFinite(raw.newPerDay) ? raw.newPerDay : DEFAULTS.newPerDay,
       mediaBase: typeof raw.mediaBase === "string" ? raw.mediaBase : "",
       deck: raw.deck || "",
+      ghToken: typeof raw.ghToken === "string" ? raw.ghToken : "",
+      ghOwner: typeof raw.ghOwner === "string" ? raw.ghOwner : "",
+      ghRepo: typeof raw.ghRepo === "string" ? raw.ghRepo : "",
     };
   },
   write(patch) {
@@ -283,6 +286,9 @@ function sayIt(card) {
 // ---- settings form -------------------------------------------------------
 function applySettingsToForm(s) {
   $("version-note").textContent = `Lexis ${VERSION}`;
+  $("gh-token").value = s.ghToken;
+  $("gh-owner").value = s.ghOwner;
+  $("gh-repo").value = s.ghRepo;
   $("retention").value = s.retention;
   $("retention-out").textContent = `${Math.round(s.retention * 100)}%`;
   $("new-per-day").value = s.newPerDay;
@@ -304,6 +310,61 @@ $("import-btn").addEventListener("click", async () => {
   if (r.ok) await goHome(); else $("boot-detail").textContent = r.why;
 });
 $("audio-btn").addEventListener("click", () => current && speak(current));
+
+// ---- sync ----------------------------------------------------------------
+// Cards are merged per card, by when each was actually changed, so a review
+// answered on the tablet at nine beats one answered on the phone at eight no
+// matter which device syncs first. Nothing is deleted by a sync: a card the
+// other device has and this one does not simply arrives.
+let syncing = false;
+
+for (const id of ["gh-token", "gh-owner", "gh-repo"]) {
+  $(id).addEventListener("change", (e) => {
+    const key = { "gh-token": "ghToken", "gh-owner": "ghOwner", "gh-repo": "ghRepo" }[id];
+    prefs.write({ [key]: e.target.value.trim() });
+  });
+}
+
+$("sync-btn").addEventListener("click", async () => {
+  if (syncing) return;
+  const settings = prefs.read();
+  const token = $("gh-token").value.trim();
+  const owner = $("gh-owner").value.trim();
+  const repo = $("gh-repo").value.trim();
+  const say = (text) => { $("sync-note").textContent = text; };
+
+  if (!token || !owner || !repo) {
+    return say("Fill in the token, owner and repository first.");
+  }
+  prefs.write({ ghToken: token, ghOwner: owner, ghRepo: repo });
+
+  syncing = true;
+  $("sync-btn").disabled = true;
+  try {
+    const { github, sync } = await import("./sync.js");
+    const cards = await store.allCards();
+    const reviews = await store.history();
+    const result = await sync(github({ token, owner, repo }), { cards, reviews }, say);
+
+    // Write the merged state back before reporting success: a sync that says it
+    // worked while this device still holds the old cards is a lie you only find
+    // out about on the next review.
+    await store.putCards(result.cards);
+    await store.putLog(result.reviews);
+
+    const d = result.detail;
+    say(`Synced with ${owner}/${repo}. ${result.cards.length} cards, ${result.reviews.length} reviews. ` +
+        (d.taken ? `${d.taken} newer from the other device, ` : "") +
+        (d.kept ? `${d.kept} newer here, ` : "") +
+        `${d.added} only here.`);
+    await goHome();
+  } catch (err) {
+    say(err.message || String(err));
+  } finally {
+    syncing = false;
+    $("sync-btn").disabled = false;
+  }
+});
 
 // ---- browsing ------------------------------------------------------------
 // An app you can add to but never correct is a trap: the typos already in this
