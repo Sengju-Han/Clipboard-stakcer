@@ -207,6 +207,12 @@ function openSheet(word, cueIndex, state) {
   const inDeck = ["known", "young", "learning", "fresh"].includes(state);
   $("w-sheet-add").hidden = inDeck;
   $("w-sheet-known").hidden = inDeck || state === "common";
+  // Only when there is actually a soundtrack to take it from, and only on a
+  // line that has real timings — a pasted transcript has nothing to cut.
+  const clip = $("w-sheet-clip");
+  clip.hidden = inDeck || !media || !cues[cueIndex] || cues[cueIndex].synthetic;
+  clip.disabled = false;
+  clip.textContent = "Make a card with the line's audio";
   $("w-sheet").hidden = false;
 }
 
@@ -287,6 +293,32 @@ export function mountWatch(hooks) {
     // context already attached.
     deps.add({ word: sheetWord, example: line, source: sourceName, at: cues[sheetCue]?.start });
     closeSheet();
+  });
+
+  $("w-sheet-clip").addEventListener("click", async () => {
+    const button = $("w-sheet-clip");
+    const cue = cues[sheetCue];
+    if (!cue || button.disabled) return;
+    button.disabled = true;
+    try {
+      const clip = await import("./clip.js");
+      if (!clip.canCapture(media)) throw new Error("This browser cannot record from a video.");
+      const { blob, extension, seconds } = await clip.captureLine(media, cue.start, cue.end, {
+        onProgress: (text) => { button.textContent = text; },
+      });
+      // Held now, because closing the sheet forgets which word it was about.
+      const word = sheetWord;
+      const name = clip.nameFor(word, extension);
+      await deps.saveAudio(name, blob);
+      deps.add({ word, example: cue.text, source: sourceName, at: cue.start,
+                 audio: name, audioLocal: true });
+      closeSheet();
+      $("w-note").textContent = `${seconds}s of audio captured for “${word}”.`;
+    } catch (err) {
+      button.textContent = err.message || String(err);
+    } finally {
+      button.disabled = false;
+    }
   });
 
   $("w-sheet-known").addEventListener("click", () => {

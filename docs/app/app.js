@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.15";
+const VERSION = "2026-09-15.16";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -329,6 +329,13 @@ function finish() {
 let voice = null;
 
 function speak(card) {
+  // Audio taken off a video while mining beats anything else on the card: it is
+  // the line as somebody actually said it, so it is tried before the published
+  // media and long before the phone's own voice.
+  if (card.audioLocal && card.audio) {
+    playLocal(card);
+    return;
+  }
   const base = prefs.read().mediaBase.trim();
   if (base && card.audio) {
     const src = base.replace(/\/?$/, "/") + card.audio;
@@ -337,6 +344,20 @@ function speak(card) {
     return;
   }
   sayIt(card);
+}
+
+let localUrl = "";
+async function playLocal(card) {
+  try {
+    const blob = await store.getMedia(card.audio);
+    if (!blob) { sayIt(card); return; }
+    if (localUrl) URL.revokeObjectURL(localUrl);
+    localUrl = URL.createObjectURL(blob);
+    const audio = new Audio(localUrl);
+    audio.play().catch(() => sayIt(card));
+  } catch {
+    sayIt(card);
+  }
 }
 
 function sayIt(card) {
@@ -358,6 +379,15 @@ function sayIt(card) {
 // ---- settings form -------------------------------------------------------
 function applySettingsToForm(s) {
   $("version-note").textContent = `Lexis ${VERSION}`;
+  // Captured audio is the only thing here that takes real space, and the only
+  // thing "erase local progress" destroys that cannot be fetched again.
+  store.mediaSize().then(({ count, bytes }) => {
+    if (!count) return;
+    const mb = bytes / 1048576;
+    $("version-note").textContent =
+      `Lexis ${VERSION} · ${count} captured clip${count === 1 ? "" : "s"}, ` +
+      `${mb < 1 ? `${Math.max(1, Math.round(bytes / 1024))}KB` : `${mb.toFixed(1)}MB`}`;
+  }).catch(() => { /* the tally is not worth an error */ });
   $("anthropic").value = s.anthropic;
   $("gh-token").value = s.ghToken;
   $("gh-owner").value = s.ghOwner;
@@ -477,6 +507,7 @@ async function openWatchScreen() {
       cards: () => cache,
       apiKey: () => prefs.read().anthropic,
       add: (prefill) => openAdd(prefill),
+      saveAudio: (name, blob) => store.putMedia(name, blob),
     });
     watchMounted = true;
   }
@@ -710,6 +741,7 @@ function openAdd(prefill = null) {
   $("a-hook").value = "";
   $("a-clue").value = "";
   $("a-example").value = prefill?.example || "";
+  pendingAudio = prefill?.audio ? { audio: prefill.audio, audioLocal: true } : null;
   $("a-deck").value = prefs.read().deck || (cache[0] && cache[0].deck) || "Default";
   $("add-note").textContent = prefill?.source
     ? `From ${prefill.source}${prefill.at ? ` at ${Math.floor(prefill.at / 60)}:${String(Math.floor(prefill.at % 60)).padStart(2, "0")}` : ""}.`
@@ -721,6 +753,9 @@ function openAdd(prefill = null) {
 
 // Where "close" and "added" should go back to.
 let cameFrom = "home";
+
+// Audio captured off a video for a card that has not been saved yet.
+let pendingAudio = null;
 
 $("add-btn").addEventListener("click", () => openAdd());
 $("add-close").addEventListener("click", () => (cameFrom === "watch" ? openWatchScreen() : goHome()));
@@ -747,7 +782,8 @@ $("add-form").addEventListener("submit", async (event) => {
     hook: $("a-hook").value.trim(),
     clue: $("a-clue").value.trim(),
     example: $("a-example").value.trim(),
-    audio: "",
+    audio: pendingAudio?.audio || "",
+    audioLocal: Boolean(pendingAudio?.audioLocal),
     tags: ["lexis"],
     notetype: "",
     created: new Date().toISOString().slice(0, 10),
@@ -802,6 +838,13 @@ $("export-json-btn").addEventListener("click", async () => {
   const cards = await store.allCards();
   // A backup restores this browser exactly, so it takes the log as stored.
   const log = await store.wholeLog();
+  // And the captured audio, base64'd. It is the one thing on a card that
+  // exists nowhere else — a backup that quietly dropped it would be found out
+  // months later, on the day it was needed.
+  const clips = [];
+  for (const row of await store.allMedia()) {
+    clips.push({ name: row.name, type: row.blob?.type || "", data: await base64(row.blob) });
+  }
   download(`lexis-backup-${stamp()}.json`, JSON.stringify({
     exported_at: new Date().toISOString(),
     version: VERSION,
@@ -810,9 +853,22 @@ $("export-json-btn").addEventListener("click", async () => {
     cards,
     // The log goes too: it is what lets a schedule be rebuilt from nothing.
     reviews: log,
+    media: clips,
   }, null, 1), "application/json");
-  $("settings-note").textContent = `${cards.length} cards and ${log.length} reviews saved to your downloads.`;
+  $("settings-note").textContent = `${cards.length} cards, ${log.length} reviews` +
+    (clips.length ? ` and ${clips.length} captured clip${clips.length === 1 ? "" : "s"}` : "") +
+    ` saved to your downloads.`;
 });
+
+async function base64(blob) {
+  if (!blob) return "";
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
 
 // A deck you cannot get back out is a deck you are renting. This writes the
 // real thing — every card, deck, tag and, unlike a CSV, every card's schedule
@@ -825,13 +881,18 @@ $("export-apkg-btn").addEventListener("click", async () => {
   button.disabled = true;
   const say = (text) => { $("settings-note").textContent = text; };
   try {
-    const [cards, log, mod] = await Promise.all([
-      store.allCards(), store.history(), import("./apkgout.js"),
+    const [cards, log, mod, media] = await Promise.all([
+      store.allCards(), store.history(), import("./apkgout.js"), store.allMedia(),
     ]);
-    const blob = await mod.buildApkg(cards, log, { onProgress: say });
+    // Only the clips a card still points at: audio for a card that was deleted
+    // is dead weight in the file and a missing-media warning on the other side.
+    const wanted = new Set(cards.filter((c) => c.audioLocal && c.audio).map((c) => c.audio));
+    const clips = media.filter((row) => wanted.has(row.name));
+    const blob = await mod.buildApkg(cards, log, { media: clips, onProgress: say });
     download(`lexis-${stamp()}.apkg`, blob, "application/octet-stream");
-    const sounds = cards.filter((c) => c.audio).length;
-    say(`${cards.length} cards and ${log.length} reviews written as an .apkg, ` +
+    const sounds = cards.filter((c) => c.audio && !c.audioLocal).length;
+    say((clips.length ? `${clips.length} captured clip${clips.length === 1 ? "" : "s"} included. ` : "") +
+      `${cards.length} cards and ${log.length} reviews written as an .apkg, ` +
       `with their decks, tags and scheduling. In Anki: File → Import, and turn on ` +
       `“Import any learning progress” — left off, Anki resets every card to new on purpose. ` +
       (sounds ? `The ${sounds} audio references point at files already in that collection, ` +
