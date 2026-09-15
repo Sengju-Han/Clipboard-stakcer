@@ -8,11 +8,11 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.12";
+const VERSION = "2026-09-15.13";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
-const screens = ["boot", "home", "stats", "browse", "edit", "add", "review", "done"];
+const screens = ["boot", "home", "stats", "watch", "browse", "edit", "add", "review", "done"];
 
 function show(name) {
   for (const s of screens) $(`screen-${s}`).hidden = s !== name;
@@ -411,6 +411,26 @@ async function openStats() {
     .join("");
 }
 
+// ---- watching ------------------------------------------------------------
+let watchMounted = false;
+
+async function openWatchScreen() {
+  const mod = await import("./watch.js");
+  if (!watchMounted) {
+    mod.mountWatch({
+      cards: () => cache,
+      apiKey: () => prefs.read().anthropic,
+      add: (prefill) => openAdd(prefill),
+    });
+    watchMounted = true;
+  }
+  show("watch");
+  mod.openWatch();
+}
+
+$("watch-btn").addEventListener("click", openWatchScreen);
+$("watch-close").addEventListener("click", goHome);
+
 $("stats-btn").addEventListener("click", openStats);
 $("stats-close").addEventListener("click", goHome);
 
@@ -597,7 +617,10 @@ $("edit-delete").addEventListener("click", async () => {
 // ---- adding a card -------------------------------------------------------
 // Typed here, saved here, due immediately. No network, so it works on a train
 // and a card added offline is not a card lost.
-function openAdd() {
+// A card can arrive here empty, from the + button, or already half-written,
+// from a word tapped in a transcript — in which case the sentence it was said
+// in comes with it, which is the whole point of mining from a show.
+function openAdd(prefill = null) {
   const list = $("deck-options");
   list.innerHTML = "";
   for (const name of [...new Set(cache.map((c) => c.deck))].sort()) {
@@ -605,14 +628,24 @@ function openAdd() {
     opt.value = name;
     list.appendChild(opt);
   }
+  $("a-word").value = prefill?.word || "";
+  $("a-hook").value = "";
+  $("a-clue").value = "";
+  $("a-example").value = prefill?.example || "";
   $("a-deck").value = prefs.read().deck || (cache[0] && cache[0].deck) || "Default";
-  $("add-note").textContent = "";
+  $("add-note").textContent = prefill?.source
+    ? `From ${prefill.source}${prefill.at ? ` at ${Math.floor(prefill.at / 60)}:${String(Math.floor(prefill.at % 60)).padStart(2, "0")}` : ""}.`
+    : "";
+  cameFrom = prefill ? "watch" : "home";
   show("add");
-  $("a-word").focus();
+  $(prefill?.word ? "a-clue" : "a-word").focus();
 }
 
-$("add-btn").addEventListener("click", openAdd);
-$("add-close").addEventListener("click", goHome);
+// Where "close" and "added" should go back to.
+let cameFrom = "home";
+
+$("add-btn").addEventListener("click", () => openAdd());
+$("add-close").addEventListener("click", () => (cameFrom === "watch" ? openWatchScreen() : goHome()));
 
 $("add-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -651,6 +684,15 @@ $("add-form").addEventListener("submit", async (event) => {
 
   await store.saveCard(card);
   cache.push(card);
+
+  // Mined from a transcript: go straight back to it, and to a line where that
+  // word is no longer one of the ones you do not have.
+  if (cameFrom === "watch") {
+    const said = `"${card.word}" added to ${card.deck}. It is due now.`;
+    await openWatchScreen();
+    $("w-note").textContent = said;
+    return;
+  }
 
   $("add-form").reset();
   $("a-deck").value = card.deck;
