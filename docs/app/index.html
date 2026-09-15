@@ -47,12 +47,24 @@
         <button class="ghost" id="add-btn" type="button">+ Add a card</button>
         <button class="ghost" id="browse-btn" type="button">Browse deck</button>
       </div>
-      <div class="pair">
-        <button class="ghost" id="stats-btn" type="button">Progress</button>
-        <button class="ghost" id="watch-btn" type="button">Watch &amp; mine</button>
-      </div>
-      <button class="ghost wide" id="talk-btn" type="button">Speak with what you have learned</button>
       <p class="fine" id="home-note"></p>
+
+      <!-- The rest of the app, saying what it is for. Nine screens with nothing
+           but their names on the way in is nine screens nobody opens twice. -->
+      <nav class="tools">
+        <button class="tool" id="watch-btn" type="button">
+          <span class="t">Watch &amp; mine</span>
+          <span class="d">A show, a podcast, or a transcript, with the words you do not have marked in it</span>
+        </button>
+        <button class="tool" id="talk-btn" type="button">
+          <span class="t">Speak</span>
+          <span class="d">A conversation built out of the six words you are in the middle of learning</span>
+        </button>
+        <button class="tool" id="stats-btn" type="button">
+          <span class="t">Progress</span>
+          <span class="d">How much is coming, whether it is sticking, and the cards fighting you</span>
+        </button>
+      </nav>
 
       <div class="notice" id="no-schedule" hidden>
         <p id="no-schedule-said"></p>
