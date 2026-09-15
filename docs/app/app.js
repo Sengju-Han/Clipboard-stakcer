@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.22";
+const VERSION = "2026-09-15.23";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -759,8 +759,26 @@ $("acct-sync-btn").addEventListener("click", () => account("Syncing…", async (
   const result = await mod.syncAccount(store, say);
   await goHome();
   say(`Synced. ${result.pushed} sent, ${result.pulled} came down. ` +
-    `The account holds ${result.held.cards} cards and ${result.held.reviews} reviews.`);
+    `The account holds ${result.held.cards} cards and ${result.held.reviews} reviews.` +
+    await clipsStayHere());
 }));
+
+// Cards travel; the audio captured off a video does not. A clip is a megabyte
+// where a card is a kilobyte, and syncing hundreds of them through a JSON
+// document would make every sync a download. The card still works on the other
+// phone — it falls back to the phone's own voice — so this is a thing to say
+// rather than a thing to fix, and it is only worth saying when there are any.
+async function clipsStayHere() {
+  try {
+    const { count } = await store.mediaSize();
+    if (!count) return "";
+    const one = count === 1;
+    return ` The ${count} captured clip${one ? "" : "s"} stay${one ? "s" : ""} on this phone — ` +
+      `the .apkg export and the JSON backup are what carry ${one ? "it" : "them"}.`;
+  } catch {
+    return "";
+  }
+}
 
 $("sync-btn").addEventListener("click", async () => {
   if (syncing) return;
@@ -798,7 +816,7 @@ $("sync-btn").addEventListener("click", async () => {
     say(`Synced with ${owner}/${repo}. ${live} cards, ${result.reviews.length} reviews. ` +
         (d.taken ? `${d.taken} newer from the other device, ` : "") +
         (d.kept ? `${d.kept} newer here, ` : "") +
-        `${d.added} only here.`);
+        `${d.added} only here.` + await clipsStayHere());
     await goHome();
   } catch (err) {
     say(err.message || String(err));
