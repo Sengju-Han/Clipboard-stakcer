@@ -122,10 +122,32 @@ function round(n) {
 // Due cards come first and oldest-due first, because a card three weeks overdue
 // is the one actually rotting. New cards are rationed - introducing everything
 // at once is how a deck becomes a wall a week later and stops being opened.
+// Eight lapses is where Anki draws the line and it is a good line: a card you
+// have forgotten eight times is rarely a hard word, it is a bad card — two
+// meanings on one side, a clue that does not point at the answer, a sentence
+// that would fit six other words. Counting them is not the interesting part;
+// putting them in front of the person so they can be fixed is.
+export const LEECH_AT = 8;
+
+export function leeches(cards, at = LEECH_AT) {
+  return cards
+    .filter((c) => (c.fsrs?.lapses || 0) >= at)
+    .sort((a, b) => (b.fsrs.lapses || 0) - (a.fsrs.lapses || 0));
+}
+
+// A card can be put down for a while without being deleted. Resting is not
+// suspending: it comes back on its own, because a card nobody ever sees again
+// is a card that may as well have been deleted, and deleting is a decision the
+// person should make on purpose.
+export function resting(card, now = Date.now()) {
+  return Boolean(card.restUntil && new Date(card.restUntil).getTime() > now);
+}
+
 export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.maxPerSession,
                                newPerDay = DEFAULTS.newPerDay, introducedToday = 0 } = {}) {
-  const pool = deck ? cards.filter((c) => c.deck === deck) : cards;
   const stamp = now.getTime();
+  const awake = cards.filter((c) => !resting(c, stamp));
+  const pool = deck ? awake.filter((c) => c.deck === deck) : awake;
 
   const due = pool
     .filter((c) => c.fsrs.state !== State.New && new Date(c.fsrs.due).getTime() <= stamp)
@@ -151,12 +173,15 @@ export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.max
 
 export function counts(cards, now = new Date()) {
   const stamp = now.getTime();
-  let due = 0, fresh = 0, learning = 0, known = 0;
+  let due = 0, fresh = 0, learning = 0, known = 0, asleep = 0;
   for (const c of cards) {
+    // A resting card is owed nothing today, so counting it as due would make
+    // the number on the home screen disagree with the session it hands you.
+    if (resting(c, stamp)) { asleep += 1; continue; }
     if (c.fsrs.state === State.New) { fresh += 1; continue; }
     if (c.fsrs.state === State.Learning || c.fsrs.state === State.Relearning) learning += 1;
     if (new Date(c.fsrs.due).getTime() <= stamp) due += 1;
     else known += 1;
   }
-  return { due, fresh, learning, known, total: cards.length };
+  return { due, fresh, learning, known, asleep, total: cards.length };
 }
