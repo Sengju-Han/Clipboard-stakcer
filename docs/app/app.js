@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.1";
+const VERSION = "2026-09-15.3";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -282,6 +282,7 @@ function sayIt(card) {
 
 // ---- settings form -------------------------------------------------------
 function applySettingsToForm(s) {
+  $("version-note").textContent = `Lexis ${VERSION}`;
   $("retention").value = s.retention;
   $("retention-out").textContent = `${Math.round(s.retention * 100)}%`;
   $("new-per-day").value = s.newPerDay;
@@ -347,8 +348,28 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// A service worker makes a stale copy *more* likely than a plain page, not
+// less: it is designed to keep serving what it already has. This one takes over
+// as soon as it installs, but the tab that is already open goes on running the
+// old code until it is reloaded — which is the gap a learner falls into,
+// reporting a bug that was fixed days ago. So the reload is automatic, and
+// guarded so a worker that keeps re-activating cannot put the app in a loop.
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* offline is a bonus, not a requirement */ });
+
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;
+    // The first worker to take control of a page that had none is the initial
+    // install, not an update. Reloading there would bounce every first visit.
+    if (!sessionStorage.getItem("lexis:controlled")) {
+      sessionStorage.setItem("lexis:controlled", "1");
+      return;
+    }
+    reloading = true;
+    location.reload();
+  });
+  if (navigator.serviceWorker.controller) sessionStorage.setItem("lexis:controlled", "1");
 }
 
 boot();
