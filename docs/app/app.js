@@ -8,11 +8,11 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.8";
+const VERSION = "2026-09-15.9";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
-const screens = ["boot", "home", "browse", "edit", "add", "review", "done"];
+const screens = ["boot", "home", "stats", "browse", "edit", "add", "review", "done"];
 
 function show(name) {
   for (const s of screens) $(`screen-${s}`).hidden = s !== name;
@@ -310,6 +310,57 @@ $("import-btn").addEventListener("click", async () => {
   if (r.ok) await goHome(); else $("boot-detail").textContent = r.why;
 });
 $("audio-btn").addEventListener("click", () => current && speak(current));
+
+// ---- progress ------------------------------------------------------------
+// Two questions a learner actually has: how much work is coming, and whether
+// any of it is sticking. Both are computed from what is already stored, so
+// nothing extra has to be tracked to answer them.
+async function openStats() {
+  show("stats");
+  const s = await import("./stats.js");
+  const reviews = await store.history();
+
+  const r = s.retention(reviews);
+  $("s-retention").textContent = r.pct === null ? "—" : `${r.pct}%`;
+  $("s-retention-note").textContent = r.seen
+    ? `${r.held} of ${r.seen} cards that were already learned came back and still were. ` +
+      `Cards still in learning are left out — counting them makes this look worse on the days you study hardest.`
+    : "Retention needs cards you have reviewed at least twice. Keep going and it will appear.";
+
+  $("s-streak").textContent = s.streak(reviews);
+
+  const done = s.activity(reviews, 30);
+  const total = done.reduce((n, b) => n + b.count, 0);
+  $("s-done").textContent = total;
+
+  const f = s.forecast(cache, 30);
+  $("s-forecast").innerHTML = s.bars(f.buckets, { label: "Cards due each day for the next 30 days", highlightFirst: true });
+  const ahead = f.buckets.reduce((n, b) => n + b.count, 0);
+  $("s-forecast-note").textContent = f.overdue
+    ? `${f.overdue} already owed, shown in red on today. ${ahead} cards come back within the month.`
+    : `${ahead} cards come back within the month. Nothing is overdue.`;
+
+  $("s-activity").innerHTML = s.bars(done, { label: "Reviews you answered each day for the last 30 days" });
+  const active = done.filter((b) => b.count > 0).length;
+  $("s-activity-note").textContent = total
+    ? `${total} reviews across ${active} day${active === 1 ? "" : "s"}.`
+    : "Nothing reviewed in this browser yet.";
+
+  const m = s.maturity(cache);
+  const rows = [
+    ["Mature", m.mature, "settled — three weeks or more between reviews"],
+    ["Young", m.young, "learned, but still coming back often"],
+    ["Learning", m.learning, "in the middle of being learned"],
+    ["New", m.fresh, "never reviewed"],
+  ];
+  $("s-maturity").innerHTML = rows
+    .map(([name, n, what]) =>
+      `<tr><td>${name}<span class="what">${what}</span></td><td>${n}</td></tr>`)
+    .join("");
+}
+
+$("stats-btn").addEventListener("click", openStats);
+$("stats-close").addEventListener("click", goHome);
 
 // ---- sync ----------------------------------------------------------------
 // Cards are merged per card, by when each was actually changed, so a review

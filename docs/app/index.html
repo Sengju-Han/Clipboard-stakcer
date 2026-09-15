@@ -45,6 +45,7 @@
         <button class="ghost" id="add-btn" type="button">+ Add a card</button>
         <button class="ghost" id="browse-btn" type="button">Browse deck</button>
       </div>
+      <button class="ghost wide" id="stats-btn" type="button">Progress</button>
       <p class="fine" id="home-note"></p>
 
       <div class="decks" id="deck-list"></div>
@@ -116,6 +117,40 @@
         <button class="grade easy"  data-rating="4" type="button"><span>Easy</span><em id="i-4"></em></button>
       </div>
     </footer>
+  </section>
+
+  <!-- Progress: how much work is coming, and whether it is sticking. -->
+  <section class="screen" id="screen-stats" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Progress</h1>
+        <button class="ghost" id="stats-close" type="button" aria-label="Back">✕</button>
+      </header>
+
+      <div class="figures">
+        <div class="figure"><span class="n" id="s-retention">—</span><span class="l">retention</span></div>
+        <div class="figure"><span class="n" id="s-streak">0</span><span class="l">day streak</span></div>
+        <div class="figure"><span class="n" id="s-done">0</span><span class="l">reviews, 30d</span></div>
+      </div>
+      <p class="fine" id="s-retention-note"></p>
+
+      <section class="chart">
+        <h2>Coming up <span class="sub">next 30 days</span></h2>
+        <div class="plot" id="s-forecast"></div>
+        <p class="fine" id="s-forecast-note"></p>
+      </section>
+
+      <section class="chart">
+        <h2>What you have done <span class="sub">last 30 days</span></h2>
+        <div class="plot" id="s-activity"></div>
+        <p class="fine" id="s-activity-note"></p>
+      </section>
+
+      <section class="chart">
+        <h2>Where the deck stands</h2>
+        <table class="tally-table" id="s-maturity"></table>
+      </section>
+    </div>
   </section>
 
   <!-- Browse: find any card, fix it, or remove it. -->

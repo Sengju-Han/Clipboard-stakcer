@@ -69,6 +69,24 @@ The backend sits behind a two-method interface, so when this outgrows a
 repository only the adapter changes. The merge is the hard part and it is not
 GitHub-specific.
 
+## Progress
+
+*Progress* on the home screen answers the two questions a learner actually has.
+
+**How much work is coming** — one bar per day for thirty days, counted from each
+card's own due date, so it is the same number the review screen will hand you on
+the day. Anything already owed is red on today rather than hidden in the total.
+
+**Whether it is sticking** — retention is the share of cards that were *already
+learned*, came back, and still were. Cards in learning are deliberately left
+out: counting them drags the number down on exactly the days you study hardest,
+which is backwards.
+
+Also a streak, thirty days of what you have actually answered, and the deck
+split into mature (three weeks or more between reviews), young, learning and
+new — the same 21-day line Anki draws, so the word means the same thing to
+anyone arriving from there.
+
 ## Browsing and fixing
 
 *Browse deck* searches word, hook, clue and example at once — including Korean,
@@ -119,6 +137,8 @@ conversion is approximate and the deck file records which cards it applied to.
 | `review.js` | FSRS wiring, the queue, and what each grade button will do. |
 | `store.js` | IndexedDB: cards, an append-only review log, and settings. |
 | `apkg.js` | Reads an Anki `.apkg` in the browser. Loaded only when you import one. |
+| `stats.js` | Forecast, retention, streak and maturity, plus the inline-SVG bars. |
+| `sync.js` | The merge, and the GitHub adapter behind it. |
 | `vendor/ts-fsrs.mjs` | The scheduler. MIT, from Open Spaced Repetition, vendored rather than fetched from a CDN so it works offline. |
 | `vendor/fflate.mjs` · `vendor/fzstd.mjs` · `vendor/sql-wasm.*` | Zip, zstd and SQLite, all MIT. Fetched on demand, never pre-cached — the SQLite engine alone is most of a megabyte and most sessions never import a file. |
 | `sw.js` | Caches the app's own files. Never the deck — a stale deck cached behind the app's back is how you end up reviewing yesterday's cards forever. |
