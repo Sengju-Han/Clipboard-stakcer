@@ -120,12 +120,23 @@
                 padding: 6px 12px; margin: 0; width: 100%; font-weight: 600; }
   .brain .waiting { color: var(--muted); }
   .sep { height: 1px; background: var(--line); border: 0; margin: 14px 0; }
+
+.elsewhere {
+  margin-top: 14px; padding: 11px 13px; border: 1px solid var(--line);
+  border-radius: 10px; font-size: 14px; line-height: 1.5;
+}
+.elsewhere a { font-weight: 650; }
 </style>
 </head>
 <body>
 <header>
   <h1>Add to Anki</h1>
   <p>Types a card, generates the sentence audio, syncs it to your devices.</p>
+  <!-- This page is the site's front door, and the app lives one directory down
+       where nobody would think to look. Somebody who wants to review, watch
+       something, or speak has no way to find it from here otherwise. -->
+  <p class="elsewhere"><a href="app/">Open Lexis</a> — review with FSRS, mine words out of a
+  show, speak this week's words. Works offline once it is on your home screen.</p>
 </header>
 
 <main>
@@ -210,7 +221,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-14.9";
+const VERSION = "2026-09-15.1";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
