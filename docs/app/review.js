@@ -171,6 +171,23 @@ export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.max
   return out.slice(0, limit);
 }
 
+// Whether the schedule that arrived with a deck is a real one.
+//
+// A deck exported without its review history still has a due date on every
+// card — the importer has to put something there — and every one of them is
+// the same day. That is a deck where nothing is genuinely owed and everything
+// says it is, which is worth saying out loud rather than handing somebody
+// 1,109 cards and letting them believe it.
+export function scheduleLooksReal(cards) {
+  const reviewed = cards.filter((c) => c.fsrs.state !== State.New);
+  if (reviewed.length < 20) return true;              // too few to tell
+  const days = new Set(reviewed.map((c) => String(c.fsrs.due).slice(0, 10)));
+  if (days.size > 1) return true;
+  // One due date for every card. The only innocent explanation is a deck that
+  // really was all scheduled for the same day, which does not happen.
+  return false;
+}
+
 export function counts(cards, now = new Date()) {
   const stamp = now.getTime();
   let due = 0, fresh = 0, learning = 0, known = 0, asleep = 0;

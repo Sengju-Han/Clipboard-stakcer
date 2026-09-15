@@ -6,9 +6,9 @@
 
 import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
-  LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
+  scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.18";
+const VERSION = "2026-09-15.19";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -142,8 +142,34 @@ async function goHome() {
     : `${tally.total} cards`;
 
   renderDecks(cache, settings);
+  sayIfTheScheduleIsNotReal();
   show("home");
 }
+
+// A deck can arrive without its review history — the published one did, and
+// any deck exported without scheduling will. Every card then carries the same
+// made-up due date, which looks exactly like a thousand cards being owed. The
+// app knows the difference and should say so rather than let somebody spend an
+// evening on a number that is not true.
+function sayIfTheScheduleIsNotReal() {
+  const box = $("no-schedule");
+  if (!box) return;
+  const hushed = localStorage.getItem("lexis:schedule-warned") === "yes";
+  const real = scheduleLooksReal(cache);
+  box.hidden = real || hushed || cache.length === 0;
+  if (box.hidden) return;
+  $("no-schedule-said").textContent =
+    "This deck came without its review history, so every card says it is due today. " +
+    "Open the .apkg you export from AnkiDroid and the real schedule comes with it — " +
+    "or run “Build the review deck” under Actions.";
+}
+
+$("no-schedule-ok").addEventListener("click", () => {
+  try { localStorage.setItem("lexis:schedule-warned", "yes"); } catch { /* blocked */ }
+  $("no-schedule").hidden = true;
+});
+
+$("no-schedule-import").addEventListener("click", () => pickApkg("home-note"));
 
 function renderDecks(cards, settings) {
   const names = [...new Set(cards.map((c) => c.deck))].sort();
@@ -1145,6 +1171,10 @@ function pickApkg(where) {
 $("apkg-btn").addEventListener("click", () => pickApkg("settings-note"));
 $("apkg-boot-btn").addEventListener("click", () => pickApkg("boot-detail"));
 
+function forgetScheduleWarning() {
+  try { localStorage.removeItem("lexis:schedule-warned"); } catch { /* blocked */ }
+}
+
 $("apkg-file").addEventListener("change", async (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = "";                       // so the same file can be picked twice
@@ -1165,6 +1195,9 @@ $("apkg-file").addEventListener("change", async (event) => {
         `${s.carried_fsrs_state} kept their FSRS state, ${s.converted_from_ease} were converted ` +
         `from interval and ease, ${s.new} are new.` +
         (deck.skipped ? ` ${deck.skipped} skipped (no word, or a duplicate of another card).` : ""));
+    // A file with a real schedule in it is the answer to the warning, so the
+    // warning gets to speak again if the next one does not have one either.
+    forgetScheduleWarning();
     await goHome();
   } catch (err) {
     say(err.message || String(err));
