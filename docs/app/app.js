@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.20";
+const VERSION = "2026-09-15.21";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -477,7 +477,7 @@ async function showWhy(card) {
   panel.innerHTML = `<div class="waiting">Looking up “${card.word}”…</div>`;
 
   try {
-    const mod = await import("./explain.js");
+    const mod = await part("explain");
     const { info, from } = await mod.explain(card.word, { apiKey: prefs.read().anthropic });
     // The card may have moved on while this was in flight.
     if (!current || current.id !== card.id) return;
@@ -540,9 +540,13 @@ function renderLeeches() {
 }
 
 async function openStats() {
+  let s;
+  // Loaded before the screen is shown: an empty Progress screen with an error
+  // in the console is worse than staying put and saying why.
+  try { s = await part("stats"); }
+  catch (err) { $("home-note").textContent = err.message; return; }
   show("stats");
   renderLeeches();
-  const s = await import("./stats.js");
   const reviews = await store.history();
 
   const r = s.retention(reviews);
@@ -584,11 +588,40 @@ async function openStats() {
     .join("");
 }
 
+// ---- the parts loaded on demand -------------------------------------------
+//
+// Every screen past the review loop is its own module, fetched the first time
+// it is opened. The service worker caches them all up front so that first time
+// can be on a train — but a cache can be evicted, and a fresh install can be
+// offline before it has ever been online. A button that throws and does
+// nothing is the worst available answer, so the failure has a sentence.
+const PARTS = {
+  stats: () => import("./stats.js"),
+  watch: () => import("./watch.js"),
+  talk: () => import("./talk.js"),
+  explain: () => import("./explain.js"),
+  account: () => import("./account.js"),
+  sync: () => import("./sync.js"),
+  apkg: () => import("./apkg.js"),
+  apkgout: () => import("./apkgout.js"),
+};
+
+async function part(name) {
+  try {
+    return await PARTS[name]();
+  } catch {
+    throw new Error("That part of the app has not been downloaded yet. " +
+      "Open it once with a connection and it works offline after that.");
+  }
+}
+
 // ---- watching ------------------------------------------------------------
 let watchMounted = false;
 
 async function openWatchScreen() {
-  const mod = await import("./watch.js");
+  let mod;
+  try { mod = await part("watch"); }
+  catch (err) { $("home-note").textContent = err.message; return; }
   if (!watchMounted) {
     mod.mountWatch({
       cards: () => cache,
@@ -608,7 +641,9 @@ $("watch-btn").addEventListener("click", openWatchScreen);
 let talkMounted = false;
 
 async function openTalkScreen() {
-  const mod = await import("./talk.js");
+  let mod;
+  try { mod = await part("talk"); }
+  catch (err) { $("home-note").textContent = err.message; return; }
   if (!talkMounted) {
     mod.mountTalk({ cards: () => cache, apiKey: () => prefs.read().anthropic });
     talkMounted = true;
@@ -619,8 +654,9 @@ async function openTalkScreen() {
 
 $("talk-btn").addEventListener("click", openTalkScreen);
 $("talk-close").addEventListener("click", async () => {
-  const mod = await import("./talk.js");
-  mod.hush();                                   // nothing should keep talking
+  // Loaded already if this screen is open, so it cannot really fail here —
+  // and silence is the right answer to it if it somehow does.
+  try { (await part("talk")).hush(); } catch { /* nothing is talking */ }
   goHome();
 });
 $("watch-close").addEventListener("click", goHome);
@@ -654,7 +690,7 @@ function accountBase() {
 }
 
 async function showAccount() {
-  const mod = await import("./account.js");
+  const mod = await part("account");
   const account = mod.saved();
   $("acct-in").hidden = !account;
   $("acct-out").hidden = Boolean(account);
@@ -671,7 +707,7 @@ async function account(what, run) {
   const say = (text) => { $("acct-note").textContent = text; };
   say(what);
   try {
-    const mod = await import("./account.js");
+    const mod = await part("account");
     await run(mod, say);
   } catch (err) {
     say(err.message || String(err));
@@ -742,7 +778,7 @@ $("sync-btn").addEventListener("click", async () => {
   syncing = true;
   $("sync-btn").disabled = true;
   try {
-    const { github, sync } = await import("./sync.js");
+    const { github, sync } = await part("sync");
     const cards = await store.allCards();
     // The whole log, undone rows included: the mark has to travel, or the
     // other device hands the taken-back answer straight back.
@@ -1093,7 +1129,7 @@ $("export-apkg-btn").addEventListener("click", async () => {
   const say = (text) => { $("settings-note").textContent = text; };
   try {
     const [cards, log, mod, media] = await Promise.all([
-      store.allCards(), store.history(), import("./apkgout.js"), store.allMedia(),
+      store.allCards(), store.history(), part("apkgout"), store.allMedia(),
     ]);
     // Only the clips a card still points at: audio for a card that was deleted
     // is dead weight in the file and a missing-media warning on the other side.
@@ -1187,7 +1223,7 @@ $("apkg-file").addEventListener("change", async (event) => {
   try {
     // Loaded only when an import actually happens: the SQLite engine is the
     // better part of a megabyte and most sessions never open a file.
-    const { readApkg } = await import("./apkg.js");
+    const { readApkg } = await part("apkg");
     const deck = await readApkg(file, say);
     const result = await store.importDeck(deck);
     const s = deck.scheduling;
