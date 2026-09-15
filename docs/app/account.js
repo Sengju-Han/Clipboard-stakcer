@@ -114,7 +114,7 @@ export async function syncAccount(store, onProgress = () => {}) {
 
   onProgress("Merging…");
   const { merge } = await import("./sync.js");
-  const local = await store.allCards();
+  const local = await store.allRows();          // tombstones travel too
   const merged = merge(local, { cards: remote.cards, reviews: [] });
 
   const reviews = new Map();

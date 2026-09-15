@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.21";
+const VERSION = "2026-09-15.22";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -779,9 +779,10 @@ $("sync-btn").addEventListener("click", async () => {
   $("sync-btn").disabled = true;
   try {
     const { github, sync } = await part("sync");
-    const cards = await store.allCards();
-    // The whole log, undone rows included: the mark has to travel, or the
-    // other device hands the taken-back answer straight back.
+    // Every row, tombstones included, for the same reason the log is taken
+    // whole: a deletion that does not travel is a deletion the other device
+    // quietly undoes.
+    const cards = await store.allRows();
     const reviews = await store.wholeLog();
     const result = await sync(github({ token, owner, repo }), { cards, reviews }, say);
 
@@ -790,9 +791,11 @@ $("sync-btn").addEventListener("click", async () => {
     // out about on the next review.
     await store.putCards(result.cards);
     await store.putLog(result.reviews);
+    cache = await store.allCards();
 
     const d = result.detail;
-    say(`Synced with ${owner}/${repo}. ${result.cards.length} cards, ${result.reviews.length} reviews. ` +
+    const live = result.cards.length - (d.gone || 0);
+    say(`Synced with ${owner}/${repo}. ${live} cards, ${result.reviews.length} reviews. ` +
         (d.taken ? `${d.taken} newer from the other device, ` : "") +
         (d.kept ? `${d.kept} newer here, ` : "") +
         `${d.added} only here.`);
@@ -1227,7 +1230,9 @@ $("apkg-file").addEventListener("change", async (event) => {
     const deck = await readApkg(file, say);
     const result = await store.importDeck(deck);
     const s = deck.scheduling;
-    say(`${result.added} added, ${result.refreshed} refreshed from ${file.name}. ` +
+    say(`${result.added} added, ${result.refreshed} refreshed` +
+        (result.restored ? `, ${result.restored} you had deleted came back` : "") +
+        ` from ${file.name}. ` +
         `${s.carried_fsrs_state} kept their FSRS state, ${s.converted_from_ease} were converted ` +
         `from interval and ease, ${s.new} are new.` +
         (deck.skipped ? ` ${deck.skipped} skipped (no word, or a duplicate of another card).` : ""));
