@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.9";
+const VERSION = "2026-09-15.11";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +30,7 @@ const prefs = {
       newPerDay: Number.isFinite(raw.newPerDay) ? raw.newPerDay : DEFAULTS.newPerDay,
       mediaBase: typeof raw.mediaBase === "string" ? raw.mediaBase : "",
       deck: raw.deck || "",
+      anthropic: typeof raw.anthropic === "string" ? raw.anthropic : "",
       ghToken: typeof raw.ghToken === "string" ? raw.ghToken : "",
       ghOwner: typeof raw.ghOwner === "string" ? raw.ghOwner : "",
       ghRepo: typeof raw.ghRepo === "string" ? raw.ghRepo : "",
@@ -197,6 +198,9 @@ function nextCard() {
   $("answer").hidden = true;
   $("grades").hidden = true;
   $("reveal-btn").hidden = false;
+  $("next-btn").hidden = true;
+  $("brain").innerHTML = "";
+  explaining = "";
 
   const done = session.index;
   $("progress-bar").style.width = `${(done / session.size) * 100}%`;
@@ -237,6 +241,24 @@ async function grade(rating) {
   // have put the phone down.
   if (rating === Rating.Again) session.cards.push(card);
 
+  // Again also means the word did not stick, and the moment it has just failed
+  // is the only one where the explanation reliably gets read rather than
+  // skipped past. So the card stays up, the panel opens itself, and moving on
+  // becomes a deliberate tap — advancing straight away would flash the
+  // explanation and wipe it before a word of it was read.
+  if (rating === Rating.Again) {
+    $("grades").hidden = true;
+    $("next-btn").hidden = false;
+    showWhy(current);
+    return;
+  }
+
+  nextCard();
+}
+
+// Only reachable from the pause after an Again.
+function moveOn() {
+  $("next-btn").hidden = true;
   nextCard();
 }
 
@@ -286,6 +308,7 @@ function sayIt(card) {
 // ---- settings form -------------------------------------------------------
 function applySettingsToForm(s) {
   $("version-note").textContent = `Lexis ${VERSION}`;
+  $("anthropic").value = s.anthropic;
   $("gh-token").value = s.ghToken;
   $("gh-owner").value = s.ghOwner;
   $("gh-repo").value = s.ghRepo;
@@ -310,6 +333,35 @@ $("import-btn").addEventListener("click", async () => {
   if (r.ok) await goHome(); else $("boot-detail").textContent = r.why;
 });
 $("audio-btn").addEventListener("click", () => current && speak(current));
+
+// ---- why a word will not stick -------------------------------------------
+// Offered on every card, and opened by itself after an Again, because the
+// moment a word has just failed is the only one where anyone reliably reads
+// the explanation rather than pressing on.
+let explaining = "";
+
+async function showWhy(card) {
+  const panel = $("brain");
+  if (!panel || !card) return;
+  if (explaining === card.id) return;
+  explaining = card.id;
+  panel.innerHTML = `<div class="waiting">Looking up “${card.word}”…</div>`;
+
+  try {
+    const mod = await import("./explain.js");
+    const { info, from } = await mod.explain(card.word, { apiKey: prefs.read().anthropic });
+    // The card may have moved on while this was in flight.
+    if (!current || current.id !== card.id) return;
+    panel.innerHTML = mod.render(info, from) ||
+      `<div class="waiting">Nothing more to add about this one.</div>`;
+  } catch (err) {
+    if (!current || current.id !== card.id) return;
+    panel.innerHTML = `<div class="waiting">${err.message || String(err)}</div>`;
+  }
+}
+
+$("explain-btn").addEventListener("click", () => current && showWhy(current));
+$("next-btn").addEventListener("click", moveOn);
 
 // ---- progress ------------------------------------------------------------
 // Two questions a learner actually has: how much work is coming, and whether
@@ -368,6 +420,8 @@ $("stats-close").addEventListener("click", goHome);
 // matter which device syncs first. Nothing is deleted by a sync: a card the
 // other device has and this one does not simply arrives.
 let syncing = false;
+
+$("anthropic").addEventListener("change", (e) => prefs.write({ anthropic: e.target.value.trim() }));
 
 for (const id of ["gh-token", "gh-owner", "gh-repo"]) {
   $(id).addEventListener("change", (e) => {
@@ -755,6 +809,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === " " || e.key === "Enter") {
     e.preventDefault();
     if (!$("reveal-btn").hidden) reveal();
+    else if (!$("next-btn").hidden) moveOn();
     return;
   }
   if (!$("grades").hidden && ["1", "2", "3", "4"].includes(e.key)) {

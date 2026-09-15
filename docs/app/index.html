@@ -67,6 +67,11 @@
         </div>
         <hr class="sep">
         <div class="row">
+          <label for="anthropic">Anthropic key <span class="hint">optional — explains a word the deck has not seen before. Words already explained cost nothing.</span></label>
+          <input id="anthropic" type="password" placeholder="sk-ant-...">
+        </div>
+        <hr class="sep">
+        <div class="row">
           <label for="gh-token">Sync <span class="hint">optional — your cards on both devices, through your own repository. Needs a token with Contents: read and write.</span></label>
           <input id="gh-token" type="password" placeholder="github_pat_...">
         </div>
@@ -104,12 +109,17 @@
         <p class="word" id="card-word"></p>
         <p class="hook" id="card-hook"></p>
         <p class="example" id="card-example"></p>
-        <button class="ghost audio" id="audio-btn" type="button">▶ Hear it</button>
+        <div class="answer-tools">
+          <button class="ghost audio" id="audio-btn" type="button">▶ Hear it</button>
+          <button class="ghost audio" id="explain-btn" type="button">Why this word</button>
+        </div>
+        <div class="brain" id="brain"></div>
       </div>
     </div>
 
     <footer class="actions">
       <button class="primary big" id="reveal-btn" type="button">Show the word</button>
+      <button class="primary big" id="next-btn" type="button" hidden>Got it — next card</button>
       <div class="grades" id="grades" hidden>
         <button class="grade again" data-rating="1" type="button"><span>Again</span><em id="i-1"></em></button>
         <button class="grade hard"  data-rating="2" type="button"><span>Hard</span><em id="i-2"></em></button>
