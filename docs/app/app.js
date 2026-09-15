@@ -8,11 +8,11 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
   from "./review.js";
 
-const VERSION = "2026-09-15.6";
+const VERSION = "2026-09-15.7";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
-const screens = ["boot", "home", "add", "review", "done"];
+const screens = ["boot", "home", "browse", "edit", "add", "review", "done"];
 
 function show(name) {
   for (const s of screens) $(`screen-${s}`).hidden = s !== name;
@@ -304,6 +304,129 @@ $("import-btn").addEventListener("click", async () => {
   if (r.ok) await goHome(); else $("boot-detail").textContent = r.why;
 });
 $("audio-btn").addEventListener("click", () => current && speak(current));
+
+// ---- browsing ------------------------------------------------------------
+// An app you can add to but never correct is a trap: the typos already in this
+// collection came in with it, and a card typed wrong at 1am is worse than no
+// card, because it gets reviewed a hundred times.
+const FOUND_LIMIT = 60;
+
+function openBrowse() {
+  $("find").value = "";
+  renderResults("");
+  show("browse");
+  $("find").focus();
+}
+
+function matches(card, needle) {
+  if (!needle) return true;
+  return (card.word + " " + (card.hook || "") + " " + (card.clue || "") + " " + (card.example || ""))
+    .toLowerCase().includes(needle);
+}
+
+function renderResults(needle) {
+  const list = $("results");
+  list.innerHTML = "";
+  const hits = cache.filter((c) => matches(c, needle));
+
+  $("found-note").textContent = !hits.length
+    ? (needle ? `Nothing matches "${needle}".` : "No cards yet.")
+    : hits.length > FOUND_LIMIT
+      ? `${hits.length} match — showing the first ${FOUND_LIMIT}.`
+      : `${hits.length} card${hits.length === 1 ? "" : "s"}.`;
+
+  for (const card of hits.slice(0, FOUND_LIMIT)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "hit";
+    b.innerHTML = `<span class="w"></span><span class="c"></span><span class="m"></span>`;
+    b.querySelector(".w").textContent = card.word;
+    b.querySelector(".c").textContent = card.clue || card.example || "";
+    // What the scheduler thinks of it, which is the thing you came to check.
+    const due = new Date(card.fsrs.due);
+    const when = card.fsrs.state === State.New ? "new"
+      : due <= new Date() ? "due now"
+      : `in ${intervalLabel(due)}`;
+    b.querySelector(".m").innerHTML =
+      `${card.deck} · <span class="pip">${when}</span>` +
+      (card.fsrs.reps ? ` · ${card.fsrs.reps} reviews` : "") +
+      (card.fsrs.lapses ? ` · ${card.fsrs.lapses} lapses` : "");
+    b.addEventListener("click", () => openEdit(card.id));
+    list.appendChild(b);
+  }
+}
+
+$("browse-btn").addEventListener("click", openBrowse);
+$("browse-close").addEventListener("click", goHome);
+
+let findTimer = null;
+$("find").addEventListener("input", (e) => {
+  clearTimeout(findTimer);
+  const needle = e.target.value.trim().toLowerCase();
+  // 1,177 cards filter faster than a keystroke, but the render does not.
+  findTimer = setTimeout(() => renderResults(needle), 120);
+});
+
+// ---- editing one card ----------------------------------------------------
+let editing = null;
+
+function openEdit(id) {
+  const card = cache.find((c) => c.id === id);
+  if (!card) return;
+  editing = card;
+
+  $("e-word").value = card.word;
+  $("e-hook").value = card.hook || "";
+  $("e-clue").value = card.clue || "";
+  $("e-example").value = card.example || "";
+  $("e-deck").value = card.deck;
+  $("edit-note").textContent = "";
+
+  const due = new Date(card.fsrs.due);
+  $("edit-state").textContent = card.fsrs.state === State.New
+    ? "Never reviewed."
+    : `${card.fsrs.reps} review${card.fsrs.reps === 1 ? "" : "s"}, ` +
+      `${card.fsrs.lapses} lapse${card.fsrs.lapses === 1 ? "" : "s"}, ` +
+      `next ${due <= new Date() ? "now" : "in " + intervalLabel(due)}. ` +
+      `Editing the wording leaves all of that alone.`;
+
+  show("edit");
+}
+
+$("edit-close").addEventListener("click", openBrowse);
+
+$("edit-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!editing) return;
+  const word = $("e-word").value.trim();
+  if (!word) return;
+
+  // Only the wording changes. Scheduling is evidence about how well this word
+  // is known, and fixing a typo is not evidence about anything.
+  const updated = {
+    ...editing,
+    word,
+    hook: $("e-hook").value.trim(),
+    clue: $("e-clue").value.trim(),
+    example: $("e-example").value.trim(),
+    deck: $("e-deck").value.trim() || editing.deck,
+  };
+
+  await store.saveCard(updated);
+  const i = cache.findIndex((c) => c.id === updated.id);
+  if (i >= 0) cache[i] = updated;
+  editing = updated;
+  $("edit-note").textContent = "Saved.";
+});
+
+$("edit-delete").addEventListener("click", async () => {
+  if (!editing) return;
+  if (!confirm(`Delete "${editing.word}"? Its review history goes with it, and that cannot be undone.`)) return;
+  await store.deleteCard(editing.id);
+  cache = cache.filter((c) => c.id !== editing.id);
+  editing = null;
+  openBrowse();
+});
 
 // ---- adding a card -------------------------------------------------------
 // Typed here, saved here, due immediately. No network, so it works on a train

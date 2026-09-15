@@ -130,6 +130,14 @@ export async function saveCard(card) {
   return run(["cards"], "readwrite", (cards) => cards.put(card));
 }
 
+// Deleting is the one action here that destroys something a learner made, so
+// it takes the card's whole row with it - leaving an orphaned review log entry
+// pointing at nothing would quietly corrupt any later attempt to rebuild a
+// schedule from the log.
+export async function deleteCard(id) {
+  return run(["cards"], "readwrite", (cards) => cards.delete(id));
+}
+
 export async function history() {
   const db = await open();
   return all(db.transaction("log").objectStore("log"));

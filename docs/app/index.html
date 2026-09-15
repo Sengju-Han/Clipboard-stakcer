@@ -41,7 +41,10 @@
       </div>
 
       <button class="primary big" id="start-btn" type="button">Start reviewing</button>
-      <button class="ghost wide" id="add-btn" type="button">+ Add a card</button>
+      <div class="pair">
+        <button class="ghost" id="add-btn" type="button">+ Add a card</button>
+        <button class="ghost" id="browse-btn" type="button">Browse deck</button>
+      </div>
       <p class="fine" id="home-note"></p>
 
       <div class="decks" id="deck-list"></div>
@@ -102,6 +105,57 @@
         <button class="grade easy"  data-rating="4" type="button"><span>Easy</span><em id="i-4"></em></button>
       </div>
     </footer>
+  </section>
+
+  <!-- Browse: find any card, fix it, or remove it. -->
+  <section class="screen" id="screen-browse" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Browse</h1>
+        <button class="ghost" id="browse-close" type="button" aria-label="Back">✕</button>
+      </header>
+      <div class="row">
+        <input type="search" id="find" placeholder="Search a word, a clue, a sentence…" autocomplete="off">
+      </div>
+      <p class="fine" id="found-note"></p>
+      <div class="results" id="results"></div>
+    </div>
+  </section>
+
+  <!-- Edit: one card, changed or removed. -->
+  <section class="screen" id="screen-edit" hidden>
+    <div class="pad">
+      <header class="home-head">
+        <h1 class="wordmark">Edit</h1>
+        <button class="ghost" id="edit-close" type="button" aria-label="Back">✕</button>
+      </header>
+      <form id="edit-form" autocomplete="off">
+        <div class="row">
+          <label for="e-word">Word or phrase</label>
+          <input type="text" id="e-word" required>
+        </div>
+        <div class="row">
+          <label for="e-hook">Memory hook</label>
+          <input type="text" id="e-hook">
+        </div>
+        <div class="row">
+          <label for="e-clue">Clue</label>
+          <textarea id="e-clue" rows="2"></textarea>
+        </div>
+        <div class="row">
+          <label for="e-example">Example sentence</label>
+          <textarea id="e-example" rows="2"></textarea>
+        </div>
+        <div class="row">
+          <label for="e-deck">Deck</label>
+          <input type="text" id="e-deck" list="deck-options">
+        </div>
+        <p class="fine" id="edit-state"></p>
+        <button class="primary big" type="submit">Save changes</button>
+        <button class="ghost danger wide" id="edit-delete" type="button">Delete this card</button>
+        <p class="fine" id="edit-note"></p>
+      </form>
+    </div>
   </section>
 
   <!-- Add: a card typed here, saved here, due immediately. -->
