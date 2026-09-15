@@ -5,7 +5,7 @@
 // reviewing yesterday's cards forever. The deck lives in IndexedDB, which is
 // the right place for it, and is refetched only when asked for.
 
-const CACHE = "lexis-2026-09-15.9";
+const CACHE = "lexis-2026-09-15.11";
 const SHELL = [
   "./", "./index.html", "./style.css", "./app.js",
   "./store.js", "./review.js", "./vendor/ts-fsrs.mjs",
