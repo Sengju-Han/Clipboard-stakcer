@@ -77,27 +77,67 @@ export async function cardCount() {
   });
 }
 
-export async function allCards() {
+// Every row as stored, tombstones included. Only sync wants this: a deletion
+// that does not travel is a deletion that gets undone by the other device.
+export async function allRows() {
   const db = await open();
   return all(db.transaction("cards").objectStore("cards"));
+}
+
+// The deck as the app should see it: everything except the tombstones, which
+// are bookkeeping and not cards.
+export async function allCards() {
+  return (await allRows()).filter((row) => !row.deleted);
 }
 
 // Importing replaces the deck's content but must not touch scheduling a learner
 // has already earned in this app. A card already here keeps its own state; only
 // its wording is refreshed. Anything else would reset progress on every import.
 export async function importDeck(deck) {
-  const existing = new Map((await allCards()).map((c) => [c.id, c]));
+  // Keyed off every row, tombstones included: a card deleted here and then met
+  // again in a re-imported file should stay deleted unless the file is newer.
+  const existing = new Map((await allRows()).map((c) => [c.id, c]));
   const now = new Date().toISOString();
-  let added = 0, refreshed = 0;
+  let added = 0, refreshed = 0, restored = 0;
+
+  // Every card needs a modification time or it compares as zero forever, is
+  // never newer than anything, and never gets sent anywhere — the first sync
+  // to an account pushed nothing at all, and an account holding no cards is
+  // not a backup of anything.
+  //
+  // The time has to come from the deck rather than from the clock. Stamping
+  // with the moment the file was read says the card changed then, which is not
+  // true and has a consequence: two phones importing the same deck give it two
+  // different times, the later import looks newer, and it overwrites a review
+  // the other phone made yesterday. Both phones reading the same deck must
+  // agree on when its cards last changed, and that is when the deck was built.
+  const built = Date.parse(deck.built_at) || Date.now();
 
   await run(["cards", "meta"], "readwrite", (cards, meta) => {
     for (const card of deck.cards) {
       const had = existing.get(card.id);
-      if (had) {
-        cards.put({ ...card, fsrs: had.fsrs, reviewedHere: had.reviewedHere || 0 });
+      // Opening a file is somebody saying "this is what my deck is", so a card
+      // they deleted here and then handed back in a file comes back — unlike a
+      // sync, which is two devices reconciling with nobody watching and must
+      // never undo a deletion. The count is reported either way.
+      if (had?.deleted) {
+        // Restoring is a change the learner just made, so it is stamped now —
+        // otherwise the other phone's tombstone would delete it again.
+        cards.put({ ...card, reviewedHere: 0, mod: Date.now() });
+        restored += 1;
+      } else if (had) {
+        // Already here: its own history is what decides how new it is. An
+        // import that only refreshes wording has changed nothing worth
+        // claiming to be the newest thing that happened to this card.
+        cards.put({
+          ...card,
+          fsrs: had.fsrs,
+          reviewedHere: had.reviewedHere || 0,
+          mod: had.mod || built,
+        });
         refreshed += 1;
       } else {
-        cards.put({ ...card, reviewedHere: 0 });
+        cards.put({ ...card, reviewedHere: 0, mod: built });
         added += 1;
       }
     }
@@ -111,7 +151,7 @@ export async function importDeck(deck) {
     });
   });
 
-  return { added, refreshed };
+  return { added, refreshed, restored };
 }
 
 export async function meta(key) {
@@ -158,12 +198,19 @@ export async function putLog(entries) {
   });
 }
 
-// Deleting is the one action here that destroys something a learner made, so
-// it takes the card's whole row with it - leaving an orphaned review log entry
-// pointing at nothing would quietly corrupt any later attempt to rebuild a
-// schedule from the log.
+// Deleting leaves a mark behind, and it has to.
+//
+// A row simply removed is a row the other phone has never heard of, so the next
+// sync sees a card it holds and this one does not, calls that "only there", and
+// hands it straight back. Delete a card on Tuesday, sync on Wednesday, and it
+// is in your deck again on Thursday — with nothing on screen admitting it.
+//
+// So what is left is a tombstone: the id, the fact of the deletion, and when.
+// The merge already prefers whichever side changed last, so a deletion is
+// simply the newest change to that card and needs no special case anywhere. It
+// costs a few dozen bytes per deleted card, which is the right price.
 export async function deleteCard(id) {
-  return run(["cards"], "readwrite", (cards) => cards.delete(id));
+  return run(["cards"], "readwrite", (cards) => cards.put({ id, deleted: true, mod: Date.now() }));
 }
 
 // Undo. The log is append-only and stays that way: an undone answer is marked

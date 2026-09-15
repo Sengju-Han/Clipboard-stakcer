@@ -24,9 +24,14 @@ const API = "https://api.github.com";
 // Reviews are different: they are events, not state. Nothing overwrites a
 // review, so the two logs are unioned by their timestamp and the history ends
 // up complete on both devices even if the card state disagrees.
+// A card here can be a tombstone — an id, the fact that it was deleted, and
+// when. It needs no special case: a deletion is simply the newest thing that
+// happened to that card, and last-change-wins already knows what to do with
+// that. The only thing worth counting separately is how many of them there
+// are, so the report does not call a deletion a card.
 export function merge(local, remote) {
   const cards = new Map();
-  const detail = { kept: 0, taken: 0, added: 0, unchanged: 0 };
+  const detail = { kept: 0, taken: 0, added: 0, unchanged: 0, gone: 0 };
 
   for (const card of remote.cards || []) cards.set(card.id, card);
 
@@ -45,11 +50,9 @@ export function merge(local, remote) {
   // duplicates without comparing anything.
   const reviews = new Map();
   for (const entry of remote.reviews || []) reviews.set(entry.at, entry);
-  return {
-    cards: [...cards.values()],
-    reviews,
-    detail,
-  };
+  const out = [...cards.values()];
+  detail.gone = out.filter((c) => c.deleted).length;
+  return { cards: out, reviews, detail };
 }
 
 // An answer taken back stays taken back. The mark only ever goes on, never
