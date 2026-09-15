@@ -52,6 +52,15 @@ export function merge(local, remote) {
   };
 }
 
+// An answer taken back stays taken back. The mark only ever goes on, never
+// off, so whichever side carries it wins regardless of which device syncs
+// first — otherwise undoing on one phone and syncing from the other hands the
+// answer straight back.
+function keepUndone(theirs, mine) {
+  if (theirs?.undone && !mine.undone) return { ...mine, undone: true };
+  return mine;
+}
+
 // ---- the GitHub adapter --------------------------------------------------
 function headers(token) {
   return {
@@ -128,7 +137,7 @@ export async function sync(backend, { cards, reviews }, onProgress = () => {}) {
 
   onProgress("Merging…");
   const merged = merge(cards, state);
-  for (const entry of reviews) merged.reviews.set(entry.at, entry);
+  for (const entry of reviews) merged.reviews.set(entry.at, keepUndone(merged.reviews.get(entry.at), entry));
   const reviewList = [...merged.reviews.values()].sort((a, b) => (a.at < b.at ? -1 : 1));
 
   const next = {
