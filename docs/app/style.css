@@ -387,3 +387,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .talk-say button { flex: none; }
 
 .review-head .undo { padding: 4px 9px; font-size: 18px; line-height: 1; color: var(--muted); }
+
+/* a card that keeps winning --------------------------------------------- */
+.leech {
+  border: 1px solid var(--again); border-radius: var(--radius);
+  padding: 12px 14px; margin-top: 10px;
+}
+.leech p { margin: 0 0 9px; font-size: 14px; color: var(--ink); }

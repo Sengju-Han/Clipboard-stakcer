@@ -39,7 +39,7 @@
       <div class="figures">
         <div class="figure due"><span class="n" id="n-due">0</span><span class="l">due</span></div>
         <div class="figure fresh"><span class="n" id="n-new">0</span><span class="l">new</span></div>
-        <div class="figure known"><span class="n" id="n-known">0</span><span class="l">resting</span></div>
+        <div class="figure known"><span class="n" id="n-known">0</span><span class="l">settled</span></div>
       </div>
 
       <button class="primary big" id="start-btn" type="button">Start reviewing</button>
@@ -150,6 +150,13 @@
           <button class="ghost audio" id="audio-btn" type="button">▶ Hear it</button>
           <button class="ghost audio" id="explain-btn" type="button">Why this word</button>
         </div>
+        <div class="leech" id="leech" hidden>
+          <p id="leech-said"></p>
+          <div class="pair">
+            <button class="ghost" id="leech-fix" type="button">Fix the card</button>
+            <button class="ghost" id="leech-rest" type="button">Rest it two weeks</button>
+          </div>
+        </div>
         <div class="brain" id="brain"></div>
       </div>
     </div>
@@ -196,6 +203,12 @@
       <section class="chart">
         <h2>Where the deck stands</h2>
         <table class="tally-table" id="s-maturity"></table>
+      </section>
+
+      <section class="chart" id="s-leech-box" hidden>
+        <h2>Fighting you <span class="sub">eight lapses or more</span></h2>
+        <p class="fine" id="s-leech-note"></p>
+        <div class="results" id="s-leeches"></div>
       </section>
     </div>
   </section>
@@ -315,6 +328,7 @@
         </div>
         <p class="fine" id="edit-state"></p>
         <button class="primary big" type="submit">Save changes</button>
+        <button class="ghost wide" id="edit-rest" type="button" hidden>Rest it for two weeks</button>
         <button class="ghost danger wide" id="edit-delete" type="button">Delete this card</button>
         <p class="fine" id="edit-note"></p>
       </form>

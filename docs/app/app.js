@@ -5,10 +5,10 @@
 // session. Answering a card is a local write, so it stays instant on a train.
 
 import * as store from "./store.js";
-import { scheduler, queue, counts, preview, answer, intervalLabel, Rating, State, DEFAULTS }
-  from "./review.js";
+import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
+  LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.17";
+const VERSION = "2026-09-15.18";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -189,7 +189,13 @@ function startSession() {
 function nextCard() {
   if (!session || session.index >= session.cards.length) return finish();
   current = session.cards[session.index];
+  drawCard();
+}
 
+// Drawing is separate from advancing, because coming back from the editor has
+// to put the same card back on screen rather than move past it.
+function drawCard() {
+  if (!current) return;
   $("card-deck").textContent = current.deck;
   $("card-clue").textContent = current.clue || "(no clue on this card)";
   $("card-word").textContent = current.word;
@@ -203,6 +209,7 @@ function nextCard() {
   $("reveal-btn").hidden = false;
   $("next-btn").hidden = true;
   $("brain").innerHTML = "";
+  $("leech").hidden = true;
   explaining = "";
 
   const done = session.index;
@@ -297,6 +304,15 @@ async function grade(rating) {
   if (rating === Rating.Again) {
     $("grades").hidden = true;
     $("next-btn").hidden = false;
+    // Eight lapses is rarely a hard word. It is usually a bad card — two
+    // meanings on one side, a clue that does not point at the answer, a
+    // sentence that would fit six other words. Said here, once, because this
+    // is the moment the person knows exactly what is wrong with it.
+    if ((card.fsrs.lapses || 0) >= LEECH_AT) {
+      $("leech-said").textContent =
+        `You have forgotten this one ${card.fsrs.lapses} times. That is usually the card, not the word.`;
+      $("leech").hidden = false;
+    }
     showWhy(current);
     return;
   }
@@ -447,6 +463,21 @@ async function showWhy(card) {
   }
 }
 
+$("leech-fix").addEventListener("click", () => current && openEdit(current.id, "review"));
+
+$("leech-rest").addEventListener("click", async () => {
+  if (!current) return;
+  const updated = { ...current, restUntil: new Date(Date.now() + 14 * 86400000).toISOString() };
+  await store.saveCard(updated);
+  const i = cache.findIndex((c) => c.id === updated.id);
+  if (i >= 0) cache[i] = updated;
+  // The Again put a copy back at the end of the session; a card being rested
+  // should not come round again in the same sitting.
+  session.cards = session.cards.filter((c, n) => n <= session.index || c.id !== updated.id);
+  $("leech").hidden = true;
+  moveOn();
+});
+
 $("explain-btn").addEventListener("click", () => current && showWhy(current));
 $("next-btn").addEventListener("click", moveOn);
 
@@ -454,8 +485,37 @@ $("next-btn").addEventListener("click", moveOn);
 // Two questions a learner actually has: how much work is coming, and whether
 // any of it is sticking. Both are computed from what is already stored, so
 // nothing extra has to be tracked to answer them.
+function renderLeeches() {
+  const list = leeches(cache);
+  $("s-leech-box").hidden = list.length === 0;
+  if (!list.length) return;
+  const resting_ = list.filter((c) => resting(c)).length;
+  $("s-leech-note").textContent =
+    `${list.length} card${list.length === 1 ? "" : "s"} you keep forgetting. ` +
+    `Most of them are worth rewriting rather than repeating` +
+    (resting_ ? `; ${resting_} ${resting_ === 1 ? "is" : "are"} resting.` : ".");
+
+  // Built the same way the browser builds its hits — empty spans filled with
+  // textContent, so a card whose text contains a < is a card, not markup.
+  const box = $("s-leeches");
+  box.innerHTML = "";
+  for (const card of list.slice(0, 40)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "hit";
+    b.innerHTML = `<span class="w"></span><span class="c"></span><span class="m"></span>`;
+    b.querySelector(".w").textContent = card.word;
+    b.querySelector(".c").textContent = card.clue || card.example || "";
+    b.querySelector(".m").textContent =
+      `${card.fsrs.lapses} lapses · ${card.deck}${resting(card) ? " · resting" : ""}`;
+    b.addEventListener("click", () => openEdit(card.id, "stats"));
+    box.appendChild(b);
+  }
+}
+
 async function openStats() {
   show("stats");
+  renderLeeches();
   const s = await import("./stats.js");
   const reviews = await store.history();
 
@@ -729,7 +789,7 @@ function renderResults(needle) {
       `${card.deck} · <span class="pip">${when}</span>` +
       (card.fsrs.reps ? ` · ${card.fsrs.reps} reviews` : "") +
       (card.fsrs.lapses ? ` · ${card.fsrs.lapses} lapses` : "");
-    b.addEventListener("click", () => openEdit(card.id));
+    b.addEventListener("click", () => openEdit(card.id, "browse"));
     list.appendChild(b);
   }
 }
@@ -748,9 +808,16 @@ $("find").addEventListener("input", (e) => {
 // ---- editing one card ----------------------------------------------------
 let editing = null;
 
-function openEdit(id) {
+// Editing is reachable from the browser and, when a card has just failed for
+// the eighth time, from the middle of a session — which is the moment the
+// person actually knows what is wrong with it. So it remembers where it came
+// from and puts the session back exactly as it was.
+let editFrom = "browse";
+
+function openEdit(id, from = "browse") {
   const card = cache.find((c) => c.id === id);
   if (!card) return;
+  editFrom = from;
   editing = card;
 
   $("e-word").value = card.word;
@@ -768,10 +835,45 @@ function openEdit(id) {
       `next ${due <= new Date() ? "now" : "in " + intervalLabel(due)}. ` +
       `Editing the wording leaves all of that alone.`;
 
+  $("edit-rest").hidden = false;
+  $("edit-rest").textContent = resting(card) ? "Bring it back now" : "Rest it for two weeks";
   show("edit");
 }
 
-$("edit-close").addEventListener("click", openBrowse);
+function leaveEdit() {
+  if (editFrom === "stats") { openStats(); return; }
+  if (editFrom !== "review" || !session || !current) { openBrowse(); return; }
+  // Back into the session on the card that was on screen, with its answer
+  // showing, because that is where it was left.
+  const fresh = cache.find((c) => c.id === current.id);
+  if (fresh) {
+    current = fresh;
+    session.cards[session.index] = fresh;
+  }
+  show("review");
+  drawCard();
+  reveal();
+}
+
+$("edit-close").addEventListener("click", leaveEdit);
+
+// A card can be put down without being deleted. It comes back on its own:
+// a card nobody ever sees again is a card that may as well have been deleted,
+// and deleting should be a decision somebody makes on purpose.
+$("edit-rest").addEventListener("click", async () => {
+  if (!editing) return;
+  const wake = resting(editing) ? "" : new Date(Date.now() + 14 * 86400000).toISOString();
+  const updated = { ...editing, restUntil: wake };
+  await store.saveCard(updated);
+  const i = cache.findIndex((c) => c.id === updated.id);
+  if (i >= 0) cache[i] = updated;
+  editing = updated;
+  if (session) session.cards = session.cards.filter((c) => c.id !== updated.id || !wake);
+  $("edit-rest").textContent = wake ? "Bring it back now" : "Rest it for two weeks";
+  $("edit-note").textContent = wake
+    ? "Resting until " + new Date(wake).toLocaleDateString() + ". It comes back by itself."
+    : "Back in the deck, due now.";
+});
 
 $("edit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
