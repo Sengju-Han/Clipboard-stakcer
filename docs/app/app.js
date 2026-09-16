@@ -6,9 +6,9 @@
 
 import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
-  scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
+  scheduleLooksReal, ankiDay, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.23";
+const VERSION = "2026-09-15.26";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -45,8 +45,13 @@ const prefs = {
 
 // New cards are rationed per day, which means the day's count has to survive a
 // reload — otherwise closing the app is a way to get unlimited new cards.
+// The day the allowance belongs to is the same day the scheduler uses. Keying
+// it on the UTC date, which is what this did, reset the budget at nine in the
+// morning in Seoul — five hours after the cards themselves became due, so
+// between four and nine you were handed the review queue and told you had
+// already used up the day's new cards.
 function introducedToday() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = ankiDay(Date.now());
   try {
     const raw = JSON.parse(localStorage.getItem("lexis:new") || "{}");
     return raw.day === today ? (raw.count || 0) : 0;
@@ -54,7 +59,7 @@ function introducedToday() {
 }
 
 function noteIntroduced(n = 1) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = ankiDay(Date.now());
   try {
     // Undo gives one back, and the count must not go under zero on a card
     // introduced yesterday and undone today.

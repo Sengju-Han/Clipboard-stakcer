@@ -190,19 +190,32 @@ function stabilityFrom(card) {
 
 // Anki stores a review card's due as days since the collection was created, a
 // learning card's as an epoch timestamp, and a new card's as a queue position.
+// A review card is owed on a day, and that day has to survive being read
+// somewhere else. Noon UTC is the same calendar day from UTC-8 to UTC+15 and
+// stays on it after the four-hour shift the app's day starts with; midnight
+// UTC does neither, and made a card due today arrive at nine in the morning in
+// Seoul and a day early west of it. The day taken is the local one, because
+// the person who exported the file and the person reading it are the same
+// person in the same place.
+function noonOfTheDay(ms) {
+  const local = new Date(ms);
+  return new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate(), 12)).toISOString();
+}
+
 function dueFrom(card, crt, now) {
   const type = Number(card.type);
   if (type === ANKI_NEW) return new Date(now).toISOString();
   const due = Number(card.due) || 0;
+  // Learning and relearning are timed in minutes, so the instant is the point.
   if (type === ANKI_LEARNING || (type === ANKI_RELEARNING && due > 1e9)) {
     return new Date(due * 1000).toISOString();
   }
   const when = (crt + due * 86400) * 1000;
   // A card parked centuries out is a tombstone, not a schedule.
   if (!Number.isFinite(when) || when > now + 50 * 365 * 86400 * 1000) {
-    return new Date(now).toISOString();
+    return noonOfTheDay(now);
   }
-  return new Date(when).toISOString();
+  return noonOfTheDay(when);
 }
 
 export async function readApkg(file, onProgress = () => {}) {
