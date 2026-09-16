@@ -6,9 +6,14 @@ Anki, no network, no key needed — which is where the bugs that reached the app
 actually were.
 
 ```
-pip install pytest
+pip install -r test/python/requirements.txt
 python3 -m pytest test/python -q
 ```
+
+No browser and no key. The Anki library is in there because the three scripts
+that touch a collection import it at the top, so even their pure string helpers
+cannot be reached without it; without it the file that needs it skips and says
+so rather than failing to collect.
 
 `test_build_deck.py` covers the conversion from an Anki export into the deck
 the app reviews: the stability floor FSRS refuses to go under, the ease-to-

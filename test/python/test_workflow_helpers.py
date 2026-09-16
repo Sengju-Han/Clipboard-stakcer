@@ -13,6 +13,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "anki"))
 
+# Every script that touches a collection imports the Anki library at the top,
+# so even its pure string helpers cannot be reached without it. It is in
+# test/python/requirements.txt; this keeps the file runnable without it rather
+# than failing to collect.
+pytest.importorskip("anki.collection",
+                    reason="the Anki library is not installed: pip install -r test/python/requirements.txt")
+
 import add_card                                                  # noqa: E402
 import build_tts_apkg as tts                                     # noqa: E402
 

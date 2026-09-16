@@ -1,11 +1,9 @@
 playwright>=1.40
-pytest>=8.0
-# The explanation helpers describe their schema with pydantic and import it at
-# module level. Nothing here needs the Anthropic SDK: the client is built
-# inside the function that calls it, so these tests never reach for a key.
-pydantic>=2.0
 
 # For building the .apkg a modern phone actually exports: the collection inside
 # is zstd-compressed. Without it that fixture is skipped and says so, rather
 # than quietly writing a legacy file and testing the wrong path.
 zstandard>=0.22
+
+# The tests for the Python side have their own list, because they need no
+# browser: see test/python/requirements.txt.
