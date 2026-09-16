@@ -5,7 +5,7 @@
 // reviewing yesterday's cards forever. The deck lives in IndexedDB, which is
 // the right place for it, and is refetched only when asked for.
 
-const CACHE = "lexis-2026-09-16.2";
+const CACHE = "lexis-2026-09-16.3";
 // Everything the app can do without a network, which is nearly all of it. Each
 // screen beyond the review loop is a module loaded on demand, and a module
 // that has never been loaded is a module that is not in the cache — so on a

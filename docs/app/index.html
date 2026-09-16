@@ -430,7 +430,11 @@
 </div>
 
 <input type="file" id="apkg-file" accept=".apkg,.colpkg,application/zip" hidden>
-<input type="file" id="w-media-file" accept="video/*,audio/*" hidden>
+<!-- The extensions are listed as well as the types because Android file
+     managers often report no MIME type at all, and a picker filtering on
+     type alone then greys out the episode somebody is trying to open. -->
+<input type="file" id="w-media-file" hidden
+       accept="video/*,audio/*,.mp4,.m4v,.mkv,.webm,.avi,.mov,.mp3,.m4a,.aac,.opus,.ogg,.flac,.wav">
 <input type="file" id="w-subs-file" accept=".srt,.vtt,.ass,.ssa,.sub,text/plain" hidden>
 <script type="module" src="app.js"></script>
 </body>
