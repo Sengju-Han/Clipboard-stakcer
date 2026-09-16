@@ -63,6 +63,7 @@ def run(t):
     t.truthy("and the scheduling goes with them", reviewed > 0)
 
     _modern(t)
+    _clip_from_the_other_phone(t)
 
 
 def _modern(t):
@@ -96,6 +97,69 @@ def _modern(t):
                 [w for w in words if "update to the latest" in w.lower()], [])
         t.note("why that matters",
                "reading the decoy imports one junk card and reports success")
+    finally:
+        t.page = was
+        page.close()
+
+
+def _clip_from_the_other_phone(t):
+    """Clips do not sync, so a card mined elsewhere arrives without its audio.
+
+    Writing [sound:…] for a file that is not in the package makes a card that
+    is silent in Anki and a missing-media warning that is not the person's
+    fault. A reference to a file from their own collection is a different
+    thing: that one is already on the other side and stays.
+    """
+    page = t.browser.new_context(viewport={"width": 390, "height": 844},
+                                 accept_downloads=True).new_page()
+    was, t.page = t.page, page
+    try:
+        t.open_app()
+        # One card says it has a captured clip; nothing was ever captured here.
+        # Another carries a filename from the collection it came from.
+        t.page.evaluate("""async () => {
+          const db = await new Promise(r => { const q = indexedDB.open('lexis'); q.onsuccess = () => r(q.result); });
+          const all = await new Promise(r => {
+            const g = db.transaction('cards').objectStore('cards').getAll(); g.onsuccess = () => r(g.result); });
+          const live = all.filter(c => !c.deleted);
+          const store = db.transaction('cards', 'readwrite').objectStore('cards');
+          live[0].word = 'minedelsewhere'; live[0].audio = 'lexis-gone.webm'; live[0].audioLocal = true;
+          live[1].word = 'fromankiweb'; live[1].audio = 'ttsex-real.mp3'; live[1].audioLocal = false;
+          store.put(live[0]); store.put(live[1]);
+          await new Promise(r => { store.transaction.oncomplete = () => r(); });
+        }""")
+        t.page.reload()
+        t.page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
+        t.page.wait_for_timeout(900)
+        t.open_settings()
+
+        with t.page.expect_download(timeout=180000) as dl:
+            t.page.locator("#export-apkg-btn").click()
+        import zipfile
+        out = t.fixtures["apkg"].parent / "orphan.apkg"
+        dl.value.save_as(str(out))
+        with zipfile.ZipFile(out) as z:
+            data = z.read("collection.anki2")
+        written = t.fixtures["apkg"].parent / "orphan.anki2"
+        written.write_bytes(data)
+
+        import sqlite3
+        con = sqlite3.connect(written)
+        fields = {}
+        for (flds,) in con.execute("select flds from notes"):
+            parts = flds.split("\x1f")
+            for part in parts:
+                if "minedelsewhere" in part or "fromankiweb" in part:
+                    fields[("minedelsewhere" if "minedelsewhere" in part else "fromankiweb")] = flds
+        con.close()
+
+        orphan = fields.get("minedelsewhere", "")
+        kept = fields.get("fromankiweb", "")
+        t.check("a clip this phone does not have is not referenced",
+                "lexis-gone.webm" in orphan, False)
+        t.check("but the card still goes", bool(orphan), True)
+        t.check("and a filename from their own collection is kept",
+                "ttsex-real.mp3" in kept, True)
     finally:
         t.page = was
         page.close()

@@ -23,6 +23,7 @@ import fixtures                                              # noqa: E402
 
 SUITES = [
     "review",            # the loop, and that an answer survives a reload
+    "scheduling",        # one card through ten reviews and a failure
     "undo",              # taking an answer back
     "browse",            # find, edit, delete, and the tombstone it leaves
     "add_export",        # adding a card, and every way out of the app
