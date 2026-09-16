@@ -20,11 +20,14 @@
       <h1 class="wordmark">Lexis</h1>
       <p class="lede" id="boot-note">Opening your deck…</p>
       <div class="spinner" id="boot-spin" aria-hidden="true"></div>
+      <!-- The detail sits outside the actions, because when there is nothing
+           to click it is the whole message. It used to be inside, and so was
+           hidden exactly when it mattered most. -->
       <div id="boot-actions" hidden>
         <button class="primary" id="import-btn" type="button">Import the published deck</button>
         <button class="ghost wide" id="apkg-boot-btn" type="button">Open an .apkg file instead</button>
-        <p class="fine" id="boot-detail"></p>
       </div>
+      <p class="fine" id="boot-detail"></p>
     </div>
   </section>
 
@@ -399,7 +402,8 @@
       <p class="tick">✓</p>
       <h2 id="done-head">Session done</h2>
       <p class="lede" id="done-note"></p>
-      <button class="primary" id="again-btn" type="button">Back to the deck</button>
+      <button class="primary" id="more-btn" type="button" hidden>Another 60</button>
+      <button class="ghost wide" id="again-btn" type="button">Back to the deck</button>
     </div>
   </section>
 

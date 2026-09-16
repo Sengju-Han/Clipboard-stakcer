@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, ankiDay, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-16.1";
+const VERSION = "2026-09-16.2";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -84,8 +84,14 @@ async function boot() {
   try {
     count = await store.cardCount();
   } catch (err) {
-    return bootFailed(`This browser would not open its database (${err.name || err}). ` +
-      `Private browsing usually causes that.`);
+    // Not "nothing to review": everything this app does is reads and writes to
+    // that database, so there is no version of it that works without one, and
+    // saying "nothing to review yet" would send somebody looking for a deck.
+    return bootFailed(
+      `This browser would not open its database (${err.name || err}). Private browsing ` +
+      `usually causes that — Lexis keeps your deck on the device, so it needs somewhere ` +
+      `to keep it. In a normal window it will work.`,
+      false, "This browser will not let the app store anything");
   }
 
   if (count === 0) {
@@ -97,9 +103,9 @@ async function boot() {
   await goHome();
 }
 
-function bootFailed(why, offerImport = false) {
+function bootFailed(why, offerImport = false, heading = "Nothing to review yet.") {
   $("boot-spin").hidden = true;
-  $("boot-note").textContent = "Nothing to review yet.";
+  $("boot-note").textContent = heading;
   $("boot-detail").textContent = why;
   $("boot-actions").hidden = !offerImport;
   show("boot");
@@ -390,6 +396,19 @@ function finish() {
     : "";
   session = null;
   current = null;
+
+  // A session is capped so that opening the app is never a wall. With a
+  // thousand cards owed that cap is reached most evenings, and going home to
+  // press the same button again is a step that exists for no reason.
+  const settings = prefs.read();
+  const more = queue(cache, {
+    deck: settings.deck,
+    newPerDay: settings.newPerDay,
+    introducedToday: introducedToday(),
+  });
+  $("more-btn").hidden = more.length === 0;
+  if (more.length) $("more-btn").textContent = `Another ${more.length}`;
+
   show("done");
 }
 
@@ -473,6 +492,7 @@ $("start-btn").addEventListener("click", () => startSession());
 $("ahead-btn").addEventListener("click", () => startSession({ ahead: true }));
 $("reveal-btn").addEventListener("click", reveal);
 $("again-btn").addEventListener("click", goHome);
+$("more-btn").addEventListener("click", () => startSession());
 $("quit-btn").addEventListener("click", () => {
   session = null;
   undoable.length = 0;
@@ -1348,19 +1368,31 @@ document.addEventListener("keydown", (e) => {
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* offline is a bonus, not a requirement */ });
 
+  // sessionStorage throws rather than returns nothing where site data is
+  // blocked, which is the same window that refuses a database — and an
+  // exception here would leave the page not reloading on an update, with
+  // nothing on screen to say why.
+  const remembered = (key, value) => {
+    try {
+      if (value === undefined) return sessionStorage.getItem(key);
+      sessionStorage.setItem(key, value);
+    } catch { /* blocked; the reload just happens once more than it needs to */ }
+    return null;
+  };
+
   let reloading = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (reloading) return;
     // The first worker to take control of a page that had none is the initial
     // install, not an update. Reloading there would bounce every first visit.
-    if (!sessionStorage.getItem("lexis:controlled")) {
-      sessionStorage.setItem("lexis:controlled", "1");
+    if (!remembered("lexis:controlled")) {
+      remembered("lexis:controlled", "1");
       return;
     }
     reloading = true;
     location.reload();
   });
-  if (navigator.serviceWorker.controller) sessionStorage.setItem("lexis:controlled", "1");
+  if (navigator.serviceWorker.controller) remembered("lexis:controlled", "1");
 }
 
 boot();
