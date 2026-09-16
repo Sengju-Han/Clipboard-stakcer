@@ -57,6 +57,11 @@ BLOCK_BOUNDARY = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6])\b[^>]*>", re.IGNOREC
 # Media. These are ordinary media files and should be swept like any other.
 NAME_PREFIX = "ttsex-"
 
+# A [sound:] tag pointing at a file this script made, with the space that was
+# put in front of it. Used to tell our own recording from one somebody made
+# themselves, which must never be thrown away to make room for a synthetic one.
+OUR_SOUND = re.compile(r"\s*\[sound:(" + re.escape(NAME_PREFIX) + r"[^\]]*)\]")
+
 # A truncated or empty mp3 is the failure that hides: it imports fine and is
 # only discovered mid-review. Neural speech never lands this small.
 MIN_BYTES = 2048
@@ -104,9 +109,21 @@ def speakable(raw: str) -> str:
     return ""
 
 
-def audio_name(text: str) -> str:
-    """Content-addressed filename, so a re-run skips what is already generated."""
-    return NAME_PREFIX + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16] + ".mp3"
+def audio_name(text: str, voice: str = "") -> str:
+    """Content-addressed filename, so a re-run skips what is already generated.
+
+    The voice is part of the content. Without it the same sentence read by two
+    different voices wants the same filename, and the second reading can never
+    be made: the file is already there, so it is skipped as done. That is what
+    made changing a voice impossible.
+
+    An empty voice hashes the text alone, which is what the files generated
+    before voices were named do. They are still recognised by their prefix, so
+    a re-voicing run can find and replace them; it simply cannot tell which
+    voice they were, and regenerates them once.
+    """
+    seed = f"{voice}\n{text}" if voice else text
+    return NAME_PREFIX + hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16] + ".mp3"
 
 
 def duration_seconds(path: Path) -> float | None:
@@ -150,15 +167,26 @@ PROVIDERS = {"edge": edge_audio, "silent": silent_audio}
 # planning
 # --------------------------------------------------------------------------
 
-def plan_notes(col: Collection, note_ids: list[int], field: str) -> tuple[list[dict], dict]:
+def plan_notes(
+    col: Collection, note_ids: list[int], field: str,
+    voice: str = "", revoice: bool = False,
+) -> tuple[list[dict], dict]:
     """Work out which notes need audio, and why the others do not.
 
     Skipping a note that already has a [sound:] tag is what makes re-running
     safe: a second pass over the same deck is a no-op rather than a note with
     two play buttons.
+
+    With revoice, a note that already has a tag is re-recorded instead of
+    skipped — but only when the tag points at a file this script made. A
+    recording somebody made themselves is the one thing here that cannot be
+    regenerated, so a note holding one is left exactly as it is.
     """
     items: list[dict] = []
-    skipped = {"no field": 0, "field empty": 0, "already has audio": 0}
+    skipped = {
+        "no field": 0, "field empty": 0, "already has audio": 0,
+        "already in this voice": 0, "has a recording we did not make": 0,
+    }
 
     for note_id in note_ids:
         note = col.get_note(note_id)
@@ -166,12 +194,25 @@ def plan_notes(col: Collection, note_ids: list[int], field: str) -> tuple[list[d
             skipped["no field"] += 1
             continue
         raw = note[field]
+        replaces = ""
         if "[sound:" in raw:
-            skipped["already has audio"] += 1
-            continue
+            if not revoice:
+                skipped["already has audio"] += 1
+                continue
+            ours = OUR_SOUND.findall(raw)
+            # Not `if not ours`: a field can hold both, and dropping ours would
+            # leave the hand-made one playing next to a new synthetic one.
+            if len(ours) != 1 or "[sound:" in OUR_SOUND.sub("", raw):
+                skipped["has a recording we did not make"] += 1
+                continue
+            replaces = ours[0]
         text = speakable(raw)
         if not text:
             skipped["field empty"] += 1
+            continue
+        wanted = audio_name(text, voice)
+        if replaces == wanted:
+            skipped["already in this voice"] += 1
             continue
         items.append(
             {
@@ -179,7 +220,8 @@ def plan_notes(col: Collection, note_ids: list[int], field: str) -> tuple[list[d
                 "guid": note.guid,
                 "text": text,
                 "chars": len(text),
-                "file": audio_name(text),
+                "file": wanted,
+                "replaces": replaces,
             }
         )
     return items, skipped
@@ -265,11 +307,26 @@ async def generate_all(
 # writing it back
 # --------------------------------------------------------------------------
 
+def wants(before: str, stored: str, replacing: bool) -> str:
+    """What the field should read once the tag is on it.
+
+    One expression, used both to write the field and to check the field after a
+    round trip through a real import, so the check cannot drift from the write.
+    """
+    head = OUR_SOUND.sub("", before).rstrip() if replacing else before
+    return head + f" [sound:{stored}]"
+
+
 def attach(col: Collection, results: list[dict], audio_dir: Path, field: str) -> list[dict]:
-    """Copy the audio into the collection and append the tag to the field.
+    """Copy the audio into the collection and put the tag on the field.
 
     The file is added first: the media store decides the final name, and the tag
     has to point at the name it actually used, not the one we asked for.
+
+    Re-voicing drops the old tag rather than adding a second one. The file it
+    pointed at stays in the media folder, unreferenced — Check Media in Anki
+    sweeps those, and deleting them here would take somebody's only copy if two
+    notes shared a sentence and only one was re-recorded.
     """
     attached = []
     for result in results:
@@ -277,9 +334,10 @@ def attach(col: Collection, results: list[dict], audio_dir: Path, field: str) ->
             continue
         stored = col.media.add_file(str(audio_dir / result["file"]))
         note = col.get_note(result["note_id"])
-        if "[sound:" in note[field]:
+        replacing = bool(result.get("replaces"))
+        if "[sound:" in note[field] and not replacing:
             continue  # generated in this run, but written by an earlier one
-        note[field] = note[field] + f" [sound:{stored}]"
+        note[field] = wants(note[field], stored, replacing)
         col.update_note(note)
         attached.append({**result, "stored": stored})
     return attached
@@ -397,15 +455,19 @@ def verify(
                 continue
             after = dict(col.get_note(note_id).items())
             before = snap["fields"][item["note_id"]]
-            if after.get(field) != before[field] + f" [sound:{item['stored']}]":
+            if after.get(field) != wants(before[field], item["stored"], bool(item.get("replaces"))):
                 bad_field.append(item["guid"])
-            if len(SOUND_TAG.findall(after.get(field, ""))) != 1:
-                doubled.append(item["guid"])
+            tags = len(SOUND_TAG.findall(after.get(field, "")))
+            if tags != 1:
+                doubled.append(f"{item['guid']} ({tags})")
             for name, value in before.items():
                 if name != field and after.get(name) != value:
                     bad_other.append(f"{item['guid']}/{name}")
-        check(f"`{field}` is the original value plus one tag", not bad_field, f"{len(bad_field)} wrong")
-        check(f"no `{field}` has two [sound:] tags", not doubled, f"{len(doubled)} doubled")
+        check(f"`{field}` is the original text with one tag on it", not bad_field, f"{len(bad_field)} wrong")
+        # Not "doubled": zero lands here too, and that is the more likely of the
+        # two - it means the import declined the note rather than updating it.
+        check(f"every `{field}` ends with exactly one [sound:] tag", not doubled,
+              f"{len(doubled)} with a different count: " + ", ".join(doubled[:5]))
         check("every other field is byte-identical", not bad_other, f"{len(bad_other)} changed")
 
         moved = []
@@ -475,6 +537,10 @@ def main() -> int:
     parser.add_argument("--provider", default="edge", choices=sorted(PROVIDERS),
                         help="edge = Microsoft neural voices; silent = offline test files.")
     parser.add_argument("--voice", default="en-US-AvaNeural")
+    parser.add_argument("--revoice", action="store_true",
+                        help="Re-record notes that already have audio this script made, "
+                             "in the voice given by --voice. Recordings made elsewhere are "
+                             "left alone.")
     parser.add_argument("--out-dir", default="tts-build")
     parser.add_argument("--audio-dir", default="", help="Audio cache (default: <out-dir>/audio).")
     parser.add_argument("--concurrency", type=int, default=6)
@@ -519,7 +585,7 @@ def main() -> int:
     if args.limit:
         note_ids = note_ids[: args.limit]
 
-    items, skipped = plan_notes(col, note_ids, args.field)
+    items, skipped = plan_notes(col, note_ids, args.field, args.voice, args.revoice)
     distinct = {item["file"] for item in items}
     chars = sum(item["chars"] for item in items)
     log(f"{len(note_ids)} notes matched; {len(items)} need audio "
@@ -603,7 +669,8 @@ def main() -> int:
             f"## TTS build — {plural(len(attached), 'note')}, {human_size(size)}",
             "",
             f"- Query: `{query}` · field: `{args.field}`",
-            f"- Voice: `{args.voice}` via `{args.provider}`",
+            f"- Voice: `{args.voice}` via `{args.provider}`"
+            + (" · **re-voicing**: the old tag is replaced, not added to" if args.revoice else ""),
             f"- Characters sent: **{chars}** · distinct files: **{len(distinct)}** "
             f"(deduplicated {len(items) - len(distinct)})",
             f"- Audio: **{human_size(audio_bytes)}** · package: **{human_size(size)}**",
@@ -632,6 +699,13 @@ def main() -> int:
             "type kept its `{{tts}}` line: remove it in **Cards → Back template**.",
             "6. Sync, so the audio reaches your other device.",
         ]
+        + ([
+            "",
+            f"Once you are happy with how it sounds, **Check Media → Delete Unused** in "
+            f"AnkiDroid clears the {plural(len(attached), 'recording')} the old voice left "
+            "behind. They are kept until then so that nothing is lost if you change your "
+            "mind and re-voice back.",
+        ] if args.revoice else [])
     )
 
     if passed != len(checks):

@@ -80,9 +80,25 @@ off instead of starting again. Generated audio is cached between runs.
 ## Voices
 
 `en-US-AvaNeural` by default. `en-US-AndrewNeural` and `en-US-EmmaNeural` are
-the other two worth trying; any Microsoft neural voice name works. Changing the
-voice changes nothing about the filenames, so **switching voice means
-regenerating everything** — the cache will not help you.
+the other two worth trying; any Microsoft neural voice name works.
+
+To change the voice on cards that already have audio, tick **revoice**. Without
+it a note that already has a `[sound:]` tag is skipped — that is what makes
+re-running the workflow safe — so a new voice would never be heard.
+
+Re-voicing replaces the tag rather than adding a second one, and it only ever
+touches a recording this workflow made. **A recording you made yourself is left
+exactly as it is**, including on a note that holds one of each, because that is
+the one file here that cannot be generated again.
+
+The old recordings stay in your media folder until you run **Check Media →
+Delete Unused** in AnkiDroid. That is on purpose: if the new voice turns out to
+be worse, re-voicing back to the old one costs nothing while the files are still
+there.
+
+Re-voicing to the voice a card already has is a no-op. Files generated before
+the voice was part of their name are the exception: nothing records which voice
+read them, so they are regenerated once and named properly from then on.
 
 ## A caveat about where the audio comes from
 

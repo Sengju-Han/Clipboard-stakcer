@@ -20,6 +20,11 @@ on:
         description: 'Voice, e.g. en-US-AvaNeural, en-US-AndrewNeural, en-US-EmmaNeural'
         required: false
         default: 'en-US-AvaNeural'
+      revoice:
+        description: 'Re-record notes that already have audio, in the voice above. Recordings you made yourself are left alone.'
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: 'Report what would be generated, generate nothing'
         required: false
@@ -73,9 +78,9 @@ jobs:
       - name: Install
         run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
 
-      # Audio filenames are a hash of the text, so a cached file is always the
-      # right file. This is what makes a run that is cut short resumable: the
-      # next one regenerates only what is missing.
+      # Audio filenames are a hash of the text and the voice, so a cached file is
+      # always the right file. This is what makes a run that is cut short
+      # resumable: the next one regenerates only what is missing.
       - name: Restore previously generated audio
         uses: actions/cache@v4
         with:
@@ -95,10 +100,12 @@ jobs:
           LIMIT: ${{ inputs.limit }}
           DRY_RUN: ${{ inputs.dry_run }}
           KEEP_TTS: ${{ inputs.keep_tts }}
+          REVOICE: ${{ inputs.revoice }}
         run: |
           FLAGS=""
           if [ "$DRY_RUN" = "true" ]; then FLAGS="$FLAGS --dry-run"; fi
           if [ "$KEEP_TTS" = "true" ]; then FLAGS="$FLAGS --keep-tts"; fi
+          if [ "$REVOICE" = "true" ]; then FLAGS="$FLAGS --revoice"; fi
           python anki/build_tts_apkg.py \
             --deck "$DECK" \
             --field "$FIELD" \
