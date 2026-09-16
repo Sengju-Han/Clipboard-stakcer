@@ -12,15 +12,33 @@ DECK = 'duo<img src=y onerror="window.__deckRan = 1">'
 
 def run(t):
     t.open_app()
+    # Every other card is put out of reach, so the session can only offer this
+    # one. Setting only this card's due date left the rest of the deck due or
+    # new alongside it, the session opened on whichever came first, and the
+    # check below read the panel for somebody else's word - and passed, because
+    # it was looking for markup that was never going to be there.
     t.page.evaluate("""async ({ word, deck }) => {
       const db = await new Promise(r => { const q = indexedDB.open('lexis'); q.onsuccess = () => r(q.result); });
       const all = await new Promise(r => {
         const g = db.transaction('cards').objectStore('cards').getAll(); g.onsuccess = () => r(g.result); });
-      const c = all.find(x => !x.deleted);
-      c.word = word; c.deck = deck; c.mod = Date.now();
+      const live = all.filter(x => !x.deleted);
+      const far = new Date(Date.now() + 400 * 86400000).toISOString();
+      const store = db.transaction('cards', 'readwrite').objectStore('cards');
+      for (const c of live) {
+        // Review state with a real stability: a new card would be offered as
+        // new however far away its due date is, and FSRS refuses a reviewed
+        // card whose stability is under 1.
+        c.fsrs.state = 2;
+        c.fsrs.stability = 30; c.fsrs.difficulty = 5; c.fsrs.reps = 1;
+        c.fsrs.last_review = new Date(Date.now() - 30 * 86400000).toISOString();
+        c.fsrs.due = far;
+        c.mod = Date.now();
+      }
+      const c = live[0];
+      c.word = word; c.deck = deck;
       c.fsrs.due = new Date(Date.now() - 86400000).toISOString();
-      await new Promise(r => {
-        const p = db.transaction('cards', 'readwrite').objectStore('cards').put(c); p.onsuccess = () => r(); });
+      await Promise.all(live.map(row => new Promise(r => {
+        const p = store.put(row); p.onsuccess = () => r(); })));
     }""", {"word": NASTY, "deck": DECK})
     t.page.reload()
     t.page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
@@ -51,6 +69,11 @@ def run(t):
     t.page.wait_for_timeout(400)
     # The panel puts the word on screen before it goes looking, and that line
     # is built as markup. Read it before anything has had time to replace it.
+    # Naming the card first: an assertion that reads the wrong card's panel is
+    # not a weaker check, it is no check at all.
+    t.check("the session opens on the card with the < in it",
+            t.page.evaluate("() => (document.getElementById('card-word') || {}).textContent || ''"),
+            NASTY)
     t.page.locator("#explain-btn").click()
     looking = t.page.evaluate("() => document.getElementById('brain').innerHTML")
     if "Looking up" in looking:
