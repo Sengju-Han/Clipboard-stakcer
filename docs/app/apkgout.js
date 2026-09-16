@@ -186,6 +186,13 @@ function startOfToday(now) {
 // ---- building it ---------------------------------------------------------
 
 export async function buildApkg(cards, reviews = [], { now = Date.now(), media = [], onProgress = () => {} } = {}) {
+  // Which captured clips this device actually holds. A card mined on the other
+  // phone syncs across without its audio — clips do not travel — and writing
+  // [sound:…] for a file that is not in the package produces a card that is
+  // silent in Anki and a missing-media warning that is not the person's fault.
+  // A reference to a file that came out of their own collection is different:
+  // it is already on the other side, and that one stays.
+  const captured = new Set(media.map((row) => row.name).filter(Boolean));
   onProgress("Opening a collection…");
   const SQL = await loadSql();
   const db = new SQL.Database();
@@ -243,7 +250,8 @@ export async function buildApkg(cards, reviews = [], { now = Date.now(), media =
     // came out of the person's own collection, so on the other side they
     // already resolve. A missing name costs a silent card; a stripped one
     // costs the card its sound forever.
-    const example = [esc(card.example || ""), card.audio ? `[sound:${card.audio}]` : ""]
+    const hasSound = card.audio && (!card.audioLocal || captured.has(card.audio));
+    const example = [esc(card.example || ""), hasSound ? `[sound:${card.audio}]` : ""]
       .filter(Boolean).join(" ");
     const front = esc(card.clue || card.word);
     const flds = [front, back, example].join(FIELD_SEP);
