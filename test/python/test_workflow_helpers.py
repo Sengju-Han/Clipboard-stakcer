@@ -88,6 +88,155 @@ def test_markup_around_a_sentence_does_not_change_its_filename():
     assert tts.audio_name(plain) == tts.audio_name(bolded)
 
 
+def test_the_voice_is_part_of_the_filename():
+    # Without this a second voice can never be heard: the file the first voice
+    # made is already there, so the note is skipped as done. Changing voices
+    # was impossible for exactly this reason.
+    text = "The politician avowed it."
+    ava = tts.audio_name(text, "en-US-AvaNeural")
+    andrew = tts.audio_name(text, "en-US-AndrewNeural")
+    assert ava != andrew
+    assert ava == tts.audio_name(text, "en-US-AvaNeural")
+    assert ava.startswith(tts.NAME_PREFIX) and ava.endswith(".mp3")
+
+    # And the files made before voices were named still hash the text alone,
+    # so nothing already in a collection changes name under its own rules.
+    assert tts.audio_name(text, "") == tts.audio_name(text)
+
+
+def test_our_own_recording_is_told_apart_from_somebody_elses():
+    ours = "[sound:ttsex-0123456789abcdef.mp3]"
+    theirs = "[sound:my-own-voice.mp3]"
+    assert tts.OUR_SOUND.findall(f"A sentence. {ours}") == ["ttsex-0123456789abcdef.mp3"]
+    assert tts.OUR_SOUND.findall(f"A sentence. {theirs}") == []
+    # Stripping ours leaves theirs, which is how a field holding both is caught.
+    assert "[sound:" in tts.OUR_SOUND.sub("", f"A sentence. {ours} {theirs}")
+
+
+def test_re_voicing_replaces_the_tag_instead_of_adding_a_second():
+    before = "The politician avowed it. [sound:ttsex-old.mp3]"
+    after = tts.wants(before, "ttsex-new.mp3", True)
+    assert after == "The politician avowed it. [sound:ttsex-new.mp3]"
+    assert after.count("[sound:") == 1
+
+    # A first recording still appends, and the space before the tag is the
+    # same one either way - the field is compared byte for byte after import.
+    assert tts.wants("The politician avowed it.", "ttsex-new.mp3", False) == \
+        "The politician avowed it. [sound:ttsex-new.mp3]"
+
+
+def _collection(tmp_path, examples):
+    """A real collection holding one note per example, on the Basic note type."""
+    from anki.collection import Collection
+
+    col = Collection(str(tmp_path / "collection.anki2"))
+    notetype = col.models.new("Speakable")
+    for name in ("Front", "Example"):
+        col.models.add_field(notetype, col.models.new_field(name))
+    template = col.models.new_template("Card 1")
+    template["qfmt"], template["afmt"] = "{{Front}}", "{{Example}}"
+    col.models.add_template(notetype, template)
+    col.models.add(notetype)
+    notetype = col.models.by_name("Speakable")
+    for index, value in enumerate(examples):
+        note = col.new_note(notetype)
+        note["Front"], note["Example"] = f"word {index}", value
+        col.add_note(note, col.decks.id("Default"))
+    return col
+
+
+def test_re_voicing_leaves_a_recording_somebody_made_themselves_alone(tmp_path):
+    # The one thing here that cannot be regenerated. A note holding a hand-made
+    # recording must come out of planning untouched, even though the run was
+    # asked to replace audio - including when it holds one of each.
+    sentence = "The politician avowed it."
+    ours = tts.audio_name(sentence)  # named the old way, before voices
+    col = _collection(tmp_path, [
+        f"{sentence} [sound:{ours}]",
+        f"{sentence} [sound:i-said-this-myself.mp3]",
+        f"{sentence} [sound:{ours}] [sound:i-said-this-myself.mp3]",
+        sentence,
+    ])
+    note_ids = list(col.find_notes(""))
+
+    items, skipped = tts.plan_notes(col, note_ids, "Example", "en-US-AndrewNeural", revoice=True)
+    planned = {item["note_id"] for item in items}
+
+    assert skipped["has a recording we did not make"] == 2
+    assert note_ids[1] not in planned and note_ids[2] not in planned
+    # Ours is re-recorded, and the note with no audio at all still gets some.
+    assert planned == {note_ids[0], note_ids[3]}
+    assert {i["replaces"] for i in items} == {ours, ""}
+    col.close()
+
+
+def test_re_voicing_twice_in_the_same_voice_changes_nothing(tmp_path):
+    # Idempotency: the second run has to be a no-op, or every run rewrites
+    # every note and the .apkg stops being a small update.
+    sentence = "The politician avowed it."
+    voice = "en-US-AndrewNeural"
+    col = _collection(tmp_path, [f"{sentence} [sound:{tts.audio_name(sentence, voice)}]"])
+    note_ids = list(col.find_notes(""))
+
+    items, skipped = tts.plan_notes(col, note_ids, "Example", voice, revoice=True)
+    assert items == []
+    assert skipped["already in this voice"] == 1
+
+    # And a different voice is work again.
+    items, _ = tts.plan_notes(col, note_ids, "Example", "en-US-EmmaNeural", revoice=True)
+    assert len(items) == 1
+    col.close()
+
+
+def test_without_re_voicing_a_note_with_audio_is_still_skipped(tmp_path):
+    # The default has to stay what it was: running the workflow twice must not
+    # give anybody a note with two play buttons.
+    col = _collection(tmp_path, ["A sentence. [sound:ttsex-old.mp3]", "No audio here."])
+    note_ids = list(col.find_notes(""))
+
+    items, skipped = tts.plan_notes(col, note_ids, "Example", "en-US-AvaNeural")
+    assert skipped["already has audio"] == 1
+    assert [i["note_id"] for i in items] == [note_ids[1]]
+    col.close()
+
+
+def test_a_voice_the_service_refuses_is_left_off_the_page(tmp_path, monkeypatch):
+    # Voice names come and go, and one that no longer exists must not take the
+    # whole page down with it: the point of the page is to compare the rest.
+    import voice_samples
+
+    async def fake(text, voice):
+        if voice == "en-US-GoneNeural":
+            raise RuntimeError("no such voice")
+        if voice == "en-US-TruncatedNeural":
+            return b"\x00" * 10  # the failure that imports fine and is silent
+        return b"\x00" * (voice_samples.MIN_BYTES + 1)
+
+    monkeypatch.setattr(voice_samples, "edge_audio", fake)
+    monkeypatch.setattr(sys, "argv", [
+        "voice_samples.py", "--out-dir", str(tmp_path),
+        "--voices", "en-US-AvaNeural,en-US-GoneNeural,en-US-TruncatedNeural,en-GB-SoniaNeural",
+    ])
+    assert voice_samples.main() == 0
+
+    import json
+    data = json.loads((tmp_path / "index.json").read_text())
+    assert [v["voice"] for v in data["voices"]] == ["en-US-AvaNeural", "en-GB-SoniaNeural"]
+    # And nothing half-written is left on disk for the page to offer.
+    assert sorted(f.name for f in tmp_path.glob("*.mp3")) == [
+        "en-GB-SoniaNeural-1.mp3", "en-GB-SoniaNeural-2.mp3", "en-GB-SoniaNeural-3.mp3",
+        "en-US-AvaNeural-1.mp3", "en-US-AvaNeural-2.mp3", "en-US-AvaNeural-3.mp3",
+    ]
+
+
+def test_the_samples_are_not_taken_from_a_collection():
+    # This page is published. A sentence out of somebody's cards on it is a
+    # study note on the open internet, so the sentences are fixed and neutral.
+    import voice_samples
+
+    assert len(voice_samples.SENTENCES) == 3
+    assert all(s.strip() and s[0].isupper() for s in voice_samples.SENTENCES)
+
 # --------------------------------------------------------------------------
 # the guard on a correction that replaces the word the card exists for
 # --------------------------------------------------------------------------
