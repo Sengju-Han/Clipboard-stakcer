@@ -51,7 +51,18 @@ answers live in this repository.
 
 **Both phones.** Either through your own GitHub repository, or with an email
 and a password through [a server you can deploy in four steps from a phone](server/README.md).
-Both are optional and neither is in the way: the deck lives in the browser.
+Both are optional and neither is in the way: the deck lives in the browser. A
+card deleted on one phone stays deleted on the other, which is less obvious
+than it sounds and is the reason a deletion leaves something behind.
+
+**And the small things**, which are most of what you notice. Undo puts a
+mis-tap back exactly as it was — the card, the log and the count — and hands you
+back the same card with its answer showing. A card you have forgotten eight
+times says so, because that is usually the card rather than the word, and
+offers to let you fix it there and then or rest it for a fortnight. An evening
+with nothing due offers the cards that come back soonest, and says what
+answering early costs. A deck that arrived without its review history says so
+rather than telling you a thousand cards are owed.
 
 ## What it costs
 
@@ -76,6 +87,16 @@ Nothing to build. The app is plain modules served as files; the four libraries
 it uses — ts-fsrs, fflate, fzstd, sql.js, all MIT — are vendored in
 [`docs/app/vendor/`](docs/app/vendor/) with their licences.
 
-The server has tests: `cd server && npm install && npm test` runs 44 checks
-against a real D1 through Miniflare, which is the same SQLite and the same
-runtime Cloudflare runs.
+It is tested three ways, and all three run on every pull request:
+
+```
+python3 test/run.py                    the app, in a real browser, against the real deck
+python3 -m pytest test/python -q       the workflows that talk to AnkiWeb and to Claude
+cd server && npm install && npm test   the server, against a real D1 through Miniflare
+```
+
+Nothing is mocked except Claude. The scheduler, the database, the service
+worker and the file formats are the real ones, because every bug worth catching
+here has been in how those behave together rather than in any one of them —
+including the offline suite, which stops the server and means it. See
+[`test/README.md`](test/README.md).

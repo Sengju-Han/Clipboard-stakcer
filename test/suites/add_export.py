@@ -56,6 +56,7 @@ def run(t):
         l for l in text.splitlines() if not l.startswith("#")))))
     t.check("one row per card", len(rows), total + 1)
     t.check("four columns, so nothing spills into tags", len(rows[0]), 4)
+    _anki_reads_the_csv(t, dl.value.path())
 
     with t.page.expect_download(timeout=180000) as dl:
         t.page.locator("#export-apkg-btn").click()
@@ -66,3 +67,51 @@ def run(t):
     t.truthy("and a media map", "media" in names)
     t.truthy("the export says how to make Anki keep the scheduling",
              "Import any learning progress" in t.page.locator("#settings-note").inner_text())
+
+
+def _anki_reads_the_csv(t, path):
+    """Hand the CSV to Anki itself rather than to a reading of the spec.
+
+    The first version of this export put four columns of content onto Basic's
+    two fields, and Anki did what it always does with the surplus: every
+    example sentence arrived as nine tags. Counting columns catches nothing
+    about that. Anki counting them does.
+    """
+    try:
+        from anki.collection import Collection
+        from anki.import_export_pb2 import ImportCsvRequest
+    except ImportError:
+        t.note("skipped", "the Anki library is not installed; see test/python/requirements.txt")
+        return
+
+    import shutil
+    import tempfile
+
+    work = tempfile.mkdtemp(prefix="lexis-csv-")
+    try:
+        col = Collection(f"{work}/c.anki2")
+        meta = col.get_csv_metadata(path=str(path), delimiter=None)
+        t.check("Anki reads the separator out of the header", meta.delimiter, 4)  # comma
+        t.check("and that the fields hold HTML", meta.is_html, True)
+        t.check("and which column is the tags", meta.tags_column, 3)
+        t.check("and which is the deck", meta.deck_column, 4)
+
+        col.import_csv(ImportCsvRequest(path=str(path), metadata=meta))
+        notes = col.find_notes("")
+        t.check("every card arrives", len(notes), len(t.cards()))
+        # The app tags what it created with "lexis" on purpose, so the test is
+        # not "no tags" but "no tags that are really a sentence": the original
+        # bug turned "Just tell me — stop beating around the bush." into the
+        # nine tags ['around','beating','bush.','just','me','stop','tell','The','—'].
+        tags = {tag for nid in notes for tag in col.get_note(nid).tags}
+        t.note("every tag in the imported collection", ", ".join(sorted(tags)) or "none")
+        t.check("no tag is a word out of a sentence", sorted(tags - {"lexis"}), [])
+        t.note("why that matters",
+               "four columns onto a two-field notetype turns every sentence into nine tags")
+        decks = sorted(d["name"] for d in col.decks.all())
+        t.truthy(f"and the decks come with them ({', '.join(decks)})", len(decks) > 1)
+        t.truthy("with a clean database afterwards",
+                 "Database rebuilt" in col.fix_integrity()[0])
+        col.close()
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
