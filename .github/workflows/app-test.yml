@@ -19,7 +19,7 @@ jobs:
           python-version: "3.11"
       - name: Install
         run: |
-          pip install -r test/requirements.txt
+          pip install -r test/requirements.txt -r test/python/requirements.txt
           playwright install --with-deps chromium
       # The quick ones first: they need no browser and they fail in a tenth of
       # a second, so a broken conversion is not waiting behind a browser

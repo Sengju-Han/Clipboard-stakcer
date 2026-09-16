@@ -75,20 +75,33 @@ MS_PER_CHAR = 65
 # text to speak, and the name of the file holding it
 # --------------------------------------------------------------------------
 
-def speakable(raw: str) -> str:
-    """The part of a field worth sending to a speech engine.
-
-    Everything after the first block break is dropped, then markup, entities and
-    any existing media reference are removed and whitespace is collapsed. The
-    result is both what gets spoken and what the filename hashes, so the same
-    sentence always maps to the same file.
-    """
-    head = BLOCK_BOUNDARY.split(raw, maxsplit=1)[0]
-    text = SOUND_TAG.sub(" ", head)
+def _cleaned(part: str) -> str:
+    text = SOUND_TAG.sub(" ", part)
     text = re.sub(r"<[^>]+>", " ", text)
     text = html.unescape(text)
     text = unicodedata.normalize("NFC", text).replace("\xa0", " ")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def speakable(raw: str) -> str:
+    """The part of a field worth sending to a speech engine.
+
+    The first block with anything in it, with markup, entities and any existing
+    media reference removed and whitespace collapsed. The result is both what
+    gets spoken and what the filename hashes, so the same sentence always maps
+    to the same file.
+
+    The first block *with anything in it*, rather than simply the first: Anki's
+    editor writes a multi-line field as <div>line</div><div>line</div>, so the
+    text before the first break is the empty string and taking it gave nothing
+    to speak. Two fields in a 1,177-card collection start that way, and they
+    would have been skipped with no explanation.
+    """
+    for part in BLOCK_BOUNDARY.split(raw):
+        text = _cleaned(part)
+        if text:
+            return text
+    return ""
 
 
 def audio_name(text: str) -> str:
