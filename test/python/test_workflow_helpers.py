@@ -198,3 +198,41 @@ def test_without_re_voicing_a_note_with_audio_is_still_skipped(tmp_path):
     assert skipped["already has audio"] == 1
     assert [i["note_id"] for i in items] == [note_ids[1]]
     col.close()
+
+
+def test_a_voice_the_service_refuses_is_left_off_the_page(tmp_path, monkeypatch):
+    # Voice names come and go, and one that no longer exists must not take the
+    # whole page down with it: the point of the page is to compare the rest.
+    import voice_samples
+
+    async def fake(text, voice):
+        if voice == "en-US-GoneNeural":
+            raise RuntimeError("no such voice")
+        if voice == "en-US-TruncatedNeural":
+            return b"\x00" * 10  # the failure that imports fine and is silent
+        return b"\x00" * (voice_samples.MIN_BYTES + 1)
+
+    monkeypatch.setattr(voice_samples, "edge_audio", fake)
+    monkeypatch.setattr(sys, "argv", [
+        "voice_samples.py", "--out-dir", str(tmp_path),
+        "--voices", "en-US-AvaNeural,en-US-GoneNeural,en-US-TruncatedNeural,en-GB-SoniaNeural",
+    ])
+    assert voice_samples.main() == 0
+
+    import json
+    data = json.loads((tmp_path / "index.json").read_text())
+    assert [v["voice"] for v in data["voices"]] == ["en-US-AvaNeural", "en-GB-SoniaNeural"]
+    # And nothing half-written is left on disk for the page to offer.
+    assert sorted(f.name for f in tmp_path.glob("*.mp3")) == [
+        "en-GB-SoniaNeural-1.mp3", "en-GB-SoniaNeural-2.mp3", "en-GB-SoniaNeural-3.mp3",
+        "en-US-AvaNeural-1.mp3", "en-US-AvaNeural-2.mp3", "en-US-AvaNeural-3.mp3",
+    ]
+
+
+def test_the_samples_are_not_taken_from_a_collection():
+    # This page is published. A sentence out of somebody's cards on it is a
+    # study note on the open internet, so the sentences are fixed and neutral.
+    import voice_samples
+
+    assert len(voice_samples.SENTENCES) == 3
+    assert all(s.strip() and s[0].isupper() for s in voice_samples.SENTENCES)

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pick a voice</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%8E%A7%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f2f3f5; --panel: #ffffff; --ink: #1f2328; --muted: #61686f;
+    --line: #d8dce0; --accent: #2d6cdf; --accent-ink: #ffffff;
+    --ok: #1a7f45; --ok-bg: #e7f5ec; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c; --panel: #1f2227; --ink: #e6e8ea; --muted: #9aa3ab;
+      --line: #343a41; --accent: #4d8bf0; --accent-ink: #0b1220;
+      --ok: #6fd096; --ok-bg: #14301f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line);
+           padding: 14px 16px; position: sticky; top: 0; z-index: 5; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; padding-block-end: 40px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; }
+  ol.said { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; }
+  .voice { display: flex; align-items: center; gap: 11px; padding: 11px 13px;
+           border: 1px solid var(--line); border-radius: var(--radius);
+           background: var(--panel); margin-bottom: 9px; }
+  .voice.playing { border-color: var(--accent); }
+  .voice.chosen { border-color: var(--ok); background: var(--ok-bg); }
+  .play { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 50%; font-size: 15px;
+          border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+  .who { flex: 1; min-width: 0; }
+  .who b { display: block; font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .who span { display: block; color: var(--muted); font-size: 12.5px; }
+  .pick { flex: 0 0 auto; font: inherit; font-size: 13px; font-weight: 600; padding: 7px 11px;
+          border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+          color: var(--ink); cursor: pointer; }
+  .voice.chosen .pick { background: var(--ok); color: #fff; border-color: transparent; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+  code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
+         padding: 1px 5px; font-size: 12.5px; overflow-wrap: anywhere; }
+  .fail { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pick a voice</h1>
+  <p>The same three sentences, read by every voice your cards could use.</p>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>What they are saying</h2>
+    <ol class="said" id="said"></ol>
+    <p class="note">Not sentences from your collection — this page is public.
+      They were chosen to expose what actually differs between these voices:
+      a contraction, a number read aloud, and a cluster several of them fumble.</p>
+  </div>
+
+  <div id="list"><p class="fail" id="status">Loading the samples…</p></div>
+
+  <div class="panel" id="chosen-panel" hidden>
+    <h2>Using <span id="chosen-name"></span></h2>
+    <p>Run <b>Anki TTS package</b> under Actions with</p>
+    <p><code id="chosen-voice"></code> as <b>voice</b>, <b>revoice</b> ticked,
+      and <b>deck</b> set to <code>*</code>.</p>
+    <p class="note">Re-voicing replaces the recording on cards that already have
+      one, and leaves any recording you made yourself alone. The old files stay
+      in your media folder until <b>Check Media → Delete Unused</b>, so changing
+      your mind costs nothing.</p>
+  </div>
+</main>
+
+<script>
+// Tapping one voice stops the one before it. Without this the page ends up
+// with four voices talking over each other, which is the opposite of a
+// comparison.
+let current = null;
+let currentRow = null;
+
+function stop() {
+  if (current) { current.pause(); current.currentTime = 0; }
+  if (currentRow) currentRow.classList.remove("playing");
+  current = null;
+  currentRow = null;
+}
+
+function playAll(files, row, button) {
+  stop();
+  let index = 0;
+  row.classList.add("playing");
+  currentRow = row;
+  const next = () => {
+    if (index >= files.length) { stop(); button.textContent = "▶"; return; }
+    const audio = new Audio("voices/" + files[index]);
+    current = audio;
+    index += 1;
+    audio.addEventListener("ended", next);
+    audio.addEventListener("error", next);
+    audio.play().catch(() => { stop(); button.textContent = "▶"; });
+  };
+  button.textContent = "■";
+  next();
+}
+
+function label(voice) {
+  // en-US-AvaMultilingualNeural -> "Ava", "American · newer model"
+  const parts = voice.split("-");
+  const region = parts[0] + "-" + parts[1];
+  let name = parts.slice(2).join("-").replace(/Neural$/, "");
+  const multilingual = name.endsWith("Multilingual");
+  if (multilingual) name = name.slice(0, -"Multilingual".length);
+  const where = region === "en-GB" ? "British" : region === "en-US" ? "American" : region;
+  return [name || voice, where + (multilingual ? " · newer model" : "")];
+}
+
+function render(data) {
+  const said = document.getElementById("said");
+  for (const sentence of data.sentences) {
+    const li = document.createElement("li");
+    li.textContent = sentence;
+    said.append(li);
+  }
+
+  const list = document.getElementById("list");
+  list.textContent = "";
+  for (const entry of data.voices) {
+    const [who, where] = label(entry.voice);
+    const row = document.createElement("div");
+    row.className = "voice";
+
+    const button = document.createElement("button");
+    button.className = "play";
+    button.textContent = "▶";
+    button.setAttribute("aria-label", "Play " + who);
+
+    const naming = document.createElement("div");
+    naming.className = "who";
+    const bold = document.createElement("b");
+    bold.textContent = who;
+    const small = document.createElement("span");
+    small.textContent = where;
+    naming.append(bold, small);
+
+    const pick = document.createElement("button");
+    pick.className = "pick";
+    pick.textContent = "Use this";
+
+    button.addEventListener("click", () => {
+      if (currentRow === row) { stop(); button.textContent = "▶"; return; }
+      for (const other of list.querySelectorAll(".play")) other.textContent = "▶";
+      playAll(entry.files, row, button);
+    });
+    pick.addEventListener("click", () => {
+      for (const other of list.querySelectorAll(".voice")) other.classList.remove("chosen");
+      row.classList.add("chosen");
+      document.getElementById("chosen-name").textContent = who;
+      document.getElementById("chosen-voice").textContent = entry.voice;
+      document.getElementById("chosen-panel").hidden = false;
+      document.getElementById("chosen-panel").scrollIntoView({ behavior: "smooth" });
+    });
+
+    row.append(button, naming, pick);
+    list.append(row);
+  }
+}
+
+fetch("voices/index.json", { cache: "no-store" })
+  .then((response) => {
+    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    return response.json();
+  })
+  .then(render)
+  .catch((error) => {
+    // Saying what is missing, rather than spinning: the samples are generated
+    // by a workflow, and the likeliest reason they are not here is that it has
+    // not been run yet.
+    document.getElementById("status").textContent =
+      "No samples yet (" + error.message + "). Run the “Anki voice samples” " +
+      "workflow under Actions, then merge the pull request it opens.";
+  });
+</script>
+
+</body>
+</html>
