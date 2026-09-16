@@ -236,3 +236,71 @@ def test_the_samples_are_not_taken_from_a_collection():
 
     assert len(voice_samples.SENTENCES) == 3
     assert all(s.strip() and s[0].isupper() for s in voice_samples.SENTENCES)
+
+# --------------------------------------------------------------------------
+# the guard on a correction that replaces the word the card exists for
+# --------------------------------------------------------------------------
+
+import proofread                                                 # noqa: E402
+
+
+def test_a_correction_may_not_take_away_the_word_the_card_is_for():
+    # All three came back from a real audit of a real collection, against a
+    # prompt that already forbids exactly this. A prompt is not a guarantee.
+    assert not proofread.keeps_the_word(
+        "Mary deposited the baby in the crib.",
+        "Mary placed the baby in the crib.", "deposit")
+    assert not proofread.keeps_the_word(
+        "At prima facie, the project seemed successful.",
+        "At first glance, the project seemed successful.", "prima facie")
+    assert not proofread.keeps_the_word(
+        "She has a shiesty reputation for cheating in games.",
+        "She has a shady reputation for cheating in games.", "shiesty")
+
+
+def test_an_ordinary_correction_is_not_refused():
+    # The guard is worth nothing if it also blocks the typo fixes, which are
+    # most of what an audit finds. Every one of these is from the same run.
+    kept = [
+        ("The artist's lamboyant style", "The artist's flamboyant style", "flamboyant"),
+        ("he threatend to disown her", "he threatened to disown her", "threaten"),
+        ("the ice glistened under the stars", "The ice glistened under the stars.", "glisten"),
+        ("He intimated that he might be leaving soon",
+         "He intimated that he might be leaving soon.", "intimate"),
+        ("she suffered form ectopic pregnancy",
+         "she suffered from ectopic pregnancy", "ectopic pregnancy"),
+        ("they have way too much ball of neuroticism",
+         "They have way too much ball of neuroticism.", "ball of neuroticism"),
+        ("I demurred when Jobs aske me to write his biograhpy",
+         "I demurred when Jobs asked me to write his biography", "demur"),
+    ]
+    for was, now, target in kept:
+        assert proofread.keeps_the_word(was, now, target), target
+
+
+def test_a_word_the_sentence_never_had_is_not_guarded():
+    # The card for 'flamboyant' whose sentence says 'lamboyant' is the reason:
+    # the word was never in the sentence to lose, and the correction putting it
+    # there is the whole point.
+    assert proofread.keeps_the_word("a lamboyant style", "a flamboyant style", "flamboyant")
+    # And a word that was there and stays, however the rest is rewritten.
+    assert proofread.keeps_the_word(
+        "he has been scattershot friendly to me",
+        "he has been scattershot in his friendliness to me", "scattershot")
+
+
+def test_short_words_in_a_target_prove_nothing():
+    # 'of', 'up' and 'a' are in every sentence. Counting them would make the
+    # guard say yes to everything.
+    assert proofread._stem("of") == "of"
+    assert not proofread.keeps_the_word(
+        "she put off the meeting", "she postponed the meeting", "put off")
+    # ...but a target that is only short words cannot be checked at all, and
+    # saying so is better than refusing every correction on those cards.
+    assert proofread.keeps_the_word("it is up to you", "It is up to you.", "up to")
+
+
+def test_an_inflection_still_counts_as_the_word():
+    assert proofread.keeps_the_word("he deposits it", "He deposits it.", "deposited")
+    assert proofread.keeps_the_word("the glistening ice", "The glistening ice.", "glisten")
+    assert proofread.keeps_the_word("she caressed him", "She caressed him.", "caress")
