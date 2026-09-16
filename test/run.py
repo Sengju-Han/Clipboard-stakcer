@@ -33,6 +33,7 @@ SUITES = [
     "explain",           # why a word will not stick
     "speak",             # a conversation out of this week's words
     "apkg_roundtrip",    # somebody else's file, read and written
+    "study_ahead",       # an evening with nothing due is not a dead end
     "timezones",         # a card due today is due today, wherever you are
     "offline",           # with the server genuinely stopped
 ]
