@@ -304,3 +304,77 @@ def test_an_inflection_still_counts_as_the_word():
     assert proofread.keeps_the_word("he deposits it", "He deposits it.", "deposited")
     assert proofread.keeps_the_word("the glistening ice", "The glistening ice.", "glisten")
     assert proofread.keeps_the_word("she caressed him", "She caressed him.", "caress")
+
+
+# --------------------------------------------------------------------------
+# the checks that stand between a generated file and somebody's AnkiWeb account
+# --------------------------------------------------------------------------
+
+def _tagged(tmp_path, examples=("The politician avowed it.", "A hunter beat the bush.")):
+    """A collection with audio attached, plus the snapshot taken before it was."""
+    col = _collection(tmp_path, list(examples))
+    note_ids = list(col.find_notes(""))
+    items, _ = tts.plan_notes(col, note_ids, "Example", "en-US-AvaNeural")
+    snap = tts.snapshot(col, [i["note_id"] for i in items])
+
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    for item in items:
+        (audio_dir / item["file"]).write_bytes(tts.SILENT_FRAME * 40)
+    results = [{**item, "status": "ok", "bytes": 100, "duration": 1.0} for item in items]
+    attached = tts.attach(col, results, audio_dir, "Example")
+    notetypes = {col.get_note(n).note_type()["id"]: col.get_note(n).note_type() for n in note_ids}
+    return col, snap, attached, notetypes
+
+
+def test_nothing_is_sent_when_the_collection_is_as_expected(tmp_path):
+    col, snap, attached, notetypes = _tagged(tmp_path)
+    checks = tts.inspect(col, snap, attached, "Example", notetypes, False)
+    assert [c["label"] for c in checks if not c["ok"]] == []
+    assert len(checks) >= 7
+    col.close()
+
+
+def test_a_moved_card_stops_the_sync(tmp_path):
+    # The one thing that cannot be undone from here. A sync that has already
+    # happened cannot be called off, so this has to be caught beforehand.
+    col, snap, attached, notetypes = _tagged(tmp_path)
+    card_id = col.db.scalar("select id from cards limit 1")
+    col.db.execute("update cards set due = due + 500, ivl = 99 where id = ?", card_id)
+    failed = [c["label"] for c in tts.inspect(col, snap, attached, "Example", notetypes, False)
+              if not c["ok"]]
+    assert "no card's scheduling changed" in failed
+    col.close()
+
+
+def test_a_changed_field_stops_the_sync(tmp_path):
+    col, snap, attached, notetypes = _tagged(tmp_path)
+    note = col.get_note(list(col.find_notes(""))[0])
+    note["Front"] = "something else entirely"
+    col.update_note(note)
+    failed = [c["label"] for c in tts.inspect(col, snap, attached, "Example", notetypes, False)
+              if not c["ok"]]
+    assert "every other field is byte-identical" in failed
+    col.close()
+
+
+def test_a_recording_missing_from_the_media_folder_stops_the_sync(tmp_path):
+    # Syncing a note that points at a file the server will never get leaves a
+    # play button that does nothing, and no way to tell why.
+    col, snap, attached, notetypes = _tagged(tmp_path)
+    (Path(col.media.dir()) / attached[0]["stored"]).unlink()
+    failed = [c["label"] for c in tts.inspect(col, snap, attached, "Example", notetypes, False)
+              if not c["ok"]]
+    assert "every recording is in the media folder" in failed
+    col.close()
+
+
+def test_syncing_a_local_collection_is_refused(tmp_path, monkeypatch):
+    # --local-collection means there is no account to write to. Letting the two
+    # combine would look like it worked and change nothing.
+    monkeypatch.setattr(sys, "argv", [
+        "build_tts_apkg.py", "--sync", "--local-collection", str(tmp_path / "x.anki2")])
+    monkeypatch.setenv("ANKIWEB_USERNAME", "u")
+    monkeypatch.setenv("ANKIWEB_PASSWORD", "p")
+    with pytest.raises(SystemExit):
+        tts.main()
