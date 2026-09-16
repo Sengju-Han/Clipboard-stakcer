@@ -35,6 +35,7 @@ SUITES = [
     "apkg_roundtrip",    # somebody else's file, read and written
     "study_ahead",       # an evening with nothing due is not a dead end
     "timezones",         # a card due today is due today, wherever you are
+    "markup",            # a word containing a < is a word, not markup
     "no_database",       # a browser that will not let it store anything
     "offline",           # with the server genuinely stopped
 ]

@@ -221,7 +221,7 @@
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-15.1";
+const VERSION = "2026-09-16.1";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -301,8 +301,10 @@ async function loadCatalog() {
         "may be out of date. Everything else still works.");
     catalog = { decks: [], notetypes: [{ name: "EN LEARNING TOOL", fields: ["Front", "Back", "Example"] }] };
   }
-  $("decks").innerHTML = catalog.decks.map((d) => `<option value="${d}">`).join("");
-  $("notetype").innerHTML = catalog.notetypes.map((n) => `<option>${n.name}</option>`).join("");
+  // Deck and note type names come out of somebody's collection and can be
+  // anything at all; a quote in one of them would end the attribute early.
+  $("decks").innerHTML = catalog.decks.map((d) => `<option value="${escape(d)}">`).join("");
+  $("notetype").innerHTML = catalog.notetypes.map((n) => `<option>${escape(n.name)}</option>`).join("");
   const lastType = store.get("notetype");
   if (catalog.notetypes.some((n) => n.name === lastType)) $("notetype").value = lastType;
   $("deck").value = store.get("deck");
@@ -658,7 +660,7 @@ function offerToAsk(term, why = "") {
   const panel = $("brain");
   if (!panel) return;
   panel.innerHTML =
-    (why ? `<div class="waiting">${why}</div>` : "") +
+    (why ? `<div class="waiting">${escape(why)}</div>` : "") +
     `<button type="button" class="ask" data-term="${escape(term)}">Ask Claude about “${escape(term)}”</button>`;
 }
 
@@ -878,10 +880,12 @@ function render() {
     const row = document.createElement("div");
     row.className = "item " + (KIND[item.state] || "work");
     const link = item.runUrl ? ` <a href="${item.runUrl}" target="_blank" rel="noopener">run</a>` : "";
+    // The label is the word somebody typed and the reason can be a message a
+    // server wrote. Neither is markup.
     row.innerHTML =
       `<span class="tag">${LABEL[item.state]}</span>` +
-      `<span class="what">${item.label}` +
-      (item.why ? `<span class="why">${item.why}${link}</span>` : link) +
+      `<span class="what">${escape(item.label)}` +
+      (item.why ? `<span class="why">${escape(item.why)}${link}</span>` : link) +
       `</span>`;
     if (item.state === "failed") {
       const again = document.createElement("button");

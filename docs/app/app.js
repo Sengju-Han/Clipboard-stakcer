@@ -8,10 +8,18 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, ankiDay, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-16.3";
+const VERSION = "2026-09-16.4";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
+
+// Everywhere a card's own words go into markup rather than into textContent.
+// Most of what this app holds is the person's own collection, which is not a
+// reason to skip it: a word mined out of a subtitle file came from a download,
+// a deck can be named anything, and an error message can carry text a server
+// wrote. A word containing a < should render as a word containing a <.
+const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const screens = ["boot", "home", "stats", "watch", "talk", "browse", "edit", "add", "review", "done"];
 
 function show(name) {
@@ -523,7 +531,7 @@ async function showWhy(card) {
   if (!panel || !card) return;
   if (explaining === card.id) return;
   explaining = card.id;
-  panel.innerHTML = `<div class="waiting">Looking up “${card.word}”…</div>`;
+  panel.innerHTML = `<div class="waiting">Looking up “${esc(card.word)}”…</div>`;
 
   try {
     const mod = await part("explain");
@@ -534,7 +542,7 @@ async function showWhy(card) {
       `<div class="waiting">Nothing more to add about this one.</div>`;
   } catch (err) {
     if (!current || current.id !== card.id) return;
-    panel.innerHTML = `<div class="waiting">${err.message || String(err)}</div>`;
+    panel.innerHTML = `<div class="waiting">${esc(err.message || String(err))}</div>`;
   }
 }
 
@@ -918,7 +926,7 @@ function renderResults(needle) {
       : due <= new Date() ? "due now"
       : `in ${intervalLabel(due)}`;
     b.querySelector(".m").innerHTML =
-      `${card.deck} · <span class="pip">${when}</span>` +
+      `${esc(card.deck)} · <span class="pip">${esc(when)}</span>` +
       (card.fsrs.reps ? ` · ${card.fsrs.reps} reviews` : "") +
       (card.fsrs.lapses ? ` · ${card.fsrs.lapses} lapses` : "");
     b.addEventListener("click", () => openEdit(card.id, "browse"));
@@ -1245,16 +1253,16 @@ $("export-csv-btn").addEventListener("click", async () => {
     "#tags column:3",
     "#deck column:4",
   ];
-  const esc = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const field = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   for (const c of cards) {
     // The answer keeps its parts, stacked, because a CSV has nowhere else to
     // put them and losing the example would be worse than losing the structure.
     const back = [
-      esc(c.word),
-      c.hook ? `<i>${esc(c.hook)}</i>` : "",
-      c.example ? `<br>${esc(c.example)}` : "",
+      field(c.word),
+      c.hook ? `<i>${field(c.hook)}</i>` : "",
+      c.example ? `<br>${field(c.example)}` : "",
     ].filter(Boolean).join("<br>");
-    lines.push([esc(c.clue), back, (c.tags || []).join(" "), c.deck].map(cell).join(","));
+    lines.push([field(c.clue), back, (c.tags || []).join(" "), c.deck].map(cell).join(","));
   }
   download(`lexis-for-anki-${stamp()}.csv`, lines.join("\n") + "\n", "text/csv");
   $("settings-note").textContent =
