@@ -24,6 +24,7 @@ const MAX_PER_EMAIL = 8;
 const MAX_PER_ADDRESS = 60;
 const LOCKOUT_MINUTES = 15;
 const MAX_BODY = 12 * 1024 * 1024;   // a 1,200-card push is about 2MB
+const BATCH = 100;                   // statements per D1 batch
 const MIN_PASSWORD = 10;
 
 const now = () => Date.now();
@@ -272,7 +273,15 @@ async function push(request, userId, env) {
     taken += 1;
   }
 
-  if (batch.length) await env.DB.batch(batch);
+  // In chunks, not all at once. The first sync of an existing deck is 1,177
+  // statements in one go; that works against a local D1 and is a single
+  // transaction holding the whole thing in memory on the other side of a
+  // network, which is the shape of request that gets refused rather than
+  // slowed down. A hundred at a time is unremarkable and still only a dozen
+  // round trips for a whole collection.
+  for (let i = 0; i < batch.length; i += BATCH) {
+    await env.DB.batch(batch.slice(i, i + BATCH));
+  }
 
   const counts = await env.DB.prepare(
     "SELECT (SELECT COUNT(*) FROM cards WHERE user_id = ?1) AS cards, " +

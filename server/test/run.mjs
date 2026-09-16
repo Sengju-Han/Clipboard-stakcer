@@ -141,6 +141,20 @@ await call("POST", "/api/state", { token: second, body: { reviews: [{ at: "2026-
 r = await call("GET", "/api/state", { token });
 check("and a device that never heard about it cannot take it off", r.payload.reviews[0].undone, true);
 
+console.log("\n— a whole collection in one push —");
+// The first sync of an existing deck is over a thousand cards. It goes in
+// chunks rather than as one batch, and the point of this is that the count
+// coming back is right whatever the chunking does.
+const many = Array.from({ length: 250 }, (_, i) => ({
+  id: `bulk-${i}`, mod: 10000 + i, word: `word${i}`, fsrs: { state: 2, stability: i + 1 },
+}));
+r = await call("POST", "/api/state", { token, body: { cards: many } });
+check("a 250-card push is accepted", r.status, 200);
+check("and every one of them is held", r.payload.held.cards, 252);
+r = await call("GET", "/api/state?since=10248", { token });
+check("and the last two come back on their own", r.payload.cards.map((c) => c.id).sort(),
+  ["bulk-249"]);
+
 console.log("\n— the second phone —");
 r = await call("POST", "/api/pair", { token });
 check("a code is issued", r.status, 200);
@@ -185,7 +199,8 @@ check("a different account sees an empty deck, not this one", r.payload.cards.le
 console.log("\n— leaving —");
 const back = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
 r = await call("GET", "/api/takeout", { token: back.payload.token });
-check("everything comes out in one file", r.payload.cards.length, 2);
+// Two from the earlier merge checks plus the 250 pushed in bulk.
+check("everything comes out in one file", r.payload.cards.length, 252);
 r = await call("POST", "/api/forget-me", { token: back.payload.token });
 check("and the account can be deleted", r.status, 200);
 check("with nothing left behind",
