@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, ankiDay, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.26";
+const VERSION = "2026-09-16.1";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
@@ -141,6 +141,23 @@ async function goHome() {
   $("start-btn").disabled = ready.length === 0;
   $("start-btn").textContent = ready.length ? `Review ${ready.length}` : "Nothing due right now";
 
+  // An evening with nothing due should not be an app that will not open. When
+  // there is genuinely nothing owed, the cards that come back soonest are
+  // offered instead — with what it costs said out loud, because it is not free.
+  const soon = ready.length ? [] : queue(cache, {
+    deck: settings.deck, ahead: true, newPerDay: 0, introducedToday: 0,
+  });
+  $("ahead-btn").hidden = soon.length === 0;
+  $("ahead-note").hidden = soon.length === 0;
+  if (soon.length) {
+    $("ahead-btn").textContent = `Study ahead — ${soon.length} cards`;
+    const next = new Date(soon[0].fsrs.due);
+    $("ahead-note").textContent =
+      `Nothing is owed until ${next.toLocaleDateString()}. Answering early tells the ` +
+      `scheduler you remembered something you were never given the chance to forget, ` +
+      `so it gives back a shorter interval than it would have.`;
+  }
+
   const info = await store.meta("deck");
   $("home-note").textContent = info
     ? `${tally.total} cards${settings.deck ? ` · ${settings.deck}` : ""} · imported ${new Date(info.importedAt).toLocaleDateString()}`
@@ -204,15 +221,19 @@ function renderDecks(cards, settings) {
 }
 
 // ---- review --------------------------------------------------------------
-function startSession() {
+function startSession({ ahead = false } = {}) {
   const settings = prefs.read();
   const cards = queue(cache, {
     deck: settings.deck,
-    newPerDay: settings.newPerDay,
-    introducedToday: introducedToday(),
+    // Studying ahead is about cards already learned: no new ones are
+    // introduced, because there is nothing early about meeting a word for the
+    // first time and the day's allowance should not be spent on a whim.
+    newPerDay: ahead ? 0 : settings.newPerDay,
+    introducedToday: ahead ? 0 : introducedToday(),
+    ahead,
   });
   if (!cards.length) return;
-  session = { cards, index: 0, size: cards.length, answered: 0 };
+  session = { cards, index: 0, size: cards.length, answered: 0, ahead };
   show("review");
   nextCard();
 }
@@ -361,9 +382,11 @@ function finish() {
   undoable.length = 0;
   offerUndo();
   const n = session ? session.answered : 0;
+  const ahead = Boolean(session && session.ahead);
   $("done-head").textContent = n ? "Session done" : "Nothing reviewed";
   $("done-note").textContent = n
-    ? `${n} card${n === 1 ? "" : "s"} answered. The next ones are scheduled.`
+    ? `${n} card${n === 1 ? "" : "s"} answered. The next ones are scheduled.` +
+      (ahead ? " Answered early, so they come back sooner than they would have." : "")
     : "";
   session = null;
   current = null;
@@ -446,7 +469,8 @@ function applySettingsToForm(s) {
 }
 
 // ---- wiring --------------------------------------------------------------
-$("start-btn").addEventListener("click", startSession);
+$("start-btn").addEventListener("click", () => startSession());
+$("ahead-btn").addEventListener("click", () => startSession({ ahead: true }));
 $("reveal-btn").addEventListener("click", reveal);
 $("again-btn").addEventListener("click", goHome);
 $("quit-btn").addEventListener("click", () => {

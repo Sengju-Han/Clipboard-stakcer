@@ -144,13 +144,21 @@ export function resting(card, now = Date.now()) {
 }
 
 export function queue(cards, { now = new Date(), deck = "", limit = DEFAULTS.maxPerSession,
-                               newPerDay = DEFAULTS.newPerDay, introducedToday = 0 } = {}) {
+                               newPerDay = DEFAULTS.newPerDay, introducedToday = 0,
+                               ahead = false } = {}) {
   const stamp = now.getTime();
   const awake = cards.filter((c) => !resting(c, stamp));
   const pool = deck ? awake.filter((c) => c.deck === deck) : awake;
 
+  // Studying ahead takes the cards that come back soonest, whether or not they
+  // are owed yet. It is worth having — an evening with nothing due is
+  // otherwise an app that will not open — and it is not free: answering a card
+  // early tells the scheduler you remembered something you were never given
+  // the chance to forget, so the interval it gives back is shorter than it
+  // would have been. That is FSRS working correctly, and it is why this is a
+  // separate button rather than the normal one.
   const due = pool
-    .filter((c) => isDue(c, stamp))
+    .filter((c) => (ahead ? c.fsrs.state !== State.New : isDue(c, stamp)))
     .sort((a, b) => new Date(a.fsrs.due) - new Date(b.fsrs.due));
 
   const fresh = pool
