@@ -39,6 +39,7 @@ from proofread import (  # noqa: E402
     client,
     check_with_languagetool,
     has_markup,
+    keeps_the_word,
     proofread,
     split_annotation,
 )
@@ -102,7 +103,12 @@ def check_batch(batch: list[dict], checker: str, client) -> list:
 
 
 def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, applied: bool) -> None:
-    changed = [r for r in rows if r["issues"]]
+    # A correction that replaces the word the card exists for is never applied,
+    # so it is reported apart from the ones that would be rather than counted
+    # among them. See keeps_the_word.
+    refused = [r for r in rows if r["issues"]
+               and not keeps_the_word(r["was"], r["now"], r.get("target", ""))]
+    changed = [r for r in rows if r["issues"] and r not in refused]
     by_deck: dict[str, list[dict]] = {}
     for row in changed:
         by_deck.setdefault(row["deck"], []).append(row)
@@ -130,6 +136,19 @@ def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, a
     if len(changed) > shown:
         lines += ["", f"_...and {len(changed) - shown} more. The full list is in "
                       "`audit.jsonl` under Artifacts._"]
+    if refused:
+        lines += [
+            "",
+            f"### Not applied — {plural(len(refused), 'correction')} would replace the word",
+            "",
+            "The card exists to practise a word, and these corrections take it out of the "
+            "sentence. Better English, and a worthless card. They are left alone.",
+            "",
+        ]
+        for row in refused[:30]:
+            lines += [
+                f"- **{row['target']}** — ~~{row['was']}~~ → {row['now']}",
+            ]
     if not applied and changed:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write these "
                       "back and sync them."]
@@ -210,6 +229,7 @@ def main() -> int:
                 corrected = (result.corrected or "").strip()
                 row = {
                     "note_id": item["note_id"], "guid": item["guid"], "deck": item["deck"],
+                    "target": item["target"],
                     "was": item["text"], "now": corrected,
                     "issues": list(result.issues) if corrected and corrected != item["text"] else [],
                 }
@@ -238,13 +258,20 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
     before_cards = {row[0]: row for row in col.db.all(
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
 
-    touched, stale_audio = [], 0
+    touched, stale_audio, dropped = [], 0, []
     for row in changed:
         note_id = col.db.scalar("select id from notes where guid = ?", row["guid"])
         if not note_id:
             continue
         note = col.get_note(note_id)
         if field not in note:
+            continue
+        # Read from the note rather than the row: a ledger written before this
+        # check existed has no target in it, and those corrections are exactly
+        # the ones nobody has looked at.
+        target = note["Back"] if "Back" in note else row.get("target", "")
+        if not keeps_the_word(row["was"], row["now"], target):
+            dropped.append((target, row["was"], row["now"]))
             continue
         updated, refused = apply_correction(note[field], row["now"])
         if refused or updated == note[field]:
@@ -270,6 +297,11 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
     if after_cards != before_cards:
         fail("Card scheduling moved during the audit, so nothing was synced.")
 
+    if dropped:
+        log(f"::warning::{plural(len(dropped), 'correction')} would have replaced the word the "
+            "card exists for, and were not applied:")
+        for target, was, now in dropped[:20]:
+            log(f"  {target!r}: {was!r} -> {now!r}")
     if stale_audio:
         log(f"::warning::{plural(stale_audio, 'card')} had audio of the old wording. The tag was "
             "removed; re-run the TTS package workflow to record the corrected sentence.")

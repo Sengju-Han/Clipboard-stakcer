@@ -229,6 +229,61 @@ def proofread(
     ]
 
 
+WORD = re.compile(r"[a-z0-9']+")
+
+# Enough to recognise a word's own inflections and no more. Deliberately not a
+# real stemmer: the question is only whether the word the card exists for is
+# still in the sentence, and an aggressive stem starts answering yes when it
+# should say no.
+SUFFIXES = ("'s", "ing", "ed", "es", "s")
+
+
+def _stem(token: str) -> str:
+    for suffix in SUFFIXES:
+        if token.endswith(suffix) and len(token) - len(suffix) >= 3:
+            return token[: -len(suffix)]
+    return token
+
+
+def _stems(text: str) -> set[str]:
+    return {_stem(token) for token in WORD.findall(text.lower())}
+
+
+def keeps_the_word(was: str, now: str, target: str) -> bool:
+    """Whether a correction still practises the word the card exists for.
+
+    The model is told not to replace the target word, and mostly does not.
+    Mostly is not a guarantee, and this failure is silent and total: `Mary
+    deposited the baby in the crib` corrected to `Mary placed the baby in the
+    crib` is the better sentence and a worthless card. So does `at prima facie`
+    corrected to `at first glance`, on the card for *prima facie*.
+
+    Only a word that was actually there is guarded. A card whose sentence
+    misspells its own target - `lamboyant` on the card for *flamboyant* - is the
+    reason: the correction is exactly what is wanted, and the word was never in
+    the original to lose.
+    """
+    if not target.strip():
+        return True
+    before, after = _stems(was), _stems(now)
+    for token in WORD.findall(target.lower()):
+        stem = _stem(token)
+        if len(stem) < 3:
+            continue  # "of", "up", "a": in every sentence, evidence of nothing
+        if _present(stem, before) and not _present(stem, after):
+            return False
+    return True
+
+
+def _present(stem: str, stems: set[str]) -> bool:
+    """Whether a stem matches any of these, allowing for either being inflected."""
+    return any(
+        other.startswith(stem) or stem.startswith(other)
+        for other in stems
+        if min(len(other), len(stem)) >= 3
+    )
+
+
 def apply_correction(raw: str, corrected: str) -> tuple[str, str]:
     """Put a corrected sentence back into the field, or explain why it was not.
 
