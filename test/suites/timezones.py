@@ -83,6 +83,34 @@ def run(t):
     t.check("with both answers in it", same["biggest"], 2)
     t.check("and one day of streak, not two", same["streak"], 1)
 
+    # The day's new-card allowance has to roll over with the day. Keyed on
+    # the UTC date, which is what it was, the budget reset at nine in the
+    # morning in Seoul — five hours after the cards became due, so between
+    # four and nine you got the review queue and were told the day's new
+    # cards were already spent.
+    for zone in ("Asia/Seoul", "America/New_York"):
+        page = t.browser.new_context(viewport={"width": 390, "height": 844},
+                                     timezone_id=zone).new_page()
+        try:
+            page.goto(t.server.app_url)
+            page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
+            out = page.evaluate("""async ({ zone }) => {
+      const { ankiDay } = await import('./review.js');
+      // Pretend it is half past four in the morning, local time.
+      const earlyMorning = new Date('2026-09-16T04:30:00').getTime();
+      const lateLastNight = new Date('2026-09-15T23:00:00').getTime();
+      return {
+        zone,
+        differentDays: ankiDay(earlyMorning) !== ankiDay(lateLastNight),
+        sameAsUtcDate: new Date(earlyMorning).toISOString().slice(0, 10)
+          === new Date(lateLastNight).toISOString().slice(0, 10),
+      };
+    }""", {"zone": zone})
+            t.check(f"{zone}: half past four is a new day for the allowance",
+                    out["differentDays"], True)
+        finally:
+            page.close()
+
     # The deck this repository publishes has to read as a real schedule too.
     written = t.page.evaluate("""async () => {
       const res = await fetch('../deck/deck.json');
