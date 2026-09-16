@@ -50,3 +50,34 @@ def run(t):
     t.check("and it is still there after a reload", len(t.log()), 1)
     card = next(c for c in t.cards() if c["word"] == word)
     t.truthy("the card kept the schedule it was given", card["fsrs"]["reps"] >= 1)
+
+    _another_session(t)
+
+
+def _another_session(t):
+    """A thousand cards owed and a session capped at sixty means going back for
+    another one most evenings. Going home to press the same button again is a
+    step that exists for no reason."""
+    t.open_app()
+    owed = int(t.page.locator("#n-due").inner_text())
+    t.truthy(f"there is more owed than one session holds ({owed})", owed > 60)
+
+    t.page.locator("#start-btn").click()
+    t.page.wait_for_timeout(700)
+    size = int(t.page.locator("#left-count").inner_text())
+    for _ in range(size):
+        if t.page.locator("#reveal-btn").is_visible():
+            t.answer("good")
+        else:
+            break
+    t.page.wait_for_timeout(800)
+
+    t.check("finishing lands on the done screen", t.screen(), "screen-done")
+    t.check("which offers another one", t.page.locator("#more-btn").is_hidden(), False)
+    t.truthy("saying how many are left",
+             t.page.locator("#more-btn").inner_text().startswith("Another "))
+
+    t.page.locator("#more-btn").click()
+    t.page.wait_for_timeout(900)
+    t.check("and it starts one without going home", t.screen(), "screen-review")
+    t.truthy("with cards in it", int(t.page.locator("#left-count").inner_text()) > 0)
