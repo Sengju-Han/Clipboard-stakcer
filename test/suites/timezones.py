@@ -60,6 +60,29 @@ def run(t):
     t.check("a card due in ten minutes is not due now", early[0], False)
     t.check("and is due in eleven", early[1], True)
 
+    # The charts have to draw the same day the scheduler hands cards over
+    # on, or for four hours every night they disagree — and a session that
+    # runs past midnight breaks a streak it should have extended.
+    same = t.page.evaluate("""async () => {
+      const [{ ankiDay }, stats] = await Promise.all([import('./review.js'), import('./stats.js')]);
+      const evening = new Date('2026-09-15T22:00:00').toISOString();
+      const smallHours = new Date('2026-09-16T02:00:00').toISOString();
+      const reviews = [{ at: evening, state: 2, rating: 3 }, { at: smallHours, state: 2, rating: 3 }];
+      const at = new Date('2026-09-16T02:30:00').getTime();
+      const bars = stats.activity(reviews, 30, at);
+      return {
+        oneDefinition: stats.startOfDay === ankiDay,
+        columns: bars.filter(b => b.count).length,
+        biggest: Math.max(...bars.map(b => b.count)),
+        streak: stats.streak(reviews, at),
+      };
+    }""")
+    t.check("the charts and the scheduler share one definition of a day",
+            same["oneDefinition"], True)
+    t.check("an evening and the small hours after it are one column", same["columns"], 1)
+    t.check("with both answers in it", same["biggest"], 2)
+    t.check("and one day of streak, not two", same["streak"], 1)
+
     # The deck this repository publishes has to read as a real schedule too.
     written = t.page.evaluate("""async () => {
       const res = await fetch('../deck/deck.json');

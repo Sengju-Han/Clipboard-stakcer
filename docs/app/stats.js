@@ -5,13 +5,16 @@
 // here is computed from what is already stored — the cards for the forecast,
 // the append-only review log for the rest — so nothing extra has to be tracked.
 
+import { ankiDay } from "./review.js";
+
 const DAY = 86400000;
 
-export function startOfDay(t = Date.now()) {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
+// One definition of "a day" for the whole app. The scheduler hands a card over
+// when Anki's day containing its due date has arrived, and Anki's day starts at
+// four in the morning; a chart that drew its buckets from midnight would
+// disagree with the queue for four hours every night, and put a card the
+// session will not give you until tomorrow into today's column.
+export const startOfDay = ankiDay;
 
 // How much work is coming. Counted from each card's own due date, so it is the
 // same number the review screen will hand you on the day.

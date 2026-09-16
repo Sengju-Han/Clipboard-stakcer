@@ -8,7 +8,7 @@ import * as store from "./store.js";
 import { scheduler, queue, counts, preview, answer, intervalLabel, leeches, resting,
   scheduleLooksReal, LEECH_AT, Rating, State, DEFAULTS } from "./review.js";
 
-const VERSION = "2026-09-15.24";
+const VERSION = "2026-09-15.25";
 const DECK_URL = "../deck/deck.json";
 
 const $ = (id) => document.getElementById(id);
