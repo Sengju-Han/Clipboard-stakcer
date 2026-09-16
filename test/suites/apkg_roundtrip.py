@@ -61,3 +61,41 @@ def run(t):
              "guid0000" in guids)
     t.note("why", "Anki identifies a note by its guid, so this updates rather than duplicates")
     t.truthy("and the scheduling goes with them", reviewed > 0)
+
+    _modern(t)
+
+
+def _modern(t):
+    """The file a phone actually hands over: zstd inside, and a trap beside it.
+
+    Anki 2.1.50 and later write the real collection as collection.anki21b,
+    compressed, and put a decoy collection.anki2 next to it holding one note
+    that says "update Anki". Reading the decoy would import that one junk card
+    and report success — worse than failing, because nothing on screen would
+    say the deck had not arrived. So the newest collection in the file has to
+    win, and this is what proves it does.
+    """
+    modern = t.fixtures.get("modern_apkg")
+    if not modern:
+        t.note("skipped", "zstandard is not installed, so no modern package was built")
+        return
+
+    page = t.browser.new_context(viewport={"width": 390, "height": 844}).new_page()
+    was, t.page = t.page, page
+    try:
+        t.open_app()
+        t.open_settings()
+        page.locator("#apkg-file").set_input_files(str(modern))
+        page.wait_for_timeout(20000)
+        t.note("the import says", page.locator("#settings-note").inner_text()[:110])
+
+        words = {c["word"] for c in t.cards()}
+        t.truthy("the real collection was read", "avow" in words)
+        t.truthy("all of it", {"avow", "chime in", "quokka"} <= words)
+        t.check("and the decoy's warning did not come in as a card",
+                [w for w in words if "update to the latest" in w.lower()], [])
+        t.note("why that matters",
+               "reading the decoy imports one junk card and reports success")
+    finally:
+        t.page = was
+        page.close()

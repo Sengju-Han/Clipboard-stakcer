@@ -165,10 +165,76 @@ def small_apkg(path: Path):
     return path
 
 
+# The decoy a modern export carries: a valid SQLite file holding one warning
+# row, so that an Anki too old to read the real collection says "upgrade"
+# rather than crashing. Reading it would import one junk card and report
+# success, which is worse than failing — so the reader has to prefer the newest
+# collection in the file, and this is what proves it does.
+DECOY_WARNING = "Please update to the latest Anki version, then import this file again."
+
+
+def modern_apkg(path: Path):
+    """What AnkiDroid actually exports: zstd inside, and a decoy beside it.
+
+    The hand-written legacy package covers the format Anki has always read.
+    This covers the one a person's phone will actually hand over, including the
+    trap in it. Skipped rather than faked when zstandard is not installed: a
+    fixture that quietly wrote something else would test the wrong thing.
+    """
+    try:
+        import zstandard
+    except ImportError:
+        return None
+
+    legacy = small_apkg(path.with_name("inner.apkg"))
+    with zipfile.ZipFile(legacy) as z:
+        real = z.read("collection.anki2")
+    legacy.unlink()
+
+    # The decoy: a real SQLite file with one note in it, saying the wrong thing
+    # on purpose, exactly as Anki writes it.
+    decoy_path = path.with_name("decoy.anki2")
+    if decoy_path.exists():
+        decoy_path.unlink()
+    con = sqlite3.connect(decoy_path)
+    con.executescript(SCHEMA)
+    now = int(time.time())
+    mid = 1
+    model = {"1": {"id": 1, "name": "Basic", "type": 0, "mod": now, "usn": -1, "sortf": 0,
+                   "did": 1, "tmpls": [{"name": "Card 1", "ord": 0, "qfmt": "{{Front}}",
+                                        "afmt": "{{Front}}", "did": None, "bqfmt": "",
+                                        "bafmt": "", "bfont": "", "bsize": 0}],
+                   "flds": [{"name": "Front", "ord": 0, "sticky": False, "rtl": False,
+                             "font": "Arial", "size": 20, "media": []}],
+                   "css": "", "latexPre": "", "latexPost": "", "latexsvg": False,
+                   "req": [[0, "any", [0]]], "tags": [], "vers": []}}
+    con.execute("INSERT INTO col VALUES (1,?,?,?,11,0,-1,0,'{}',?,?,'{}','{}')",
+                (now, now, now, json.dumps(model),
+                 json.dumps({"1": {"id": 1, "name": "Default", "mod": now, "usn": -1,
+                                   "desc": "", "dyn": 0, "conf": 1, "collapsed": False,
+                                   "lrnToday": [0, 0], "revToday": [0, 0],
+                                   "newToday": [0, 0], "timeToday": [0, 0]}})))
+    con.execute("INSERT INTO notes VALUES (?,?,?,?,-1,'',?,?,0,0,'')",
+                (now, "decoyguid", mid, now, DECOY_WARNING, DECOY_WARNING))
+    con.execute("INSERT INTO cards VALUES (?,?,1,0,?,-1,0,0,1,0,0,0,0,0,0,0,0,'')",
+                (now + 1, now, now))
+    con.commit()
+    con.close()
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("meta", b"\x08\x03")                       # the version marker
+        z.writestr("collection.anki21b", zstandard.ZstdCompressor().compress(real))
+        z.write(decoy_path, "collection.anki2")                # the trap
+        z.writestr("media", "{}")
+    decoy_path.unlink()
+    return path
+
+
 def build_all(where: Path):
     where.mkdir(parents=True, exist_ok=True)
     return {
         "episode": episode_srt(where / "episode.srt"),
         "tone": tone_wav(where / "tone.wav"),
         "apkg": small_apkg(where / "small.apkg"),
+        "modern_apkg": modern_apkg(where / "modern.apkg"),
     }
