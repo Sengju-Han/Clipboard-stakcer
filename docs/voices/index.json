@@ -1,0 +1,105 @@
+{
+  "sentences": [
+    "I'd have told you about it, but you weren't there.",
+    "She asked for twenty-three copies by the fourth of March.",
+    "The sixth sixth-form student insisted the texts were his."
+  ],
+  "voices": [
+    {
+      "voice": "en-US-AvaNeural",
+      "files": [
+        "en-US-AvaNeural-1.mp3",
+        "en-US-AvaNeural-2.mp3",
+        "en-US-AvaNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-AvaMultilingualNeural",
+      "files": [
+        "en-US-AvaMultilingualNeural-1.mp3",
+        "en-US-AvaMultilingualNeural-2.mp3",
+        "en-US-AvaMultilingualNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-AndrewNeural",
+      "files": [
+        "en-US-AndrewNeural-1.mp3",
+        "en-US-AndrewNeural-2.mp3",
+        "en-US-AndrewNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-AndrewMultilingualNeural",
+      "files": [
+        "en-US-AndrewMultilingualNeural-1.mp3",
+        "en-US-AndrewMultilingualNeural-2.mp3",
+        "en-US-AndrewMultilingualNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-EmmaNeural",
+      "files": [
+        "en-US-EmmaNeural-1.mp3",
+        "en-US-EmmaNeural-2.mp3",
+        "en-US-EmmaNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-EmmaMultilingualNeural",
+      "files": [
+        "en-US-EmmaMultilingualNeural-1.mp3",
+        "en-US-EmmaMultilingualNeural-2.mp3",
+        "en-US-EmmaMultilingualNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-BrianNeural",
+      "files": [
+        "en-US-BrianNeural-1.mp3",
+        "en-US-BrianNeural-2.mp3",
+        "en-US-BrianNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-BrianMultilingualNeural",
+      "files": [
+        "en-US-BrianMultilingualNeural-1.mp3",
+        "en-US-BrianMultilingualNeural-2.mp3",
+        "en-US-BrianMultilingualNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-JennyNeural",
+      "files": [
+        "en-US-JennyNeural-1.mp3",
+        "en-US-JennyNeural-2.mp3",
+        "en-US-JennyNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-US-GuyNeural",
+      "files": [
+        "en-US-GuyNeural-1.mp3",
+        "en-US-GuyNeural-2.mp3",
+        "en-US-GuyNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-GB-SoniaNeural",
+      "files": [
+        "en-GB-SoniaNeural-1.mp3",
+        "en-GB-SoniaNeural-2.mp3",
+        "en-GB-SoniaNeural-3.mp3"
+      ]
+    },
+    {
+      "voice": "en-GB-RyanNeural",
+      "files": [
+        "en-GB-RyanNeural-1.mp3",
+        "en-GB-RyanNeural-2.mp3",
+        "en-GB-RyanNeural-3.mp3"
+      ]
+    }
+  ]
+}
