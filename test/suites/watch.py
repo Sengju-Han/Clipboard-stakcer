@@ -111,3 +111,44 @@ def run(t):
     t.truthy("and nothing readable says so rather than throwing",
              "no words" in t.page.locator("#w-note").inner_text().lower()
              or "nothing readable" in t.page.locator("#w-note").inner_text().lower())
+
+    _encodings(t)
+    _unplayable(t)
+
+
+def _encodings(t):
+    """A subtitle file is as likely to be Windows-1252 as UTF-8.
+
+    File.text() decodes as UTF-8 whatever it is given, and hands back a page of
+    replacement characters — which parses into cues full of nothing and marks
+    every word as one you do not have.
+
+    The obvious fix, trying each encoding strictly and taking the first that
+    does not throw, was written and then measured and is wrong: given the bytes
+    of "Ärger" a strict EUC-KR decoder does not complain, it returns "훣ger".
+    So the choice is made on the byte pattern, and this is what holds it.
+    """
+    for name, case in sorted(t.fixtures["encoded"].items()):
+        t.page.locator("#w-subs-file").set_input_files(case["path"])
+        t.page.wait_for_timeout(1500)
+        first = t.page.locator("#w-lines .said").first.inner_text()
+        t.check(f"{name} ({case['encoding']}) reads as text and not as damage",
+                case["expect"] in first, True)
+
+
+def _unplayable(t):
+    """A browser plays what it can decode and says nothing about the rest."""
+    t.page.locator("#w-subs-file").set_input_files(str(t.fixtures["episode"]))
+    t.page.wait_for_selector("#w-lines .line", timeout=60000)
+    lines = t.page.locator("#w-lines .line").count()
+
+    t.page.locator("#w-media-file").set_input_files(str(t.fixtures["unplayable"]))
+    t.page.wait_for_timeout(3000)
+    said = t.page.locator("#w-note").inner_text()
+    t.truthy("a file the browser cannot decode says so", "cannot play" in said)
+    t.truthy("and names the likely reason", "container" in said)
+    t.truthy("and says what still works", "transcript is still here" in said)
+    t.check("the dead player is taken off the screen",
+            t.page.locator("#w-player").is_hidden(), True)
+    t.check("and the transcript is untouched",
+            t.page.locator("#w-lines .line").count(), lines)

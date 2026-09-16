@@ -153,8 +153,58 @@ function useText(text, name) {
     (timed ? "; tap a timestamp to jump there." : ".");
 }
 
+// Subtitle files are not reliably UTF-8 and never have been. A .srt pulled off
+// the web is as likely to be Windows-1252, and a Korean one is often EUC-KR;
+// File.text() decodes as UTF-8 regardless and hands back a page of replacement
+// characters, which parses into cues full of nothing and marks every word as
+// one you do not have.
+//
+// The obvious approach — try each encoding strictly, take the first that does
+// not throw — was written and then measured, and it is wrong. Given the bytes
+// of "Ärger" in Windows-1252, a strict EUC-KR decoder does not complain: it
+// returns "훣ger". Chromium's EUC-KR is really CP949 and accepts trail bytes
+// from 0x41 up, so it accepts almost any high byte followed by almost
+// anything. Every French subtitle file would have become Korean.
+//
+// So the decision is made on the byte pattern instead, which is checkable.
+// Real EUC-KR text puts every high byte in a pair where both halves are in
+// 0xA1..0xFE. Latin-1 text does not: "Ärger" is 0xC4 followed by 'r', and
+// there is no pair. Anything else falls back to Windows-1252, which is the
+// commonest thing a subtitle file is when it is not UTF-8, and which can
+// always decode — that makes it the right fallback and the wrong guess, so it
+// is only ever reached last.
+function looksLikeEucKr(bytes) {
+  let pairs = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] < 0x80) continue;
+    const lead = bytes[i] >= 0xA1 && bytes[i] <= 0xFE;
+    const trail = i + 1 < bytes.length && bytes[i + 1] >= 0xA1 && bytes[i + 1] <= 0xFE;
+    if (!lead || !trail) return false;        // a high byte standing alone
+    pairs += 1;
+    i += 1;                                   // the pair is read together
+  }
+  return pairs > 0;
+}
+
+async function readText(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+
+  // A byte-order mark is not a guess.
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return new TextDecoder("utf-8").decode(bytes.subarray(3));
+  }
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder("utf-16le").decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder("utf-16be").decode(bytes);
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch { /* not UTF-8, so something older */ }
+
+  return new TextDecoder(looksLikeEucKr(bytes) ? "euc-kr" : "windows-1252").decode(bytes);
+}
+
 async function loadSubs(file) {
-  useText(await file.text(), file.name);
+  useText(await readText(file), file.name);
 }
 
 function loadMedia(file) {
@@ -169,6 +219,20 @@ function loadMedia(file) {
   media.preload = "metadata";
   media.addEventListener("timeupdate", onTime);
   media.addEventListener("seeked", onTime);
+  // A browser plays what it can decode and says nothing about the rest: pick a
+  // .mkv on Android and the element sits there, black and silent, with nothing
+  // on screen to say why. The transcript still works without it, and somebody
+  // should be told that rather than left thinking the app is broken.
+  media.addEventListener("error", () => {
+    holder.hidden = true;
+    media = null;
+    $("w-note").textContent =
+      `This browser cannot play ${file.name} — that is usually the container ` +
+      `rather than the file being wrong; .mkv and .avi are the common ones. ` +
+      (cues.length
+        ? "The transcript is still here and everything except following along still works."
+        : "Open a subtitle file and you can still mine it.");
+  });
   holder.appendChild(media);
   holder.hidden = false;
   $("w-note").textContent = cues.length

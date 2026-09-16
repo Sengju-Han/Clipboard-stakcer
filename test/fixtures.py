@@ -230,6 +230,41 @@ def modern_apkg(path: Path):
     return path
 
 
+# A subtitle file is as likely to be Windows-1252 as UTF-8, and a Korean one is
+# often EUC-KR. The same two lines in four encodings, so the reader's guess is
+# checked against text whose right answer is known.
+ENCODED_SRT = ("1\n00:00:01,000 --> 00:00:04,000\n{line}\n\n"
+               "2\n00:00:05,000 --> 00:00:07,000\nHe chimed in with an opinion.\n")
+
+ENCODINGS = {
+    "utf8.srt": ("Café — naïve, résumé.", "utf-8", "Café"),
+    "utf8bom.srt": ("Café — naïve, résumé.", "utf-8-sig", "Café"),
+    "cp1252.srt": ("Cafe - naive, resume. Ärger", "cp1252", "Ärger"),
+    "euckr.srt": ("공언하다 - 우회적으로 말하다", "euc-kr", "공언하다"),
+}
+
+
+def encoded_subtitles(where: Path):
+    """One file per encoding, with what each must read as."""
+    where.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for name, (line, encoding, expected) in ENCODINGS.items():
+        path = where / name
+        path.write_bytes(ENCODED_SRT.format(line=line).encode(encoding))
+        out[name] = {"path": str(path), "expect": expected, "encoding": encoding}
+    return out
+
+
+def unplayable(path: Path):
+    """Something with a video extension that no browser can decode.
+
+    Picking a .mkv on Android leaves the element black and silent with nothing
+    on screen to say why, and this is how that is held to saying something.
+    """
+    path.write_bytes(bytes(range(256)) * 2)
+    return path
+
+
 def build_all(where: Path):
     where.mkdir(parents=True, exist_ok=True)
     return {
@@ -237,4 +272,6 @@ def build_all(where: Path):
         "tone": tone_wav(where / "tone.wav"),
         "apkg": small_apkg(where / "small.apkg"),
         "modern_apkg": modern_apkg(where / "modern.apkg"),
+        "encoded": encoded_subtitles(where / "encodings"),
+        "unplayable": unplayable(where / "broken.mkv"),
     }
