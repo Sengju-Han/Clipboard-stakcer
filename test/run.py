@@ -27,6 +27,7 @@ SUITES = [
     "undo",              # taking an answer back
     "browse",            # find, edit, delete, and the tombstone it leaves
     "add_export",        # adding a card, and every way out of the app
+    "account",           # a second device, and what the server is handed
     "progress",          # the charts and what they count
     "leeches",           # the cards that keep winning
     "schedule_honesty",  # a deck that arrived without its history says so

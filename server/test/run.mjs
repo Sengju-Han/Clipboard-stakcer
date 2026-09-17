@@ -196,6 +196,48 @@ const outsider = await call("POST", "/api/register", { body: { email: "z@example
 r = await call("GET", "/api/state", { token: outsider.payload.token });
 check("a different account sees an empty deck, not this one", r.payload.cards.length, 0);
 
+console.log("\n— the vault —");
+// Ciphertext in, ciphertext out. The server's job is to hold it and to keep it
+// away from everybody else; it is not supposed to be able to read it, and the
+// test asserts the shape of that promise rather than the promise itself.
+// The first device was signed out further up, so this needs a session of its own.
+const vaultToken = (await call("POST", "/api/login",
+  { body: { email: "a@example.test", password: "correct horse battery" } })).payload.token;
+r = await call("GET", "/api/vault", { token: vaultToken });
+check("a person with no vault gets an empty one", r.payload, { blob: "", mod: 0 });
+
+const cipher = "v1." + "x".repeat(400);
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: cipher } });
+check("a vault can be written", r.status, 200);
+r = await call("GET", "/api/vault", { token: vaultToken });
+check("and comes back byte for byte", r.payload.blob, cipher);
+
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: "v1.later" } });
+r = await call("GET", "/api/vault", { token: vaultToken });
+check("writing again replaces it rather than adding a second", r.payload.blob, "v1.later");
+check("one row per person",
+  (await db.prepare("SELECT COUNT(*) AS n FROM vault").first()).n, 1);
+
+// The whole point: what is on disk is not the token.
+check("what is stored is the ciphertext and nothing else",
+  (await db.prepare("SELECT blob FROM vault").first()).blob, "v1.later");
+
+r = await call("GET", "/api/vault", { token: outsider.payload.token });
+check("nobody else can read it", r.payload.blob, "");
+r = await call("GET", "/api/vault");
+check("and nor can somebody signed out", r.status, 401);
+
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: "x".repeat(70000) } });
+check("a vault larger than any real one is refused", r.status, 400);
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: 42 } });
+check("and so is something that is not text", r.status, 400);
+
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: "" } });
+check("writing nothing forgets it", r.status, 200);
+r = await call("GET", "/api/vault", { token: vaultToken });
+check("and it is gone", r.payload.blob, "");
+r = await call("PUT", "/api/vault", { token: vaultToken, body: { blob: "v1.back again" } });
+
 console.log("\n— leaving —");
 const back = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
 r = await call("GET", "/api/takeout", { token: back.payload.token });
@@ -204,8 +246,8 @@ check("everything comes out in one file", r.payload.cards.length, 252);
 r = await call("POST", "/api/forget-me", { token: back.payload.token });
 check("and the account can be deleted", r.status, 200);
 check("with nothing left behind",
-  (await db.prepare("SELECT (SELECT COUNT(*) FROM users WHERE email='a@example.test') AS u, (SELECT COUNT(*) FROM cards) AS c").first()),
-  { u: 0, c: 0 });
+  (await db.prepare("SELECT (SELECT COUNT(*) FROM users WHERE email='a@example.test') AS u, (SELECT COUNT(*) FROM cards) AS c, (SELECT COUNT(*) FROM vault) AS v").first()),
+  { u: 0, c: 0, v: 0 });
 
 console.log("\n— the edges —");
 r = await call("POST", "/api/login", { body: null, headers: { "content-type": "application/json" } });
