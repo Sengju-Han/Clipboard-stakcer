@@ -8,7 +8,7 @@ compatibility_date = "2026-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "lexis"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "03227337-958f-4510-a92e-06b2d47a1ffb"
 
 [vars]
 # Where the app is served from. Anything else is refused at the CORS check, so
