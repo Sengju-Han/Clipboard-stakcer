@@ -751,7 +751,17 @@ async function openWatchScreen() {
       cards: () => cache,
       apiKey: () => prefs.read().anthropic,
       add: (prefill) => openAdd(prefill),
-      saveAudio: (name, blob) => store.putMedia(name, blob),
+      // Clips are the one thing here big enough to fill a phone, so this is
+      // the write most likely to fail - and it reports onto a button, which
+      // is the smallest place in the app and no use for explaining what to do
+      // about it. The banner carries the why; the button says the what, and
+      // throwing abandons the capture so no card is added claiming audio that
+      // was never stored.
+      saveAudio: async (name, blob) => {
+        if (!await writing(() => store.putMedia(name, blob))) {
+          throw new Error("The clip was not saved.");
+        }
+      },
     });
     watchMounted = true;
   }
