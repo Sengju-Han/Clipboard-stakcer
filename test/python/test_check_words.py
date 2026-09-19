@@ -677,7 +677,9 @@ def test_the_report_says_a_note_type_was_passed_over(tmp_path, monkeypatch):
         1240, applied=False, fields=("Back", "Example"))
     said = where.read_text(encoding="utf-8")
 
-    assert "173 cards were not looked at at all" in said
+    assert "173 cards had no word checked" in said
+    # Not "not looked at at all": the checks that need no model did walk them.
+    assert "not looked at at all" not in said
     assert "`Back`" in said and "`Example`" in said
 
 
@@ -687,4 +689,4 @@ def test_nothing_is_said_when_every_note_had_the_fields(tmp_path, monkeypatch):
     words.write_report([{"word": "hidious", "nearest": "hideous"}],
                        {"the word is there": 10, "a note type without these fields": 0},
                        11, applied=False, fields=("Back", "Example"))
-    assert "not looked at at all" not in where.read_text(encoding="utf-8")
+    assert "had no word checked" not in where.read_text(encoding="utf-8")

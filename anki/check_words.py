@@ -337,11 +337,16 @@ def report_elsewhere(skipped: dict, word_field: str = "", example_field: str = "
     if not missed:
         return []
     named = " and ".join(f"`{n}`" for n in (word_field, example_field) if n)
+    # "not looked at at all" would overstate it: the checks that need no model
+    # walk every note and skip only the fields they cannot read, so a card
+    # counted here may still have been caught as a duplicate. Say the narrower
+    # thing, which is the true one.
     return [
         "",
-        f"> **{plural(missed, 'card')} were not looked at at all**, because their "
-        f"note type has no {named or 'such'} field. Run again with the field names "
-        "that note type uses, if you want those checked too.",
+        f"> **{plural(missed, 'card')} had no word checked**, because their note "
+        f"type has no {named or 'such'} field. Everything above about misspelled "
+        "words is about the rest. Run again with the field names that note type "
+        "uses, if you want those checked too.",
     ]
 
 
