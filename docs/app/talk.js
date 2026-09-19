@@ -137,8 +137,15 @@ export function targets(cards, n = 6, now = Date.now()) {
 // verb counts however it was split. Claude is asked the same question and is
 // better at it; this is the check that runs when Claude says nothing.
 export function spotted(said, word) {
-  const text = ` ${String(said).toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ")} `;
-  const parts = String(word).toLowerCase().split(/\s+/).filter(Boolean);
+  const tidy = (text) => String(text).toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ");
+  const text = ` ${tidy(said)} `;
+  // The word is tidied the same way the sentence is. It used to be split on
+  // whitespace alone, so a hyphen survived in the word and not in the text:
+  // "tie-dye" became `\btie-dye\b` looking at "tie dye", which cannot match.
+  // Twenty-one words in a 1,237-word collection are like that - jam-packed,
+  // litter-mates, ne'er-do-well - and saying one of them out loud would never
+  // tick it off.
+  const parts = tidy(word).split(/\s+/).filter(Boolean);
   const stem = (w) => w.replace(/(ing|ed|es|s)$/, "");
   return parts.every((part) => {
     const root = stem(part);
