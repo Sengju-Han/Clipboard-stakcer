@@ -192,7 +192,8 @@ def main() -> int:
     username = os.environ.get("ANKIWEB_USERNAME", "").strip()
     password = os.environ.get("ANKIWEB_PASSWORD", "")
     if not args.local_collection and (not username or not password):
-        fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.")
+        fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.",
+             "Add them under Settings -> Secrets and variables -> Actions.")
     if args.checker == "claude" and not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         fail("ANTHROPIC_API_KEY is not set.",
              "Add the secret, or run with checker set to languagetool.")
@@ -279,6 +280,16 @@ def main() -> int:
     return 0
 
 
+# What a refusal here actually means. Every one of these fires because the
+# collection moved underneath a run that had already started, and the useful
+# half of the message is not which check noticed - it is that nothing was
+# sent and that running it again costs nothing.
+WHY = ("Your AnkiWeb collection is untouched.\n"
+       "This is usually another device syncing while this was running. Let the "
+       "phone finish its sync and run it again; the report above is unchanged "
+       "and nothing has to be redone.")
+
+
 def apply_all(col: Collection, changed: list[dict], field: str) -> dict:
     """Write the corrections back, and refuse to sync if anything else moved.
 
@@ -334,15 +345,15 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> dict:
 
     after_notes = existing_notes(col)
     if set(after_notes) != set(before_notes):
-        fail("The note list changed during the audit, so nothing was synced.")
+        fail("The note list changed during the audit, so nothing was synced.", WHY)
     moved = [n for n, mod in before_notes.items()
              if after_notes[n] != mod and n not in touched]
     if moved:
-        fail(f"{len(moved)} notes changed that should not have. Nothing was synced.")
+        fail(f"{len(moved)} notes changed that should not have. Nothing was synced.", WHY)
     after_cards = {row[0]: row for row in col.db.all(
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
     if after_cards != before_cards:
-        fail("Card scheduling moved during the audit, so nothing was synced.")
+        fail("Card scheduling moved during the audit, so nothing was synced.", WHY)
     # This one deliberately drops a recording per sentence it corrects, because
     # the recording says the old wording. Exactly that many, and no more: the
     # number is the whole check, since a run that quietly took the audio off

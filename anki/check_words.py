@@ -280,6 +280,16 @@ def a_respelling(was: str, now: str) -> bool:
     return likeness(was, now) >= MIN_LIKENESS
 
 
+# What a refusal here actually means. Every one of these fires because the
+# collection moved underneath a run that had already started, and the useful
+# half of the message is not which check noticed - it is that nothing was
+# sent and that running it again costs nothing.
+WHY = ("Your AnkiWeb collection is untouched.\n"
+       "This is usually another device syncing while this was running. Let the "
+       "phone finish its sync and run it again; the report above is unchanged "
+       "and nothing has to be redone.")
+
+
 def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
     """Write the corrected words back, and refuse to sync if anything else moved."""
     before_notes = existing_notes(col)
@@ -323,15 +333,15 @@ def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
 
     after_notes = existing_notes(col)
     if set(after_notes) != set(before_notes):
-        fail("The note list changed while correcting words, so nothing was synced.")
+        fail("The note list changed while correcting words, so nothing was synced.", WHY)
     moved = [n for n, mod in before_notes.items()
              if after_notes[n] != mod and n not in touched]
     if moved:
-        fail(f"{len(moved)} notes changed that should not have. Nothing was synced.")
+        fail(f"{len(moved)} notes changed that should not have. Nothing was synced.", WHY)
     after_cards = {row[0]: row for row in col.db.all(
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
     if after_cards != before_cards:
-        fail("Card scheduling moved while correcting words, so nothing was synced.")
+        fail("Card scheduling moved while correcting words, so nothing was synced.", WHY)
     # This one touches no sentence, so it can take no recording off anything.
     check_recordings_kept(before_audio, recordings(col))
     return {"applied": len(touched)}
@@ -516,7 +526,8 @@ def main() -> int:
     username = os.environ.get("ANKIWEB_USERNAME", "").strip()
     password = os.environ.get("ANKIWEB_PASSWORD", "")
     if not args.local_collection and (not username or not password):
-        fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.")
+        fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.",
+             "Add them under Settings -> Secrets and variables -> Actions.")
     # A key is what tells a misspelling from an ordinary inflection, and both are
     # one letter from the word on the card. Without one the rest still runs -
     # the duplicates, the cards with no sentence, the clues that give the answer
