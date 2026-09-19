@@ -10,3 +10,4 @@ pydantic>=2.0
 # ones that are pure string handling. It is an 11MB wheel and it means these
 # tests actually run rather than skipping quietly in CI.
 anki>=25.0
+pyyaml

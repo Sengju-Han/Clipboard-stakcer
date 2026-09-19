@@ -184,6 +184,11 @@ Once, and then never again:
 3. Put the client ID and client secret into this repository under
    **Settings → Secrets and variables → Actions**, as `GOOGLE_CLIENT_ID` and
    `GOOGLE_CLIENT_SECRET`.
+   Add a third, `REPO_ADMIN_TOKEN`: a fine-grained personal access token with
+   **Secrets: Read and write** on this repository. The connect workflow needs
+   it to store the result, because the token a workflow is given cannot write
+   secrets — there is no permission that grants that. It is used for this and
+   nothing else, and can be deleted once Drive is connected.
 4. **Actions → Connect Google Drive → Run workflow**, with the code box empty.
    It prints a link.
 5. Open the link, approve, and the page you land on shows a code with a copy
