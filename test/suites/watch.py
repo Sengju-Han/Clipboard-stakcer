@@ -112,6 +112,7 @@ def run(t):
              "no words" in t.page.locator("#w-note").inner_text().lower()
              or "nothing readable" in t.page.locator("#w-note").inner_text().lower())
 
+    _every_word_in_the_deck_is_seen(t)
     _encodings(t)
     _unplayable(t)
 
@@ -152,3 +153,45 @@ def _unplayable(t):
             t.page.locator("#w-player").is_hidden(), True)
     t.check("and the transcript is untouched",
             t.page.locator("#w-lines .line").count(), lines)
+
+
+def _every_word_in_the_deck_is_seen(t):
+    """A word you already have must not read as one you do not.
+
+    Fifteen of this deck's 1,240 words were invisible to the marker, each for
+    its own reason and all with the same effect: watching a show, the word is
+    greyed out or flagged new, and the obvious thing to do is mine a second
+    card for a word already in the deck.
+
+      tie-dye, jam-packed, hangers-on and ten more — the tokeniser kept the
+      hyphen inside the word while the deck index split on it, so one side
+      looked for "tie-dye" and the other held "tie" + "dye"
+
+      shed, wither — the frequency list was consulted before the deck, and a
+      speculative stem collided with an everyday word: shed strips to she,
+      wither to with
+
+      séance — the index filtered the card's own word down to [a-z], so the
+      accent became a space and the card was stored as "s" + "ance"
+
+    Measured against the real deck rather than a fixture, because the fixture
+    would have had to be built out of the very words nobody knew to look for.
+    """
+    missed = t.page.evaluate("""async () => {
+      const { index, read } = await import("./lex.js");
+      const db = await new Promise(r => { const q = indexedDB.open('lexis'); q.onsuccess = () => r(q.result); });
+      const cards = (await new Promise(r => {
+        const g = db.transaction('cards').objectStore('cards').getAll(); g.onsuccess = () => r(g.result);
+      })).filter(c => !c.deleted);
+      const idx = index(cards, []);
+      const out = [];
+      for (const card of cards) {
+        if (!card.word) continue;
+        const { tokens } = read("We said " + card.word + " aloud.", idx);
+        if (!tokens.some(tok => tok.word && tok.card)) out.push(card.word);
+      }
+      return { missed: out, total: cards.length };
+    }""")
+    t.note("checked", f"{missed['total']} cards")
+    t.check("every word in the deck is recognised when it is said",
+            missed["missed"][:10], [])
