@@ -204,10 +204,10 @@
       <button type="button" class="primary" id="acct-out">Sign out of this device</button>
     </div>
     <p class="note" id="acct-say"></p>
-  </details>
 
-  <details class="panel" id="settings">
-    <summary>Settings</summary>
+    <hr class="sep">
+    <p class="note">These two are what the account carries. Fill them in once, here, and
+      any device you sign in on gets them.</p>
     <div class="row">
       <label for="token">GitHub token <span class="hint">fine-grained, Actions: read and write on this repo only</span></label>
       <input id="token" type="password" placeholder="github_pat_...">
@@ -216,6 +216,10 @@
       <label for="anthropic">Anthropic key <span class="hint">optional — lookups go straight to Claude instead of through a workflow, seconds instead of half a minute</span></label>
       <input id="anthropic" type="password" placeholder="sk-ant-...">
     </div>
+  </details>
+
+  <details class="panel" id="settings">
+    <summary>Settings</summary>
     <div class="row two">
       <div>
         <label for="owner">Owner</label>
@@ -261,7 +265,7 @@
 // it, by the same module the review app uses - one copy, because two would
 // drift and the symptom of drift is "your password does not work any more".
 import { derivedSecret, MIN_PASSWORD } from "./app/secret.js";
-import { lock, unlock } from "./app/vault.js";
+import { lock, unlock, vaultKey, keepable, restore as keyFromText } from "./app/vault.js";
 
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
@@ -328,9 +332,36 @@ const AS_VAULT = {
   repo: "githubRepo", ref: "githubRef", voice: "voice",
 };
 
-// Held for as long as the page is open and never written down. A reload leaves
-// the session but not the key, which is why signing in again is what unlocks.
-let vaultPassword = "";
+// Kept for the browsing session rather than only in memory. A reload used to
+// leave the session signed in but the key gone, and every setting changed after
+// that was silently not saved - which is indistinguishable, from the outside,
+// from the whole thing not working.
+//
+// What is kept is the key, not the password. Anything that could read it could
+// already read the tokens out of this browser, so it gives away nothing it did
+// not already have; the password, which opens other things, is never written
+// down anywhere.
+const KEPT = "addcard.vault-key";
+let vaultKeyNow = null;
+
+function rememberKey(key, raw) {
+  vaultKeyNow = key;
+  try { sessionStorage.setItem(KEPT, raw); } catch { /* private window */ }
+}
+
+function forgetKey() {
+  vaultKeyNow = null;
+  try { sessionStorage.removeItem(KEPT); } catch { /* nothing to forget */ }
+}
+
+async function keyBack() {
+  if (vaultKeyNow) return vaultKeyNow;
+  let raw = null;
+  try { raw = sessionStorage.getItem(KEPT); } catch { /* private window */ }
+  if (!raw) return null;
+  try { vaultKeyNow = await keyFromText(raw); } catch { forgetKey(); }
+  return vaultKeyNow;
+}
 
 const acct = {
   get server() { return store.get("acct.server").replace(/\/+$/, ""); },
@@ -345,7 +376,13 @@ const acct = {
 
 $("acct-server").value = acct.server;
 $("acct-email").value = acct.email;
-$("acct-server").addEventListener("change", () => store.set("acct.server", $("acct-server").value.trim()));
+// On input rather than on change: a paste followed by a tap on Sign in never
+// fires change on some phone keyboards, and then the address has to be typed
+// again on the next visit even though it was right the first time.
+for (const event of ["input", "change"]) {
+  $("acct-server").addEventListener(event, () => store.set("acct.server", $("acct-server").value.trim()));
+  $("acct-email").addEventListener(event, () => store.set("acct.email", $("acct-email").value.trim()));
+}
 
 function says(text, bad = false) {
   const line = $("acct-say");
@@ -353,13 +390,14 @@ function says(text, bad = false) {
   line.style.color = bad ? "var(--bad)" : "var(--muted)";
 }
 
-function showAccount() {
+async function showAccount() {
   const on = Boolean(acct.token);
+  const open = Boolean(await keyBack());
   $("acct-who").textContent = on
-    ? (vaultPassword ? acct.email : acct.email + " — locked")
+    ? (open ? acct.email : acct.email + " — locked")
     : "not signed in";
   $("acct-out-row").hidden = !on;
-  $("acct-in").textContent = on && !vaultPassword ? "Unlock" : "Sign in";
+  $("acct-in").textContent = on && !open ? "Unlock" : "Sign in";
 }
 
 async function accountCall(path, { method = "GET", body = null, token = acct.token } = {}) {
@@ -383,13 +421,22 @@ async function accountCall(path, { method = "GET", body = null, token = acct.tok
 // nothing would quietly lose the change somebody just made.
 let pushTimer = 0;
 function saveToAccount() {
-  if (!acct.token || !vaultPassword) return;
+  if (!acct.token) return;   // nothing to save to, and nothing worth saying
   clearTimeout(pushTimer);
   pushTimer = setTimeout(async () => {
+    const key = await keyBack();
+    // Saying so rather than returning quietly. This is the case somebody meets
+    // after clearing their browser or on a device signed in long ago, and a
+    // silent no-op here reads as "the whole feature is broken".
+    if (!key) {
+      says("Not saved — this device is signed in but locked. "
+        + "Put your password in and tap Unlock.", true);
+      return;
+    }
     try {
       const values = Object.fromEntries(
         SETTINGS.map((k) => [AS_VAULT[k], $(k).value.trim()]));
-      await accountCall("/api/vault", { method: "PUT", body: { blob: await lock(values, vaultPassword) } });
+      await accountCall("/api/vault", { method: "PUT", body: { blob: await lock(values, key) } });
       says("Saved to your account.");
     } catch (err) {
       says("Not saved: " + err.message, true);
@@ -399,15 +446,16 @@ function saveToAccount() {
 for (const key of SETTINGS) $(key).addEventListener("change", saveToAccount);
 
 async function pullVault(password) {
+  const key = await vaultKey($("acct-email").value.trim(), password);
+  rememberKey(key, await keepable(key));
   const { blob } = await accountCall("/api/vault");
   if (!blob) {
     // Nothing stored yet: this device's settings become the first version,
     // rather than being wiped by an empty one.
-    vaultPassword = password;
     saveToAccount();
     return "Signed in. This device's settings are now the ones on your account.";
   }
-  const values = await unlock(blob, password);
+  const values = await unlock(blob, key, password);
   for (const key of SETTINGS) {
     const found = values[AS_VAULT[key]];
     // An empty field in the vault must not wipe one this device already has:
@@ -418,8 +466,10 @@ async function pullVault(password) {
       store.set(key, found);
     }
   }
-  vaultPassword = password;
   renderFields();
+  // A vault written by the older shape is rewritten in the newer one now, so
+  // it only has to be read the old way once.
+  if (String(blob).startsWith("v1.")) saveToAccount();
   return "Signed in. Your token, key and settings are back.";
 }
 
@@ -455,7 +505,7 @@ async function signIn(creating) {
     says(wrong ? "That password does not open the box. The settings are still there." : err.message, true);
   } finally {
     button.disabled = false;
-    showAccount();
+    await showAccount();
   }
 }
 
@@ -463,7 +513,7 @@ $("acct-in").addEventListener("click", () => signIn(false));
 $("acct-up").addEventListener("click", () => signIn(true));
 $("acct-out").addEventListener("click", async () => {
   try { await accountCall("/api/logout", { method: "POST" }); } catch { /* the token dies either way */ }
-  vaultPassword = "";
+  forgetKey();
   acct.set($("acct-server").value.trim(), $("acct-email").value.trim(), "");
   says("Signed out of this device. The keys are still in this browser; clear the boxes to remove them.");
   showAccount();

@@ -728,10 +728,24 @@ $("stats-close").addEventListener("click", goHome);
 // other device has and this one does not simply arrives.
 let syncing = false;
 
-// Held only while the page is open, and never written down. A reload leaves
-// the session but not this, which is why signing in again is what reopens the
-// box rather than something happening silently in the background.
-let vaultPassword = "";
+// Kept for the browsing session, not only in memory: a reload used to leave
+// this signed in but locked, and then every key typed afterwards was silently
+// not saved. What is kept is the key, not the password - anything that could
+// read it could already read the keys out of this browser.
+const KEPT = "lexis:vault-key";
+let vaultKeyNow = null;
+
+async function vaultKeyBack() {
+  if (vaultKeyNow) return vaultKeyNow;
+  let raw = null;
+  try { raw = sessionStorage.getItem(KEPT); } catch { /* private window */ }
+  if (!raw) return null;
+  try {
+    const mod = await part("account");
+    vaultKeyNow = await mod.restore(raw);
+  } catch { try { sessionStorage.removeItem(KEPT); } catch { /* gone */ } }
+  return vaultKeyNow;
+}
 
 const AS_VAULT = {
   anthropic: "anthropic", ghToken: "githubToken",
@@ -742,13 +756,19 @@ const AS_VAULT = {
 // nothing would quietly lose the change somebody just made.
 let keysTimer = 0;
 function keysToAccount() {
-  if (!vaultPassword) return;
   clearTimeout(keysTimer);
   keysTimer = setTimeout(async () => {
+    const mod = await part("account");
+    if (!mod.saved()) return;   // no account, so nothing to save to
+    const key = await vaultKeyBack();
+    if (!key) {
+      $("acct-note").textContent =
+        "Keys not saved — signed in but locked. Put your password in and sign in again.";
+      return;
+    }
     try {
       const settings = prefs.read();
-      const mod = await part("account");
-      await mod.pushKeys(vaultPassword, Object.fromEntries(
+      await mod.pushKeys(key, Object.fromEntries(
         Object.entries(AS_VAULT).map(([mine, theirs]) => [theirs, settings[mine] || ""])));
       $("acct-note").textContent = "Keys saved to your account.";
     } catch (err) {
@@ -759,8 +779,10 @@ function keysToAccount() {
 
 async function keysFromAccount(password, say) {
   const mod = await part("account");
-  const values = await mod.pullKeys(password);
-  vaultPassword = password;
+  const key = await mod.vaultKey($("acct-email").value.trim(), password);
+  vaultKeyNow = key;
+  try { sessionStorage.setItem(KEPT, await mod.keepable(key)); } catch { /* private window */ }
+  const values = await mod.pullKeys(key, password);
   if (!values) {
     // Nothing stored yet, so what this device has becomes the first version
     // rather than being wiped by an empty one.
