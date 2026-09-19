@@ -47,7 +47,23 @@ part — guid matching, the import mode, whether the audio actually plays on you
 phone — on a deck small enough to fix by hand if something is wrong. Only once
 that import reports *updated, 0 added* is it worth doing the rest.
 
-## Then, on the phone
+## Two ways to get it onto your phone
+
+Tick **sync** and there is no file and no import: the recordings go straight
+into the AnkiWeb collection they were read from, and you sync AnkiDroid as
+usual. This is the one to use. The import below is the older path, kept because
+it works without letting a workflow write to your account.
+
+Nothing is sent until every check passes — no note added or removed, every
+field the original text with one tag on it, every other field byte-identical,
+no card's scheduling moved, and every recording actually in the media folder.
+A sync cannot be called off once it has happened, so the checks run first and
+a single failure means nothing goes.
+
+The audio uploads separately from the cards and is much the larger half. A play
+button that does nothing usually means that transfer has not finished.
+
+### Or, the package
 
 1. AnkiDroid → **export a full backup (.colpkg)** and check the file exists.
    This is your undo button. Do not skip it.

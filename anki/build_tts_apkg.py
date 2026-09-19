@@ -66,6 +66,11 @@ OUR_SOUND = re.compile(r"\s*\[sound:(" + re.escape(NAME_PREFIX) + r"[^\]]*)\]")
 # only discovered mid-review. Neural speech never lands this small.
 MIN_BYTES = 2048
 
+# How long to wait for the recordings to reach AnkiWeb before giving up. A
+# thousand files on a shared runner is minutes, not seconds, and abandoning the
+# transfer half way leaves notes pointing at recordings the server has not got.
+MEDIA_TIMEOUT = 900
+
 # One silent MPEG-1 Layer III frame, 128kbps 44.1kHz: 1152 samples, 26.1ms.
 # Used by the offline provider so the pipeline can be exercised without network.
 SILENT_FRAME = b"\xff\xfb\x90\x00" + b"\x00" * 413
@@ -401,6 +406,76 @@ def media_in_package(apkg: Path) -> tuple[set[str] | None, int]:
         return None, payloads  # newer packages store the map as protobuf
 
 
+def inspect(
+    col: Collection, snap: dict, attached: list[dict],
+    field: str, notetypes_before: dict, stripped: bool,
+) -> list[dict]:
+    """The same questions verify() asks, put to the collection that is about to sync.
+
+    Nothing is imported here, because nothing is exported: the collection in
+    hand is the one the changes were made in. So the checks that only make
+    sense about a package - one payload per file, every file present in the
+    archive - have no counterpart, and the ones that matter still do.
+    """
+    checks: list[dict] = []
+
+    def check(label: str, ok: bool, detail: str = "") -> None:
+        checks.append({"label": label, "ok": bool(ok), "detail": detail})
+
+    check("no note was added or removed", col.note_count() == snap["notes"],
+          f"{col.note_count()} notes, {snap['notes']} before")
+
+    bad_field, bad_other, wrong_count, missing = [], [], [], []
+    for item in attached:
+        note_id = col.db.scalar("select id from notes where guid = ?", item["guid"])
+        if not note_id:
+            missing.append(item["guid"])
+            continue
+        after = dict(col.get_note(note_id).items())
+        before = snap["fields"][item["note_id"]]
+        if after.get(field) != wants(before[field], item["stored"], bool(item.get("replaces"))):
+            bad_field.append(item["guid"])
+        tags = len(SOUND_TAG.findall(after.get(field, "")))
+        if tags != 1:
+            wrong_count.append(f"{item['guid']} ({tags})")
+        for name, value in before.items():
+            if name != field and after.get(name) != value:
+                bad_other.append(f"{item['guid']}/{name}")
+    check("every note that was tagged is still there", not missing, f"{len(missing)} gone")
+    check(f"`{field}` is the original text with one tag on it", not bad_field, f"{len(bad_field)} wrong")
+    check(f"every `{field}` ends with exactly one [sound:] tag", not wrong_count,
+          f"{len(wrong_count)} with a different count: " + ", ".join(wrong_count[:5]))
+    check("every other field is byte-identical", not bad_other, f"{len(bad_other)} changed")
+
+    moved = [row[0] for row in col.db.all(
+        "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")
+        if snap["cards"].get(row[0]) != row]
+    check("no card's scheduling changed", not moved, f"{len(moved)} cards moved")
+
+    after_nt = {nt_id: col.models.get(nt_id) for nt_id in notetypes_before}
+    check("note type ids still exist", all(after_nt.values()))
+    same = [
+        nt_id for nt_id, before in notetypes_before.items()
+        if after_nt.get(nt_id)
+        and [f["name"] for f in after_nt[nt_id]["flds"]] == [f["name"] for f in before["flds"]]
+        and after_nt[nt_id]["css"] == before["css"]
+    ]
+    check("fields and CSS unchanged on every note type", len(same) == len(notetypes_before),
+          f"{len(same)}/{len(notetypes_before)} unchanged")
+    if stripped:
+        left = [nt_id for nt_id, nt in after_nt.items() if nt and any(
+            TTS_DIRECTIVE.search(t[side]) for t in nt["tmpls"] for side in ("qfmt", "afmt"))]
+        check("{{tts}} is gone from the templates", not left,
+              f"{len(left)} note types would still speak the field")
+
+    # Every file the tags point at has to be in the media folder, or the sync
+    # pushes a note referring to a recording that does not exist.
+    names = {item["stored"] for item in attached}
+    absent = [name for name in names if not (Path(col.media.dir()) / name).exists()]
+    check("every recording is in the media folder", not absent, f"{len(absent)} missing")
+    return checks
+
+
 def verify(
     apkg: Path, before_path: Path, snap: dict, attached: list[dict],
     field: str, notetypes_before: dict, stripped: bool,
@@ -537,6 +612,9 @@ def main() -> int:
     parser.add_argument("--provider", default="edge", choices=sorted(PROVIDERS),
                         help="edge = Microsoft neural voices; silent = offline test files.")
     parser.add_argument("--voice", default="en-US-AvaNeural")
+    parser.add_argument("--sync", action="store_true",
+                        help="Write the audio into your AnkiWeb collection instead of "
+                             "packaging it. No file to import; sync your phone and it is there.")
     parser.add_argument("--revoice", action="store_true",
                         help="Re-record notes that already have audio this script made, "
                              "in the voice given by --voice. Recordings made elsewhere are "
@@ -559,6 +637,10 @@ def main() -> int:
     if not args.local_collection and (not username or not password):
         fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.",
              "Add them under Settings -> Secrets and variables -> Actions.")
+    if args.sync and args.local_collection:
+        fail("--sync writes to AnkiWeb, and --local-collection means there is nothing to write to.")
+    if args.sync and args.dry_run:
+        fail("--dry-run generates nothing, so there would be nothing to sync.")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -566,6 +648,7 @@ def main() -> int:
     audio_dir.mkdir(parents=True, exist_ok=True)
     manifest = out_dir / "manifest.jsonl"
 
+    auth = None
     if args.local_collection:
         work = Path(args.local_collection)
         col = Collection(str(work))
@@ -573,7 +656,11 @@ def main() -> int:
         work = Path("anki-work") / "collection.anki2"
         work.parent.mkdir(exist_ok=True)
         col = Collection(str(work))
-        sync_down(col, username, password, os.environ.get("ANKIWEB_ENDPOINT") or None)
+        endpoint = os.environ.get("ANKIWEB_ENDPOINT") or None
+        # Logging in before the download, rather than not at all: the apkg path
+        # only ever reads, so it never needed the credentials again afterwards.
+        auth = col.sync_login(username, password, endpoint) if args.sync else None
+        sync_down(col, username, password, endpoint)
 
     decks = deck_inventory(col)
     query = args.query or build_deck_query(parse_deck_list(args.deck), decks)
@@ -651,6 +738,59 @@ def main() -> int:
     stripped = [] if args.keep_tts else strip_tts(col, list(notetypes_before))
     if stripped:
         log("Removed {{tts}} from: " + ", ".join(stripped))
+
+    if args.sync:
+        # Imported here rather than at the top: add_card imports this module for
+        # the speech helpers, so naming it up there is a cycle.
+        from add_card import sync_up, sync_up_media  # noqa: E402
+
+        # Checked before the push, not after: a sync that has already happened
+        # cannot be called off, and the point of the checks is to call it off.
+        checks = inspect(col, snap, attached, args.field, notetypes_before, bool(stripped))
+        failed = [c for c in checks if not c["ok"]]
+        if failed:
+            for bad in failed:
+                log(f"::error::{bad['label']}" + (f" ({bad['detail']})" if bad["detail"] else ""))
+            fail(f"{plural(len(failed), 'check')} failed, so nothing was synced.",
+                 "Your AnkiWeb collection is untouched.")
+        sync_up(col, auth)
+        log("Collection synced to AnkiWeb.")
+        media = sync_up_media(col, auth, MEDIA_TIMEOUT)
+        col.close()
+        if media != "done":
+            fail("The recordings did not finish uploading.",
+                 "The notes now point at files AnkiWeb does not have yet. Re-run this "
+                 "workflow: the tags are already in place, so it will only send the media.")
+        log("Recordings uploaded.")
+        before_path.unlink(missing_ok=True)
+        shutil.rmtree(out_dir / "before.media", ignore_errors=True)
+        write_summary(
+            [
+                f"## Audio synced — {plural(len(attached), 'note')}",
+                "",
+                f"- Query: `{query}` · field: `{args.field}`",
+                f"- Voice: `{args.voice}` via `{args.provider}`",
+                f"- Characters sent: **{chars}** · distinct files: **{len(distinct)}**",
+                f"- Audio: **{human_size(sum(i['bytes'] for i in attached))}**",
+            ]
+            + [f"- Skipped, {r}: **{c}**" for r, c in skipped.items() if c]
+            + (["- Removed `{{tts}}` from: " + ", ".join(f"`{x}`" for x in stripped)] if stripped else [])
+            + ["", f"### Checked before sending — {len(checks)}/{len(checks)} passed", ""]
+            + [f"- PASS — {c['label']}" + (f" _({c['detail']})_" if c["detail"] else "")
+               for c in checks]
+            + [
+                "",
+                "### Now",
+                "",
+                "**Sync AnkiDroid.** There is nothing to download and nothing to import: "
+                "the recordings are already on your account.",
+                "",
+                "Media transfers separately from the cards, so give it a moment on a slow "
+                "connection. A card whose play button does nothing has not finished "
+                "downloading its recording yet.",
+            ]
+        )
+        return 0
 
     apkg = out_dir / "tts-update.apkg"
     count = export_package(col, [item["note_id"] for item in attached], apkg, not args.modern_format)
