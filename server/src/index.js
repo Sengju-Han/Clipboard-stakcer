@@ -437,6 +437,9 @@ export default {
       return json(env, report);
     }
 
+    // Whether this request proved it holds an account. It decides how much the
+    // 500 below is allowed to say.
+    let known = false;
     try {
       const open = PUBLIC[route];
       if (open) return await open(request, env);
@@ -445,6 +448,7 @@ export default {
       if (guarded) {
         const user = await whoever(request, env);
         if (!user) return fail(env, 401, "Sign in again.");
+        known = true;
         return await guarded(request, user, env);
       }
       return fail(env, 404, "No such thing here.");
@@ -458,9 +462,15 @@ export default {
       // deployed Worker's exception is otherwise lost, and "something went
       // wrong" is the least useful sentence in software.
       console.error("unhandled", route, said, err?.stack || "");
-      return fail(env, 500, env.DEBUG_ERRORS === "1"
-        ? `Something went wrong here. Nothing was changed. (${said})`
-        : "Something went wrong here. Nothing was changed.");
+      // The person signed in gets the reason, because they are the one who has
+      // to do something about it and there is no log they can read from a
+      // phone. A stranger gets the sentence alone: an error message is a
+      // description of the inside of this, and the inside is theirs only.
+      // DEBUG_ERRORS turns it on for everybody, which is for finding a problem
+      // that stops anyone signing in at all - the one case this cannot cover.
+      const plain = "Something went wrong here. Nothing was changed.";
+      const spell = known || env.DEBUG_ERRORS === "1";
+      return fail(env, 500, spell ? `${plain} (${said})` : plain);
     }
   },
 };
