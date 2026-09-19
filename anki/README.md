@@ -143,6 +143,15 @@ Yes — it only ever reads:
 Reviewing on your phone or desktop is unaffected. Anki may show "sync required"
 afterwards, which is normal for any extra device and resolves on your next sync.
 
+That is this workflow. Three others do write back — **Anki add card**, **Anki
+audit sentences** with *apply* ticked, and **Anki remove tts** — and each of
+them refuses to send anything unless the collection is exactly as it expects:
+no note gone, nothing changed that it did not change itself, no card's
+scheduling moved, and no `[sound:]` recording missing anywhere in the
+collection that it did not mean to remove. A refusal leaves AnkiWeb untouched;
+they check before sending, because a sync that has happened cannot be called
+back.
+
 ## If something goes wrong
 
 | Message | Fix |
@@ -206,3 +215,9 @@ in your Drive. It cannot read what was already there.
 
 Nothing is required. With none of it set the export still appears in the
 artifacts, exactly as before, and the run says so.
+
+The audio package goes to Drive on the same connection — **Anki TTS package**
+puts `tts-update.apkg` in a folder called *Anki audio*, which is the one you
+actually want there: 27MB is a miserable thing to fetch out of a zip on a
+phone. Only the package and its manifest go up; the audio cache the build keeps
+beside them stays where it is.

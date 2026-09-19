@@ -81,6 +81,12 @@ CREATE TABLE graves (usn integer not null, oid integer not null, type integer no
 """
 
 # word, hook, clue, example, anki card type, interval days, ease x10, lapses
+# A note can carry more than one recording: the sentence read aloud, and the
+# word itself said on its own. Both have to survive a trip through here, so one
+# of these has both and the tags are written into the fields the way Anki does.
+SAY = "[sound:say-avow.mp3]"
+READ = "[sound:ttsex-avow.mp3]"
+
 SAMPLE = [
     ("avow", "vow and a! to the public", "공언하다",
      "The politician avowed his commitment to improving education.", 2, 11, 2500, 0),
@@ -148,6 +154,9 @@ def small_apkg(path: Path):
     for i, (word, hook, clue, example, ctype, ivl, factor, lapses) in enumerate(SAMPLE):
         nid = now * 1000 + i
         back = word + ("<br><i>" + hook + "</i>" if hook else "")
+        if word == "avow":
+            back += " " + SAY
+            example += " " + READ
         flds = "\x1f".join([clue, back, example])
         con.execute("INSERT INTO notes VALUES (?,?,?,?,-1,'',?,?,?,0,'')",
                     (nid, f"guid{i:04d}", mid, now, flds, clue, 0))

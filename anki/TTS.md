@@ -34,8 +34,11 @@ offered for download.
    first. **Do one small deck first** — see *Start small* below.
 3. Press the green button and wait. The run summary shows what it generated and
    the result of every verification check.
-4. Download **anki-tts-package** under *Artifacts* and unzip it. Inside is
-   `tts-update.apkg`.
+4. Open `tts-update.apkg` from the *Anki audio* folder in your Drive, if Drive
+   is connected (see *Getting the export into Google Drive* in the README) —
+   the run summary links straight to it. Otherwise download
+   **anki-tts-package** under *Artifacts* and unzip it; `tts-update.apkg` is
+   inside.
 
 Tick *dry_run* to see what a deck would produce — how many files, how many
 characters — without generating anything.

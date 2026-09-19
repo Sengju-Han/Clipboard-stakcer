@@ -34,12 +34,22 @@ Skipped outright:
 
 - a **`.colpkg` backup** is taken and kept as an artifact for 14 days
 - afterwards it checks that **no note disappeared**, that **only the notes it
-  meant to change** changed, and that **no card's scheduling moved** — and
-  refuses to sync if any of that is wrong
+  meant to change** changed, that **no card's scheduling moved**, and that
+  **no recording went missing anywhere in the collection** that it did not
+  mean to remove — and refuses to sync if any of that is wrong
 
 If a corrected sentence already had a recording, that recording says the old
-wording. The `[sound:]` tag is removed and you are told how many, so the
-**Anki TTS package** workflow can record the corrected sentence.
+wording. The `[sound:]` tag is removed and the summary says how many, so the
+**Anki TTS package** workflow can record the corrected sentence — it looks for
+notes with no audio, which is exactly what those are afterwards.
+
+> It did not say how many until 19 September 2026, and the reason is worth
+> knowing if you ran it before then. The correction is written back by a
+> function that keeps the sentence and your own note after it and nothing else,
+> so a `[sound:]` tag on the sentence line was already gone by the time
+> anything counted it. It counted what was left, found none, and reported none.
+> Every correction applied before that date took the card's recording with it
+> in silence. Re-running **Anki TTS package** records them again.
 
 ## Resuming
 
