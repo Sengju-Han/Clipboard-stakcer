@@ -172,6 +172,40 @@
 
   <p id="version"></p>
 
+  <details class="panel" id="account">
+    <summary>Account <span class="hint" id="acct-who">not signed in</span></summary>
+    <p class="note">
+      Sign in and this device gets your token, key and settings back. They are locked
+      with your password <b>in this browser</b> before they are sent, so what the server
+      keeps is unreadable to anyone who reads its database — including you, without the
+      password. Forget it and there is no way back in; nothing else can open the box.
+      The password itself never leaves this page either: signing in sends something
+      derived from it, and your server has no way to work backwards from that.
+    </p>
+    <div class="row">
+      <label for="acct-server">Server <span class="hint">the Worker you deployed</span></label>
+      <input id="acct-server" type="url" placeholder="https://lexis.yourname.workers.dev">
+    </div>
+    <div class="row two">
+      <div>
+        <label for="acct-email">Email</label>
+        <input id="acct-email" type="email" autocomplete="username" placeholder="you@example.com">
+      </div>
+      <div>
+        <label for="acct-pw">Password</label>
+        <input id="acct-pw" type="password" autocomplete="current-password" placeholder="twelve characters or more">
+      </div>
+    </div>
+    <div class="row two">
+      <button type="button" class="primary" id="acct-in">Sign in</button>
+      <button type="button" class="primary" id="acct-up">Create account</button>
+    </div>
+    <div class="row" id="acct-out-row" hidden>
+      <button type="button" class="primary" id="acct-out">Sign out of this device</button>
+    </div>
+    <p class="note" id="acct-say"></p>
+  </details>
+
   <details class="panel" id="settings">
     <summary>Settings</summary>
     <div class="row">
@@ -204,10 +238,15 @@
     </div>
     <hr class="sep">
     <p class="note">
-      Both keys are kept in this browser only. The GitHub token is sent to api.github.com
+      Both keys are kept in this browser. The GitHub token is sent to api.github.com
       and the Anthropic key to api.anthropic.com, each to nowhere else. Neither reaches
       this page's source, the repository, or anyone else. Clear either by emptying its box
       and adding a card, or by clearing this site's data.
+    </p>
+    <p class="note">
+      With an account they are also kept on your server, locked with your password before
+      they leave this browser, so a new device is an email and a password rather than
+      finding both keys again.
     </p>
     <p class="note">
       A key held in a browser is only as private as the device holding it, so it is worth
@@ -217,7 +256,12 @@
   </details>
 </main>
 
-<script>
+<script type="module">
+// The password never leaves this page. What goes to the server is derived from
+// it, by the same module the review app uses - one copy, because two would
+// drift and the symptom of drift is "your password does not work any more".
+import { derivedSecret, MIN_PASSWORD } from "./app/secret.js";
+
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
@@ -260,6 +304,190 @@ if (!$("owner").value || !$("repo").value) {
   if (!$("repo").value) $("repo").value = repo || "";
 }
 for (const key of SETTINGS) $(key).addEventListener("change", () => store.set(key, $(key).value.trim()));
+
+// ---- the account ---------------------------------------------------------
+//
+// The keys are the awkward part. A GitHub token that can run workflows on your
+// repository is not something to leave lying in a database, so it is locked
+// here, in the browser, with a key derived from the password, and the server is
+// handed a box it has no way to open. That is also why a forgotten password
+// cannot be recovered: there is nothing on the other side that knows what is
+// inside.
+//
+// The salt goes in the blob rather than being remembered anywhere, so a blob is
+// enough to decrypt itself given the password, and a new device needs to fetch
+// exactly one thing.
+const VAULT_VERSION = "v1";
+const VAULT_ITERATIONS = 210000;   // the same figure the server uses for passwords
+
+const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const unb64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+async function vaultKey(password, salt) {
+  const base = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: VAULT_ITERATIONS },
+    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"],
+  );
+}
+
+async function lock(values, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await vaultKey(password, salt);
+  const plain = new TextEncoder().encode(JSON.stringify(values));
+  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  return [VAULT_VERSION, b64(salt), b64(iv), b64(sealed)].join(".");
+}
+
+async function unlock(blob, password) {
+  const [version, salt, iv, sealed] = String(blob).split(".");
+  if (version !== VAULT_VERSION) throw new Error("This was locked by a newer version of the page.");
+  const key = await vaultKey(password, unb64(salt));
+  // AES-GCM refuses to decrypt rather than returning nonsense, so a wrong
+  // password throws here and is told apart from an empty or damaged vault.
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) }, key, unb64(sealed));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// Held for as long as the page is open and never written down. A reload leaves
+// the session but not the key, which is why signing in again is what unlocks.
+let vaultPassword = "";
+
+const acct = {
+  get server() { return store.get("acct.server").replace(/\/+$/, ""); },
+  get email() { return store.get("acct.email"); },
+  get token() { return store.get("acct.token"); },
+  set(server, email, token) {
+    store.set("acct.server", server);
+    store.set("acct.email", email);
+    store.set("acct.token", token);
+  },
+};
+
+$("acct-server").value = acct.server;
+$("acct-email").value = acct.email;
+$("acct-server").addEventListener("change", () => store.set("acct.server", $("acct-server").value.trim()));
+
+function says(text, bad = false) {
+  const line = $("acct-say");
+  line.textContent = text;
+  line.style.color = bad ? "var(--bad)" : "var(--muted)";
+}
+
+function showAccount() {
+  const on = Boolean(acct.token);
+  $("acct-who").textContent = on
+    ? (vaultPassword ? acct.email : acct.email + " — locked")
+    : "not signed in";
+  $("acct-out-row").hidden = !on;
+  $("acct-in").textContent = on && !vaultPassword ? "Unlock" : "Sign in";
+}
+
+async function accountCall(path, { method = "GET", body = null, token = acct.token } = {}) {
+  const base = $("acct-server").value.trim().replace(/\/+$/, "");
+  if (!base) throw new Error("Fill in the server address first.");
+  const res = await fetch(base + path, {
+    method,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: "Bearer " + token } : {}),
+    },
+    body: body === null ? undefined : JSON.stringify(body),
+  });
+  let payload = null;
+  try { payload = await res.json(); } catch { /* an error page, not JSON */ }
+  if (!res.ok) throw new Error(payload?.error || `The server said ${res.status}.`);
+  return payload || {};
+}
+
+// Pushing on every keystroke would be a request per character, and pushing on
+// nothing would quietly lose the change somebody just made.
+let pushTimer = 0;
+function saveToAccount() {
+  if (!acct.token || !vaultPassword) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    try {
+      const values = Object.fromEntries(SETTINGS.map((k) => [k, $(k).value.trim()]));
+      await accountCall("/api/vault", { method: "PUT", body: { blob: await lock(values, vaultPassword) } });
+      says("Saved to your account.");
+    } catch (err) {
+      says("Not saved: " + err.message, true);
+    }
+  }, 800);
+}
+for (const key of SETTINGS) $(key).addEventListener("change", saveToAccount);
+
+async function pullVault(password) {
+  const { blob } = await accountCall("/api/vault");
+  if (!blob) {
+    // Nothing stored yet: this device's settings become the first version,
+    // rather than being wiped by an empty one.
+    vaultPassword = password;
+    saveToAccount();
+    return "Signed in. This device's settings are now the ones on your account.";
+  }
+  const values = await unlock(blob, password);
+  for (const key of SETTINGS) {
+    if (typeof values[key] === "string") {
+      $(key).value = values[key];
+      store.set(key, values[key]);
+    }
+  }
+  vaultPassword = password;
+  renderFields();
+  return "Signed in. Your token, key and settings are back.";
+}
+
+async function signIn(creating) {
+  const email = $("acct-email").value.trim();
+  const password = $("acct-pw").value;
+  if (!email || !password) return says("Email and password, both.", true);
+
+  const button = creating ? $("acct-up") : $("acct-in");
+  button.disabled = true;
+  says(creating ? "Creating the account…" : "Signing in…");
+  try {
+    // Already signed in on this device and only the key is missing: unlocking
+    // is a pull, not another sign-in, so it does not spend a login attempt.
+    let token = acct.token;
+    if (!token || creating || email !== acct.email) {
+      if (creating && password.length < MIN_PASSWORD) {
+        throw new Error(`A password needs at least ${MIN_PASSWORD} characters. `
+          + "Length is what matters; a short phrase beats a mangled word.");
+      }
+      const secret = await derivedSecret(email, password);
+      const out = await accountCall(creating ? "/api/register" : "/api/login",
+        { method: "POST", body: { email, secret }, token: "" });
+      token = out.token;
+      acct.set($("acct-server").value.trim().replace(/\/+$/, ""), out.email || email, token);
+    }
+    says(await pullVault(password));
+    $("acct-pw").value = "";
+  } catch (err) {
+    // A wrong password fails in the browser, at decryption, and saying so is
+    // the difference between "try again" and "your settings are gone".
+    const wrong = /decrypt|operation-specific reason|OperationError/i.test(err.message);
+    says(wrong ? "That password does not open the box. The settings are still there." : err.message, true);
+  } finally {
+    button.disabled = false;
+    showAccount();
+  }
+}
+
+$("acct-in").addEventListener("click", () => signIn(false));
+$("acct-up").addEventListener("click", () => signIn(true));
+$("acct-out").addEventListener("click", async () => {
+  try { await accountCall("/api/logout", { method: "POST" }); } catch { /* the token dies either way */ }
+  vaultPassword = "";
+  acct.set($("acct-server").value.trim(), $("acct-email").value.trim(), "");
+  says("Signed out of this device. The keys are still in this browser; clear the boxes to remove them.");
+  showAccount();
+});
+showAccount();
 
 // ---- catalog -------------------------------------------------------------
 function renderFields() {

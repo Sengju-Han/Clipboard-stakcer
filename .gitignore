@@ -10,6 +10,3 @@ tts-build/
 
 # installed by `npm install` to run the server's tests
 node_modules/
-
-# installed by `npm install` to run the server's tests
-node_modules/

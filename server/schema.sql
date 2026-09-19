@@ -59,3 +59,16 @@ CREATE TABLE IF NOT EXISTS attempts (
   n           INTEGER NOT NULL,
   until       INTEGER NOT NULL
 );
+
+-- One opaque blob per person, for the Add to Anki page: a GitHub token, an
+-- Anthropic key, and which repository and voice to use. It is encrypted in the
+-- browser with a key derived from the password, and the password never comes
+-- here in a form this can reverse, so what is stored is genuinely unreadable
+-- from this side. That is the point: a token that can push to somebody's
+-- repository should not be sitting in a database in plain text, and the only
+-- way to promise that is not to be able to read it.
+CREATE TABLE IF NOT EXISTS vault (
+  user_id     TEXT PRIMARY KEY,
+  blob        TEXT NOT NULL,
+  mod         INTEGER NOT NULL
+);

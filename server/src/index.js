@@ -331,9 +331,44 @@ async function forgetMe(userId, env) {
     env.DB.prepare("DELETE FROM reviews WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM pairings WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM vault WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);
   return json(env, { ok: true });
+}
+
+// ---- the vault -------------------------------------------------------------
+//
+// Ciphertext in, ciphertext out. Nothing here inspects it, and nothing here
+// could: the key is derived from the password in the browser, and what reaches
+// this side is the result. A blob that will not decrypt is indistinguishable
+// from one that will, so the wrong password fails in the browser and this never
+// hears about it.
+
+const MAX_VAULT = 64 * 1024;
+
+async function readVault(userId, env) {
+  const row = await env.DB.prepare("SELECT blob, mod FROM vault WHERE user_id = ?")
+    .bind(userId).first();
+  return json(env, { blob: row?.blob || "", mod: row?.mod || 0 });
+}
+
+async function writeVault(request, userId, env) {
+  const { blob } = await body(request);
+  if (typeof blob !== "string") return fail(env, 400, "A vault is a string.");
+  // Empty means forget it, so that signing out everywhere and clearing the
+  // stored keys is one call rather than a special case.
+  if (!blob) {
+    await env.DB.prepare("DELETE FROM vault WHERE user_id = ?").bind(userId).run();
+    return json(env, { ok: true, mod: 0 });
+  }
+  if (blob.length > MAX_VAULT) return fail(env, 400, "That is larger than a vault should ever be.");
+  const mod = Date.now();
+  await env.DB.prepare(
+    "INSERT INTO vault (user_id, blob, mod) VALUES (?, ?, ?) " +
+    "ON CONFLICT(user_id) DO UPDATE SET blob = excluded.blob, mod = excluded.mod",
+  ).bind(userId, blob, mod).run();
+  return json(env, { ok: true, mod });
 }
 
 // ---- the router ------------------------------------------------------------
@@ -352,6 +387,8 @@ const PRIVATE = {
   "POST /api/pair": (req, user, env) => pair(user, env),
   "GET /api/takeout": (req, user, env) => takeout(user, env),
   "POST /api/forget-me": (req, user, env) => forgetMe(user, env),
+  "GET /api/vault": (req, user, env) => readVault(user, env),
+  "PUT /api/vault": (req, user, env) => writeVault(req, user, env),
 };
 
 export default {
