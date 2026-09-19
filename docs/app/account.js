@@ -10,6 +10,8 @@
 // deck still lives in this browser, and the review loop still never touches
 // the network. Everything here is optional.
 
+import { derivedSecret, MIN_PASSWORD } from "./secret.js";
+
 const KEY = "lexis:account";
 
 export function saved() {
@@ -42,14 +44,23 @@ async function call(base, path, { token = "", method = "GET", body = null } = {}
   return payload;
 }
 
+// The password stops here. What crosses the network is derived from it, and
+// the length check happens here too because this is the only side that can see
+// what was typed.
 export async function register(base, email, password) {
-  const out = await call(base, "/api/register", { method: "POST", body: { email, password } });
+  if (String(password || "").length < MIN_PASSWORD) {
+    throw new Error(`A password needs at least ${MIN_PASSWORD} characters. Length is what `
+      + "matters; a short phrase beats a mangled word.");
+  }
+  const secret = await derivedSecret(email, password);
+  const out = await call(base, "/api/register", { method: "POST", body: { email, secret } });
   keep({ base, token: out.token, email: out.email });
   return out;
 }
 
 export async function signIn(base, email, password) {
-  const out = await call(base, "/api/login", { method: "POST", body: { email, password } });
+  const secret = await derivedSecret(email, password);
+  const out = await call(base, "/api/login", { method: "POST", body: { email, secret } });
   keep({ base, token: out.token, email: out.email });
   return out;
 }

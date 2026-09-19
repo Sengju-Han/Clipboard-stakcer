@@ -1,13 +1,23 @@
 // Passwords, sessions and the small amount of care they need.
 //
-// Nothing clever here on purpose. PBKDF2 is what the platform gives a Worker
-// — no argon2, no scrypt, no native module — and used properly it is fine.
-// Everything that can be got wrong in a way that does not show up in testing
-// is done explicitly: the iteration count is stored per user so it can be
-// raised later without locking anyone out, comparisons are constant time, and
-// the session token itself is never written down.
+// The slow part does not happen here. The browser turns the password into a
+// 256-bit secret with 210,000 rounds of PBKDF2 and sends that; this side never
+// sees the password at all. Two reasons, and only one of them was a choice:
+//
+//   - Workers refuse PBKDF2 above 100,000 iterations outright ("iteration
+//     counts above 100000 are not supported"), and 100,000 would still cost
+//     about 45ms of CPU against a free plan's 10ms budget. Hashing a password
+//     properly is not something this runtime will do.
+//   - A server that never receives the password cannot leak it, log it, or be
+//     compelled for it. That is worth more than where the rounds happen.
+//
+// What arrives is already high-entropy and unguessable, so the work left here
+// is only to make a stolen database useless: a per-user random salt so two
+// people with the same password do not share a row, and enough rounds to stop
+// a plain lookup. It does not need to be slow, because there is no dictionary
+// to run against a 256-bit random-looking value.
 
-const ITERATIONS = 210000;          // OWASP's 2023 figure for PBKDF2-HMAC-SHA256
+const ITERATIONS = 1000;            // over the derived secret, not over a password
 const KEY_BITS = 256;
 const SALT_BYTES = 16;
 const TOKEN_BYTES = 32;

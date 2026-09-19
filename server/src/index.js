@@ -12,7 +12,9 @@
 // opinion about scheduling at all — FSRS stays in the browser, where it can be
 // answered on a train.
 
-import { hashPassword, checkPassword, newToken, tokenHash, id, pairingCode } from "./crypto.js";
+import {
+  hashPassword, checkPassword, newToken, tokenHash, id, pairingCode,
+} from "./crypto.js";
 
 const SESSION_DAYS = 90;
 const PAIRING_MINUTES = 10;
@@ -25,7 +27,10 @@ const MAX_PER_ADDRESS = 60;
 const LOCKOUT_MINUTES = 15;
 const MAX_BODY = 12 * 1024 * 1024;   // a 1,200-card push is about 2MB
 const BATCH = 100;                   // statements per D1 batch
-const MIN_PASSWORD = 10;
+// What arrives instead of a password: 32 bytes, base64. The length of the
+// password behind it is the browser's business to check, because the browser is
+// the only side that can see it.
+const SECRET_CHARS = 44;
 
 const now = () => Date.now();
 
@@ -95,6 +100,12 @@ async function startSession(env, userId, device = "") {
 // one person on a shared network lock out everyone else; counting only by email
 // lets somebody work through a list of emails from one machine unhindered.
 
+// Shape only. It cannot tell a real derivation from 32 random bytes, and does
+// not need to: what it catches is an older app still sending a password, which
+// would otherwise be hashed as if it were a secret and quietly accepted.
+const looksLikeSecret = (value) =>
+  typeof value === "string" && value.length === SECRET_CHARS && /^[A-Za-z0-9+/]+=*$/.test(value);
+
 const limitFor = (key) => (key.startsWith("ip:") ? MAX_PER_ADDRESS : MAX_PER_EMAIL);
 
 async function blocked(env, keys) {
@@ -134,14 +145,15 @@ function emailLooksReal(email) {
 }
 
 async function register(request, env) {
-  const { email: raw, password } = await body(request);
+  const { email: raw, secret } = await body(request);
   const email = tidyEmail(raw);
   if (!emailLooksReal(email)) return fail(env, 400, "That does not look like an email address.");
-  if (String(password || "").length < MIN_PASSWORD) {
-    return fail(env, 400, `A password needs at least ${MIN_PASSWORD} characters. Length is what matters; a short phrase beats a mangled word.`);
+  if (!looksLikeSecret(secret)) {
+    return fail(env, 400, "That was not a derived secret. Update the app: it is supposed to do "
+      + "the password hashing itself and send the result, and this server never takes a password.");
   }
 
-  const { hash, salt, iterations } = await hashPassword(password);
+  const { hash, salt, iterations } = await hashPassword(secret);
   const userId = id();
   try {
     await env.DB.prepare(
@@ -156,7 +168,7 @@ async function register(request, env) {
 }
 
 async function login(request, env) {
-  const { email: raw, password } = await body(request);
+  const { email: raw, secret } = await body(request);
   const email = tidyEmail(raw);
   const address = request.headers.get("cf-connecting-ip") || "unknown";
   const keys = [`email:${email}`, `ip:${address}`];
@@ -172,7 +184,7 @@ async function login(request, env) {
 
   // The same answer whether the email is unknown or the password is wrong:
   // telling them apart turns this into a way to find out who has an account.
-  if (!user || !(await checkPassword(String(password || ""), user))) {
+  if (!user || !looksLikeSecret(secret) || !(await checkPassword(String(secret), user))) {
     await noteFailure(env, keys);
     return fail(env, 401, "That email and password do not match.");
   }
@@ -385,7 +397,33 @@ export default {
     const route = `${request.method} ${url.pathname}`;
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(env) });
-    if (url.pathname === "/api/health") return json(env, { ok: true });
+    // Health answers the two questions that a 500 on sign-in cannot: whether
+    // the database is really there, and whether this runtime will do the
+    // password hashing at the cost we are asking of it. Both are plain GETs, so
+    // they can be read from a phone's address bar with no app and no CORS.
+    if (url.pathname === "/api/health") {
+      const report = { ok: true };
+      try {
+        const row = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'",
+        ).first();
+        report.tables = row?.n ?? 0;
+      } catch (err) {
+        report.ok = false;
+        report.database = String(err?.message || err).slice(0, 300);
+      }
+      try {
+        const started = Date.now();
+        await hashPassword("a secret to time the hashing with");
+        report.hash_ms = Date.now() - started;
+      } catch (err) {
+        report.ok = false;
+        // The likeliest failure here is a limit on how much work one request
+        // may do, and it is worth saying which limit rather than "went wrong".
+        report.hashing = String(err?.message || err).slice(0, 300);
+      }
+      return json(env, report);
+    }
 
     try {
       const open = PUBLIC[route];
@@ -403,7 +441,14 @@ export default {
       // anything unexpected says nothing about the inside of this.
       const said = String(err?.message || err);
       const theirs = /JSON|accepts in one go/.test(said);
-      return fail(env, theirs ? 400 : 500, theirs ? said : "Something went wrong here. Nothing was changed.");
+      if (theirs) return fail(env, 400, said);
+      // Worth saying out loud even though nobody is watching the console: a
+      // deployed Worker's exception is otherwise lost, and "something went
+      // wrong" is the least useful sentence in software.
+      console.error("unhandled", route, said, err?.stack || "");
+      return fail(env, 500, env.DEBUG_ERRORS === "1"
+        ? `Something went wrong here. Nothing was changed. (${said})`
+        : "Something went wrong here. Nothing was changed.");
     }
   },
 };
