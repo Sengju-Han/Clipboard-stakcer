@@ -5,7 +5,7 @@
 // reviewing yesterday's cards forever. The deck lives in IndexedDB, which is
 // the right place for it, and is refetched only when asked for.
 
-const CACHE = "lexis-2026-09-19.4";
+const CACHE = "lexis-2026-09-19.5";
 // Everything the app can do without a network, which is nearly all of it. Each
 // screen beyond the review loop is a module loaded on demand, and a module
 // that has never been loaded is a module that is not in the cache — so on a
@@ -18,7 +18,7 @@ const SHELL = [
   "./watch.js", "./subs.js", "./lex.js", "./clip.js",  // a downloaded episode and its subtitles
   "./explain.js", "../explain-contract.json",    // what is already explained, after an Again
   "./talk.js",                                   // opens and says what it needs
-  "./sync.js", "./account.js", "./secret.js", "./vault.js",   // ditto
+  "./sync.js", "./account.js", "./secret.js", "./vault.js", "./where.js",   // ditto
   "./manifest.webmanifest", "./icon.svg",
   // apkg.js, apkgout.js and their libraries stay out: the SQLite engine alone
   // is most of a megabyte, it is useless without the wasm beside it, and most

@@ -51,11 +51,18 @@ def _fake_server(t):
 
 
 def _open(t):
+    """A fresh device, pointed at the test's own server.
+
+    There is no box for the address any more - there is one server and asking
+    which one was a question with a single answer. The override the tests use
+    is the same one a moved Worker would use, and there is no UI for it.
+    """
     t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
     t.page.wait_for_selector("#settings", timeout=30000)
     t.page.evaluate("""() => {
       try { localStorage.clear(); } catch {}
       try { sessionStorage.clear(); } catch {}
+      try { localStorage.setItem("lexis:server", "https://vault.test"); } catch {}
     }""")
     t.page.reload()
     t.page.wait_for_selector("#settings", timeout=30000)
@@ -84,7 +91,6 @@ def run(t):
     _fill(t, "repo", "Clipboard-stakcer")
 
     _panels(t)
-    _fill(t, "acct-server", "https://vault.test")
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill(PASSWORD)
     t.page.locator("#acct-up").click()
@@ -127,7 +133,6 @@ def run(t):
     t.check("the new device starts with no token", t.page.locator("#token").input_value(), "")
 
     _panels(t)
-    _fill(t, "acct-server", "https://vault.test")
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill("the wrong password")
     t.page.locator("#acct-in").click()
@@ -164,9 +169,10 @@ def run(t):
     t.page.wait_for_selector("#settings", timeout=30000)
     t.page.wait_for_timeout(900)
     _panels(t)
-    t.check("the address is still there after a reload",
-            t.page.locator("#acct-server").input_value(), "https://vault.test")
-    t.check("and so is the email", t.page.locator("#acct-email").input_value(), "me@example.test")
+    t.check("there is no address to fill in at all",
+            t.page.locator("#acct-server").count(), 0)
+    t.check("and the email is still there", t.page.locator("#acct-email").input_value(),
+            "me@example.test")
     t.check("and it is not asking to be unlocked",
             "locked" in t.page.locator("#acct-who").inner_text(), False)
 
@@ -230,10 +236,10 @@ def run(t):
     t.check("the review app starts with no keys either",
             [t.page.locator("#anthropic").input_value(), t.page.locator("#gh-token").input_value()],
             ["", ""])
-    # The address was typed into the other page. Both are the same origin, so
-    # typing it again here is work nobody should have to do.
-    t.check("but it already knows where the server is",
-            t.page.locator("#acct-base").input_value(), "https://vault.test")
+    # No box here either: the review app knows where the server is for the same
+    # reason the other page does.
+    t.check("and no address to fill in here either",
+            t.page.locator("#acct-base").count(), 0)
 
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill(PASSWORD)
