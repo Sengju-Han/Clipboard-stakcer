@@ -30,6 +30,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 from anki.collection import Collection  # noqa: E402
@@ -107,11 +108,28 @@ word. If the card's word is simply wrong for its sentence - a card that says \
 `why` is one short clause, lower case, no full stop."""
 
 
+def fold(text: str) -> str:
+    """An accent is a spelling, not a different word.
+
+    A card can say `séance` while the sentence it came with says `seance`, and
+    the two are the same word. Without this the accent is not a letter, so it
+    becomes a space and splits the word in half - `s` and `ance` - and whether
+    the card matched its own sentence depended on whether both had been typed
+    the same way.
+
+    Recomposing at the end is not decoration: NFD takes Hangul apart too, and
+    every Korean clue in this collection would come back as loose jamo.
+    """
+    bare = "".join(c for c in unicodedata.normalize("NFD", text)
+                   if not unicodedata.combining(c))
+    return unicodedata.normalize("NFC", bare)
+
+
 def tidy(text: str) -> str:
     """Plain lower-case words, with markup, media and punctuation gone."""
     text = MARKUP.sub(" ", str(text or ""))
     text = re.sub(r"\[sound:[^\]]*\]", " ", text)
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z' ]+", " ", text.lower())).strip()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z' ]+", " ", fold(text.lower()))).strip()
 
 
 def headword(raw: str) -> str:

@@ -690,3 +690,38 @@ def test_nothing_is_said_when_every_note_had_the_fields(tmp_path, monkeypatch):
                        {"the word is there": 10, "a note type without these fields": 0},
                        11, applied=False, fields=("Back", "Example"))
     assert "had no word checked" not in where.read_text(encoding="utf-8")
+
+
+# ---- an accent is a spelling ---------------------------------------------
+
+def test_either_spelling_of_an_accented_word_matches():
+    # A card can say `séance` while its sentence says `seance`, and they are
+    # the same word. Without folding, the accent is not a letter, so it became
+    # a space and split the word in half — `s` and `ance` — and whether a card
+    # matched its own sentence depended on whether both were typed the same way.
+    assert words.missing_from("séance", "We went to a seance last night.") == []
+    assert words.missing_from("séance", "We went to a séance last night.") == []
+    assert words.missing_from("seance", "We went to a séance last night.") == []
+    # And a word that really is absent still reports as absent.
+    assert words.missing_from("séance", "We went to a party last night.") == ["seance"]
+
+
+def test_folding_leaves_korean_alone():
+    # NFD takes Hangul apart as readily as it takes an accent off an e, and
+    # every clue in this collection is Korean. The recomposition at the end is
+    # the whole reason this is three steps rather than one.
+    for korean in ("공언하다", "대화에 끼어들다", "감정"):
+        assert words.fold(korean) == korean
+    assert words.fold("séance") == "seance"
+    assert words.fold("naïve café") == "naive cafe"
+
+
+def test_the_accent_survives_into_the_card():
+    # Folded for comparing, never for writing: the correction that goes back
+    # into the collection is the word as a person spells it.
+    assert words.headword("séance<br><i>a hook</i>") == "séance"
+    assert words.tidy("séance") == "seance"
+    # A correction is still judged on the word as written, accent and all, so
+    # dropping the accent counts as a respelling and swapping the word does not.
+    assert words.a_respelling("séance", "seance")
+    assert not words.a_respelling("séance", "gathering")
