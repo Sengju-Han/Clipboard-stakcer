@@ -182,10 +182,6 @@
       The password itself never leaves this page either: signing in sends something
       derived from it, and your server has no way to work backwards from that.
     </p>
-    <div class="row">
-      <label for="acct-server">Server <span class="hint">the Worker you deployed</span></label>
-      <input id="acct-server" type="url" placeholder="https://lexis.yourname.workers.dev">
-    </div>
     <div class="row two">
       <div>
         <label for="acct-email">Email</label>
@@ -266,6 +262,7 @@
 // drift and the symptom of drift is "your password does not work any more".
 import { derivedSecret, MIN_PASSWORD } from "./app/secret.js";
 import { lock, unlock, vaultKey, keepable, restore as keyFromText } from "./app/vault.js";
+import { serverUrl } from "./app/where.js";
 
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
@@ -374,24 +371,12 @@ const acct = {
   },
 };
 
-$("acct-server").value = acct.server;
 $("acct-email").value = acct.email;
 // On input rather than on change: a paste followed by a tap on Sign in never
 // fires change on some phone keyboards, and then the address has to be typed
 // again on the next visit even though it was right the first time.
 for (const event of ["input", "change"]) {
-  $("acct-server").addEventListener(event, () => {
-    const where = $("acct-server").value.trim();
-    store.set("acct.server", where);
-    // Under the review app's key as well. Both pages are the same origin, so
-    // the address only ever has to be typed in on one of them.
-    try { localStorage.setItem("lexis:server", where); } catch { /* blocked */ }
-  });
   $("acct-email").addEventListener(event, () => store.set("acct.email", $("acct-email").value.trim()));
-}
-
-if (!$("acct-server").value) {
-  try { $("acct-server").value = localStorage.getItem("lexis:server") || ""; } catch { /* blocked */ }
 }
 
 function says(text, bad = false) {
@@ -411,8 +396,7 @@ async function showAccount() {
 }
 
 async function accountCall(path, { method = "GET", body = null, token = acct.token } = {}) {
-  const base = $("acct-server").value.trim().replace(/\/+$/, "");
-  if (!base) throw new Error("Fill in the server address first.");
+  const base = serverUrl();
   const res = await fetch(base + path, {
     method,
     headers: {
@@ -504,7 +488,7 @@ async function signIn(creating) {
       const out = await accountCall(creating ? "/api/register" : "/api/login",
         { method: "POST", body: { email, secret }, token: "" });
       token = out.token;
-      acct.set($("acct-server").value.trim().replace(/\/+$/, ""), out.email || email, token);
+      acct.set(serverUrl(), out.email || email, token);
     }
     says(await pullVault(password));
     $("acct-pw").value = "";
@@ -524,7 +508,7 @@ $("acct-up").addEventListener("click", () => signIn(true));
 $("acct-out").addEventListener("click", async () => {
   try { await accountCall("/api/logout", { method: "POST" }); } catch { /* the token dies either way */ }
   forgetKey();
-  acct.set($("acct-server").value.trim(), $("acct-email").value.trim(), "");
+  acct.set(serverUrl(), $("acct-email").value.trim(), "");
   says("Signed out of this device. The keys are still in this browser; clear the boxes to remove them.");
   showAccount();
 });
