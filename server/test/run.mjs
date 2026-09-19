@@ -232,7 +232,7 @@ console.log("\n— the vault —");
 // test asserts the shape of that promise rather than the promise itself.
 // The first device was signed out further up, so this needs a session of its own.
 const vaultToken = (await call("POST", "/api/login",
-  { body: { email: "a@example.test", password: "correct horse battery" } })).payload.token;
+  { body: { email: "a@example.test", secret: await secretFor("a@example.test", "correct horse battery") } })).payload.token;
 r = await call("GET", "/api/vault", { token: vaultToken });
 check("a person with no vault gets an empty one", r.payload, { blob: "", mod: 0 });
 

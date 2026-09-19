@@ -179,8 +179,8 @@
       with your password <b>in this browser</b> before they are sent, so what the server
       keeps is unreadable to anyone who reads its database — including you, without the
       password. Forget it and there is no way back in; nothing else can open the box.
-      Signing in does send the password to your server, as any sign-in does, so this
-      protects what is stored rather than the moment of signing in.
+      The password itself never leaves this page either: signing in sends something
+      derived from it, and your server has no way to work backwards from that.
     </p>
     <div class="row">
       <label for="acct-server">Server <span class="hint">the Worker you deployed</span></label>
@@ -256,7 +256,12 @@
   </details>
 </main>
 
-<script>
+<script type="module">
+// The password never leaves this page. What goes to the server is derived from
+// it, by the same module the review app uses - one copy, because two would
+// drift and the symptom of drift is "your password does not work any more".
+import { derivedSecret, MIN_PASSWORD } from "./app/secret.js";
+
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
@@ -450,8 +455,13 @@ async function signIn(creating) {
     // is a pull, not another sign-in, so it does not spend a login attempt.
     let token = acct.token;
     if (!token || creating || email !== acct.email) {
+      if (creating && password.length < MIN_PASSWORD) {
+        throw new Error(`A password needs at least ${MIN_PASSWORD} characters. `
+          + "Length is what matters; a short phrase beats a mangled word.");
+      }
+      const secret = await derivedSecret(email, password);
       const out = await accountCall(creating ? "/api/register" : "/api/login",
-        { method: "POST", body: { email, password }, token: "" });
+        { method: "POST", body: { email, secret }, token: "" });
       token = out.token;
       acct.set($("acct-server").value.trim().replace(/\/+$/, ""), out.email || email, token);
     }
