@@ -380,8 +380,18 @@ $("acct-email").value = acct.email;
 // fires change on some phone keyboards, and then the address has to be typed
 // again on the next visit even though it was right the first time.
 for (const event of ["input", "change"]) {
-  $("acct-server").addEventListener(event, () => store.set("acct.server", $("acct-server").value.trim()));
+  $("acct-server").addEventListener(event, () => {
+    const where = $("acct-server").value.trim();
+    store.set("acct.server", where);
+    // Under the review app's key as well. Both pages are the same origin, so
+    // the address only ever has to be typed in on one of them.
+    try { localStorage.setItem("lexis:server", where); } catch { /* blocked */ }
+  });
   $("acct-email").addEventListener(event, () => store.set("acct.email", $("acct-email").value.trim()));
+}
+
+if (!$("acct-server").value) {
+  try { $("acct-server").value = localStorage.getItem("lexis:server") || ""; } catch { /* blocked */ }
 }
 
 function says(text, bad = false) {
