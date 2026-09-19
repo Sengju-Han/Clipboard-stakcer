@@ -311,8 +311,17 @@ async function undo() {
   offerUndo();
   if (!step) return;
 
-  await store.unrecord(step.log.at);
-  await store.saveCard(step.before);
+  try {
+    await store.unrecord(step.log.at);
+    await store.saveCard(step.before);
+  } catch (err) {
+    // Put it back on the stack: the undo did not happen, so it is still owed.
+    undoable.push(step);
+    offerUndo();
+    sayWrite(whyItDidNotSave(err));
+    return;
+  }
+  sayWrite("");
 
   const i = cache.findIndex((c) => c.id === step.before.id);
   if (i >= 0) cache[i] = step.before;
@@ -335,6 +344,44 @@ async function undo() {
   reveal();
 }
 
+// A write that fails must not look like a tap that did nothing.
+//
+// Answering writes the log row and then the card, and either can fail - a phone
+// with no room left refuses with QuotaExceededError. The button handler does
+// not await grade(), so the rejection goes nowhere: no message, no console line
+// anybody will read, and a Good that does not advance. Then another that does
+// not either.
+function outOfRoom(err) {
+  const name = String(err?.name || "");
+  return /quota/i.test(name) || /quota|storage/i.test(String(err?.message || ""));
+}
+
+function sayWrite(text) {
+  const line = $("write-note");
+  if (!line) return;
+  line.textContent = text;
+  line.hidden = !text;
+}
+
+function whyItDidNotSave(err) {
+  if (outOfRoom(err)) {
+    return "There is no room left in this browser, so that answer was not saved. "
+      + "Captured audio clips are what fill it — Settings says how many you have "
+      + "and can clear them.";
+  }
+  return `That answer was not saved (${err?.name || "something went wrong"}). `
+    + "Nothing was changed, so answering again is safe.";
+}
+
+// Anything that rejects with nobody watching. Only storage trouble reaches the
+// screen, because that is the one a person can act on; the rest goes to the
+// console, which is still better than a screen that silently does not change.
+addEventListener("unhandledrejection", (event) => {
+  console.error("unhandled rejection", event.reason);
+  if (outOfRoom(event.reason)) sayWrite(whyItDidNotSave(event.reason));
+});
+
+
 async function grade(rating) {
   if (!current) return;
   const wasNew = current.fsrs.state === State.New;
@@ -344,8 +391,17 @@ async function grade(rating) {
 
   // The log first: an answer that was given and not scheduled can be replayed,
   // a schedule with no answer behind it cannot be explained.
-  await store.record(log);
-  await store.saveCard(card);
+  try {
+    await store.record(log);
+    await store.saveCard(card);
+  } catch (err) {
+    // Nothing below this line has run, so the card is still up and the session
+    // still owes it. Say so and stop, rather than advancing past an answer
+    // that was never written down.
+    sayWrite(whyItDidNotSave(err));
+    return;
+  }
+  sayWrite("");
   if (wasNew) noteIntroduced();
 
   const i = cache.findIndex((c) => c.id === card.id);
