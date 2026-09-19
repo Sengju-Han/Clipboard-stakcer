@@ -56,7 +56,33 @@ def run(t):
     t.page.wait_for_timeout(2000)
     t.truthy("what they said is on screen",
              target in t.page.locator("#t-log .bubble.me").last.inner_text())
-    t.check("a word they used is ticked off", t.page.locator("#t-words .chip.on").count(), 1)
+    # The word they used, not a count of one. The six are drawn at random from
+    # the deck, and two of them can legitimately both be ticked by one sentence:
+    # saying "chiseled" uses "chisel" as well, and both were targets. Counting
+    # made that a failure about four runs in a hundred, which is exactly often
+    # enough to look like something else.
+    # The matcher itself, on the words that used to defeat it. Deterministic,
+    # unlike the six drawn at random above: a hyphen survived in the word and
+    # not in the sentence, so the regex could never match, and saying one of
+    # these out loud never ticked it off.
+    matched = t.page.evaluate("""async () => {
+      const { spotted } = await import("./talk.js");
+      const cases = ["tie-dye", "jam-packed", "litter-mates", "ne'er-do-well",
+                     "hangers-on", "put off", "avow"];
+      return cases.map((w) => [w, spotted(`Well I would say ${w} about that`, w)]);
+    }""")
+    t.check("every awkward word matches itself",
+            [w for w, hit in matched if not hit], [])
+    t.truthy("and a word that was not said does not match",
+             not t.page.evaluate("""async () => {
+               const { spotted } = await import("./talk.js");
+               return spotted("Well I would say nothing about that", "tie-dye");
+             }"""))
+
+    ticked = [x.strip().lstrip("\u2713").strip()
+              for x in t.page.locator("#t-words .chip.on").all_inner_texts()]
+    t.truthy(f"the word they used is ticked off ({target})", target in ticked)
+    t.note("ticked", ", ".join(ticked) or "none")
     t.check("the correction is shown under the reply", t.page.locator("#t-log .fix").count(), 1)
 
     ticked = t.page.locator("#t-words .chip.on").count()
