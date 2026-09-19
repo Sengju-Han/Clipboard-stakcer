@@ -167,3 +167,37 @@ python anki/export_deck.py --deck "English::TOEFL" --timezone Asia/Seoul
 # or, against a collection file you already have, with no login at all:
 python anki/export_deck.py --local-collection ~/.local/share/Anki2/User\ 1/collection.anki2 --deck "English::TOEFL"
 ```
+
+## Getting the export into Google Drive
+
+An artifact is a zip behind a login with a seven-day fuse. Drive is easier to
+reach from a phone, and the export goes there instead once this is connected.
+
+Once, and then never again:
+
+1. **Google Cloud console** → *APIs & Services* → enable the **Google Drive API**.
+2. *Credentials* → **Create credentials → OAuth client ID** → type **Web
+   application**. Under *Authorised redirect URIs* add exactly:
+
+       https://sengju-han.github.io/Clipboard-stakcer/connected.html
+
+3. Put the client ID and client secret into this repository under
+   **Settings → Secrets and variables → Actions**, as `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`.
+4. **Actions → Connect Google Drive → Run workflow**, with the code box empty.
+   It prints a link.
+5. Open the link, approve, and the page you land on shows a code with a copy
+   button.
+6. Run **Connect Google Drive** again, pasting that code into **code**.
+
+That second run swaps the code for a lasting connection and writes it into the
+repository's secrets itself. The connection is never printed — not in the log,
+not in the summary — because a public repository's logs are public. The code
+you copied is single-use and worth nothing once spent, which is why that one is
+safe to read off a screen.
+
+The scope asked for is `drive.file`: the files this creates, and nothing else
+in your Drive. It cannot read what was already there.
+
+Nothing is required. With none of it set the export still appears in the
+artifacts, exactly as before, and the run says so.

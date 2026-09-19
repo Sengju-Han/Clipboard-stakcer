@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connecting Drive</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%93%81%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f2f3f5; --panel: #ffffff; --ink: #1f2328; --muted: #61686f;
+    --line: #d8dce0; --accent: #2d6cdf; --accent-ink: #ffffff;
+    --ok: #1a7f45; --ok-bg: #e7f5ec; --bad: #b3261e; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c; --panel: #1f2227; --ink: #e6e8ea; --muted: #9aa3ab;
+      --line: #343a41; --accent: #4d8bf0; --accent-ink: #0b1220;
+      --ok: #6fd096; --ok-bg: #14301f; --bad: #f2a49e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 16px; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+          word-break: break-all; background: var(--bg); border: 1px solid var(--line);
+          border-radius: 8px; padding: 12px; margin: 10px 0; }
+  button { font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
+           width: 100%; padding: 12px; background: var(--accent); color: var(--accent-ink);
+           border: 1px solid transparent; }
+  button.done { background: var(--ok); }
+  ol { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  .note { color: var(--muted); font-size: 13px; }
+  .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+
+<header><h1>Connecting Google Drive</h1></header>
+
+<main>
+  <div class="panel" id="panel">
+    <p id="lede">Reading what Google sent back…</p>
+    <div class="code" id="code" hidden></div>
+    <button id="copy" hidden>Copy the code</button>
+    <ol id="next" hidden>
+      <li>Go to <b>Actions → Connect Google Drive → Run workflow</b>.</li>
+      <li>Paste the code into <b>code</b>.</li>
+      <li>Run it. It swaps the code for a lasting connection and stores it as a
+        secret — the code itself is used once and is no good to anyone after that.</li>
+    </ol>
+    <p class="note" id="why" hidden>This page is only ever handed a one-time code. It
+      has no access to your Drive and sends nothing anywhere: the code sits in the
+      address bar, and copying it is the whole job.</p>
+  </div>
+</main>
+
+<script>
+// Google puts either ?code=... or ?error=... on the end of the address when it
+// sends somebody back here. On a phone the alternative is reading it out of the
+// address bar by hand, which is how this normally goes wrong.
+const params = new URLSearchParams(location.search);
+const code = params.get("code");
+const error = params.get("error");
+const lede = document.getElementById("lede");
+
+if (code) {
+  lede.textContent = "Google said yes. Here is the code:";
+  const box = document.getElementById("code");
+  box.textContent = code;
+  box.hidden = false;
+  document.getElementById("next").hidden = false;
+  document.getElementById("why").hidden = false;
+
+  const button = document.getElementById("copy");
+  button.hidden = false;
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      button.textContent = "Copied";
+      button.classList.add("done");
+    } catch {
+      // Clipboard access is refused in plenty of ordinary situations, and
+      // "nothing happened" would be the worst possible answer here.
+      button.textContent = "Select it above and copy by hand";
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  });
+} else if (error) {
+  lede.innerHTML = `Google said <b class="bad">${error.replace(/[<>&]/g, "")}</b>.`;
+  lede.insertAdjacentHTML("afterend",
+    "<p class='note'>If that was access_denied, the consent screen was dismissed — "
+    + "run <b>Connect Google Drive</b> again and approve it. Nothing was changed.</p>");
+} else {
+  lede.textContent = "There is nothing here on its own.";
+  lede.insertAdjacentHTML("afterend",
+    "<p class='note'>This page is where Google sends you after you approve the "
+    + "connection. Start from <b>Actions → Connect Google Drive</b>.</p>");
+}
+</script>
+
+</body>
+</html>
