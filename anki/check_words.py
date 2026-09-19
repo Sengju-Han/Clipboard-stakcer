@@ -260,7 +260,14 @@ def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
         raw = note[word_field]
         head = headword(raw)
         if head != row["word"]:
-            continue                      # it changed since it was read
+            # Somebody fixed it on their phone between the report and this.
+            # Cleared rather than merely skipped, so the report cannot count it
+            # among the words corrected - it says what happened, not what was
+            # planned.
+            row["why"] = (f"it now reads {head!r}, not {row['word']!r}; "
+                          "changed somewhere else since it was read")
+            row["corrected"] = ""
+            continue
         # The word itself, before any memory hook written underneath it.
         first = BLOCK_BOUNDARY.split(raw)[0]
         if MARKUP.search(first):

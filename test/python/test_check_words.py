@@ -155,6 +155,10 @@ def test_a_word_that_moved_since_it_was_read_is_left_alone(tmp_path):
     fixes = [{"guid": _guid(col, "a"), "word": "entiments", "corrected": "sentiments"}]
 
     assert words.apply_all(col, fixes, "Back")["applied"] == 0
+    # And it stops being something the report can call corrected, which is the
+    # difference between saying what happened and saying what was planned.
+    assert fixes[0]["corrected"] == ""
+    assert "changed somewhere else" in fixes[0]["why"]
     col.close()
 
 
