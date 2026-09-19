@@ -19,6 +19,11 @@ on:
         description: 'IANA timezone for due dates, e.g. Asia/Seoul'
         required: false
         default: 'Asia/Seoul'
+      allow_loss:
+        description: 'Build even if most of the deck has gone. Only if you really did delete that many.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -59,8 +64,17 @@ jobs:
             --out-dir anki-export \
             --timezone "$TZ_NAME"
 
+      # A build that lost most of the collection refuses to write, because what
+      # it writes is committed and pushed to Pages on the next line. The tick
+      # box is the way out of that from a phone, for a collection that really
+      # did shrink — without it the refusal would be unanswerable.
       - name: Build the deck the app reads
-        run: python anki/build_deck.py --export anki-export/cards.json --out docs/deck
+        env:
+          ALLOW_LOSS: ${{ inputs.allow_loss }}
+        run: |
+          FLAGS=""
+          if [ "$ALLOW_LOSS" = "true" ]; then FLAGS="--allow-loss"; fi
+          python anki/build_deck.py --export anki-export/cards.json --out docs/deck $FLAGS
 
       - name: Commit it
         run: |
