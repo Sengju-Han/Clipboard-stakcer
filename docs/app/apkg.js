@@ -313,6 +313,12 @@ function extract(db, source, onProgress) {
       .filter(Boolean)
       .join("\n");
 
+    // Every recording the note refers to, the example's first because that is
+    // the one this app plays. The rest are kept rather than dropped: a note
+    // can carry a recording of the word as well as of the sentence, and the
+    // one that is not played here is still the one that plays in Anki. Losing
+    // it on the way in would lose it on the way back out, silently, and the
+    // file would sit in the media folder looking perfectly healthy.
     const audio = [...sounds(exampleRaw), ...parts.flatMap((p, i) => i === roles.example ? [] : sounds(p))];
 
     const type = Number(row.type);
@@ -340,6 +346,7 @@ function extract(db, source, onProgress) {
       clue,
       example: plain(exampleRaw),
       audio: audio[0] || "",
+      ...(audio.length > 1 ? { audioMore: audio.slice(1) } : {}),
       tags: String(row.tags || "").split(" ").filter(Boolean),
       notetype: names.length ? (names.join("/") ? `${names.length} fields` : "") : "",
       created: new Date(Number(row.nid)).toISOString().slice(0, 10),

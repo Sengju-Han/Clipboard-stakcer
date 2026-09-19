@@ -40,6 +40,7 @@ from export_deck import (  # noqa: E402
     TTS_DIRECTIVE,
     fail,
     log,
+    plural,
     sync_down,
     write_summary,
 )
@@ -130,6 +131,51 @@ def check_sentence(values: dict[str, str], field: str, checker: str) -> tuple[li
 
 def existing_notes(col: Collection) -> dict[int, int]:
     return dict(col.db.all("select id, mod from notes"))
+
+
+def recordings(col: Collection) -> dict[int, list[str]]:
+    """Every [sound:] file every note refers to, across the whole collection.
+
+    The whole collection, not the notes a run means to touch. Every job here
+    already checks its own notes carefully and none of them looks any further,
+    which is exactly the blind spot a thousand recordings went missing through
+    once, between one job and the next, with nothing to say which job it was.
+    """
+    found = {}
+    for note_id, flds in col.db.all("select id, flds from notes"):
+        names = SOUND_TAG.findall(flds or "")
+        if names:
+            found[note_id] = sorted(names)
+    return found
+
+
+def check_recordings_kept(
+    before: dict[int, list[str]], after: dict[int, list[str]], expected: int = 0,
+) -> None:
+    """Refuse to sync when recordings stopped being referenced unintentionally.
+
+    A [sound:] tag that disappears is the quietest damage this can do. The file
+    itself stays in the media folder looking perfectly healthy, the note keeps
+    its scheduling, and nothing is reported - the card simply has no play button
+    any more, and you find out one card at a time over the following month.
+
+    `expected` is how many the run meant to drop. Anything beyond that is a bug,
+    and a bug that has already written to the collection: the only thing left
+    worth doing is not sending it.
+    """
+    lost = 0
+    for note_id, names in before.items():
+        kept = set(after.get(note_id, []))
+        lost += sum(1 for name in names if name not in kept)
+    if lost <= expected:
+        return
+    fail(
+        f"{plural(lost, 'recording')} stopped being referenced and only "
+        f"{expected} should have. Nothing was synced.",
+        "A [sound:] tag that goes missing leaves the recording in the media folder "
+        "and the card silent, which is why this is checked rather than noticed.\n"
+        "Your AnkiWeb collection is untouched.",
+    )
 
 
 def check_add_only(col: Collection, before: dict[int, int], added: int) -> None:
@@ -352,8 +398,13 @@ def main() -> int:
             "play the recording and the synthetic voice. Remove it under Cards -> Back template.")
 
     before = existing_notes(col)
+    before_audio = recordings(col)
     cards = col.add_note(note, deck_id)
     check_add_only(col, before, note.id)
+    # Adding one note cannot take a recording off another one, which is the
+    # point: this is cheap, and it is the only thing standing between a bug
+    # anywhere in here and a collection that goes quiet.
+    check_recordings_kept(before_audio, recordings(col))
     log(f"Added note {note.id} to {args.deck!r} ({cards.count if hasattr(cards, 'count') else ''}).")
 
     media_state = "not synced"

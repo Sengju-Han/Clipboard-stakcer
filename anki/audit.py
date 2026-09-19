@@ -22,12 +22,18 @@ from pathlib import Path
 
 from anki.collection import Collection  # noqa: E402
 
-from add_card import existing_notes, sync_up  # noqa: E402
+from add_card import (  # noqa: E402
+    check_recordings_kept,
+    existing_notes,
+    recordings,
+    sync_up,
+)
 from export_deck import (  # noqa: E402
     SOUND_TAG,
     build_deck_query,
     deck_inventory,
     fail,
+    insist_on_fields,
     log,
     parse_deck_list,
     plural,
@@ -102,7 +108,8 @@ def check_batch(batch: list[dict], checker: str, client) -> list:
     return results
 
 
-def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, applied: bool) -> None:
+def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, applied: bool,
+                 silenced: int = 0) -> None:
     # A correction that replaces the word the card exists for is never applied,
     # so it is reported apart from the ones that would be rather than counted
     # among them. See keeps_the_word.
@@ -149,6 +156,21 @@ def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, a
             lines += [
                 f"- **{row['target']}** — ~~{row['was']}~~ → {row['now']}",
             ]
+    if silenced:
+        # In the report rather than only in the log, because the log is not
+        # what anybody reads on a phone - and because this is the one thing
+        # here that takes something away rather than improving it.
+        lines += [
+            "",
+            f"### {plural(silenced, 'recording')} removed",
+            "",
+            "These sentences carried audio of the wording they used to have, so the "
+            "recording now says something the card does not. The tag was taken off; "
+            "the file itself is untouched in your media folder.",
+            "",
+            "Run **Anki TTS package** to record the corrected sentences. It looks for "
+            "notes with no audio, which is exactly what these are now.",
+        ]
     if not applied and changed:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write these "
                       "back and sync them."]
@@ -200,6 +222,9 @@ def main() -> int:
     decks = deck_inventory(col)
     query = build_deck_query(parse_deck_list(args.deck), decks)
     note_ids = list(col.find_notes(query))
+    # Before anything else: a field name that matches nothing would skip every
+    # note and report a collection with nothing wrong in it.
+    insist_on_fields(col, note_ids, args.field)
     items, skipped = collect(col, note_ids, args.field)
     if args.limit:
         items = items[: args.limit]
@@ -240,25 +265,37 @@ def main() -> int:
     changed = [r for r in rows if r["issues"]]
     log(f"{plural(len(changed), 'sentence')} would change.")
 
+    outcome = {"applied": 0, "silenced": 0, "cards": 0}
     if args.apply and changed:
-        applied = apply_all(col, changed, args.field)
-        log(f"Applied {plural(applied, 'correction')}.")
+        outcome = apply_all(col, changed, args.field)
+        log(f"Applied {plural(outcome['applied'], 'correction')}.")
         if auth:
             sync_up(col, auth)
             log("Synced to AnkiWeb.")
 
     col.close()
-    write_report(rows, skipped, len(rows), out_dir, bool(args.apply and changed))
+    write_report(rows, skipped, len(rows), out_dir, bool(args.apply and changed),
+                 outcome["silenced"])
     return 0
 
 
-def apply_all(col: Collection, changed: list[dict], field: str) -> int:
-    """Write the corrections back, and refuse to sync if anything else moved."""
+def apply_all(col: Collection, changed: list[dict], field: str) -> dict:
+    """Write the corrections back, and refuse to sync if anything else moved.
+
+    Returns what happened: corrections applied, recordings dropped, and the
+    number of cards those came off. The recordings matter to the caller because
+    the report has to say so - taking audio away is the only thing this job
+    does that makes a card worse, and it went unmentioned for months.
+    """
     before_notes = existing_notes(col)
+    before_audio = recordings(col)
     before_cards = {row[0]: row for row in col.db.all(
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
 
-    touched, stale_audio, dropped = [], 0, []
+    # Two counters, not one: a note can hold more than one recording, and the
+    # guard below counts recordings while the warning counts cards. Conflating
+    # them would make a note with two tags look like a recording lost to a bug.
+    touched, stale_audio, stale_tags, dropped = [], 0, 0, []
     for row in changed:
         note_id = col.db.scalar("select id from notes where guid = ?", row["guid"])
         if not note_id:
@@ -273,13 +310,23 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
         if not keeps_the_word(row["was"], row["now"], target):
             dropped.append((target, row["was"], row["now"]))
             continue
+        had = SOUND_TAG.findall(note[field])
         updated, refused = apply_correction(note[field], row["now"])
         if refused or updated == note[field]:
             continue
         # The recording was made from the old wording, so it now says something
         # the card no longer does. Drop it and let the audio workflow remake it.
-        if SOUND_TAG.search(updated):
+        #
+        # Counted from the field as it was, not as it is. apply_correction
+        # keeps the learner's own note after the sentence and nothing else, so
+        # a [sound:] tag sitting on the sentence line is already gone by the
+        # time this line runs - which meant the old check looked at a field
+        # with no tag in it, found none, and counted none. The warning below
+        # has therefore never once been printed, and every correction this job
+        # has ever applied took the card's audio with it in silence.
+        if had:
             updated = SOUND_TAG.sub("", updated).rstrip()
+            stale_tags += len(had)
             stale_audio += 1
         note[field] = updated
         col.update_note(note)
@@ -296,6 +343,11 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
     if after_cards != before_cards:
         fail("Card scheduling moved during the audit, so nothing was synced.")
+    # This one deliberately drops a recording per sentence it corrects, because
+    # the recording says the old wording. Exactly that many, and no more: the
+    # number is the whole check, since a run that quietly took the audio off
+    # everything would otherwise look identical to a run that worked.
+    check_recordings_kept(before_audio, recordings(col), stale_tags)
 
     if dropped:
         log(f"::warning::{plural(len(dropped), 'correction')} would have replaced the word the "
@@ -305,7 +357,7 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
     if stale_audio:
         log(f"::warning::{plural(stale_audio, 'card')} had audio of the old wording. The tag was "
             "removed; re-run the TTS package workflow to record the corrected sentence.")
-    return len(touched)
+    return {"applied": len(touched), "silenced": stale_tags, "cards": stale_audio}
 
 
 if __name__ == "__main__":

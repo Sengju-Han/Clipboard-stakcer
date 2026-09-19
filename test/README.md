@@ -39,7 +39,35 @@ format rather than against this project's own writer.
 | `explain` | the explanation after an Again, and that an explained word costs nothing |
 | `speak` | a conversation from this week's words, with a scripted partner |
 | `apkg_roundtrip` | somebody else's file read, and one written back |
+| `real_server` | the page against the real Worker, with nothing standing between them |
+| `study_ahead` | an evening with nothing due is not a dead end |
+| `timezones` | a card due today is due today, wherever you are |
+| `markup` | a word containing a `<` is a word, not markup |
+| `no_database` | a browser that will not store anything says so, rather than spinning |
+| `account` | a second device, and what the server is handed |
 | `offline` | all of it with the server stopped |
+
+## What is stood in for, and what it cost
+
+Two things, and the difference between them matters.
+
+**Claude**, in every suite that reaches it. The tests must not spend money and
+must not depend on what a model says today.
+
+**The server**, in `account` — and that one is how a real bug got through.
+Playwright's `page.route` answers a request *before* the browser's own CORS
+check runs, so a reply every browser would refuse looks fine to the suite.
+`Access-Control-Allow-Methods` said `GET, POST, OPTIONS` while the vault was
+written with `PUT`; every browser refused the request before it left and
+reported `Failed to fetch`, which is indistinguishable from the server being
+down. Nothing could be saved for a week and every test passed throughout.
+
+So `real_server` exists: the real Worker on a real port through Miniflare, the
+page on a different port so the origins differ the way they do in life, and no
+stub. It skips where node or Miniflare is not installed, because these tests
+have to stay runnable on a machine that has never touched the server — but
+`REQUIRE_REAL_SERVER=1` turns that skip into a failure, and CI sets it. A
+protection that can quietly stop running is not a protection.
 
 The server's own tests are separate and do not need a browser:
 `cd server && npm install && npm test`.

@@ -41,8 +41,17 @@ repository. There is no terminal step.
 5. **Actions → Deploy the Lexis server → Run workflow.**
 
 It prints the address it deployed to, something like
-`https://lexis.<your-name>.workers.dev`. Put that in the app under
-Settings → Account, and make an account.
+`https://lexis.<your-name>.workers.dev`, and says whether that is the address
+the app is built with.
+
+There is no box for it in the app. There is one server and one person using it,
+so asking which one on every sign-in was a question with a single possible
+answer — and getting it wrong, or losing it on a sign-out, looked exactly like
+the whole account being broken. The address is `DEFAULT` in
+[`docs/app/where.js`](../docs/app/where.js); if the deploy says it differs from
+yours, change it there.
+
+Then open the app and make an account.
 
 The workflow applies `schema.sql` before every deploy. Every statement in it is
 `CREATE TABLE IF NOT EXISTS`, so running it again changes nothing.
@@ -50,8 +59,9 @@ The workflow applies `schema.sql` before every deploy. Every statement in it is
 ## Adding your second phone
 
 On the phone that is already signed in: **Settings → Account → Add a phone.**
-It gives you a code like `PG87-TPM7`. On the other phone, put the same server
-address in and type the code. It works once and lasts ten minutes.
+It gives you a code like `PG87-TPM7`. On the other phone, type the code — there
+is no address to enter, because both phones open the same page and the page
+knows where the server is. It works once and lasts ten minutes.
 
 This exists because the alternative is typing a real password on a phone
 keyboard, and a password short enough to be worth typing twice is a password

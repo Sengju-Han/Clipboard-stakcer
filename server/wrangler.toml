@@ -15,7 +15,10 @@ database_id = "03227337-958f-4510-a92e-06b2d47a1ffb"
 # a page on another domain cannot quietly use somebody's session.
 ALLOWED_ORIGIN = "https://sengju-han.github.io"
 
-# Puts the real reason into the 500 instead of "something went wrong". On while
-# a problem is being found, off the rest of the time: an error message is a
-# description of the inside of this, and the inside is nobody else's business.
-DEBUG_ERRORS = "1"
+# Puts the real reason into a 500 for *everybody*, signed in or not.
+#
+# Off. Somebody signed in is told the reason anyway - they own the account the
+# error is about, and there is no log to read from a phone. This flag is only
+# for the one case that cannot cover: a fault that stops anyone signing in, so
+# there is nobody the reason could be told. Turn it on, find it, turn it off.
+DEBUG_ERRORS = "0"

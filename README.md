@@ -95,8 +95,18 @@ python3 -m pytest test/python -q       the workflows that talk to AnkiWeb and to
 cd server && npm install && npm test   the server, against a real D1 through Miniflare
 ```
 
-Nothing is mocked except Claude. The scheduler, the database, the service
-worker and the file formats are the real ones, because every bug worth catching
-here has been in how those behave together rather than in any one of them —
-including the offline suite, which stops the server and means it. See
-[`test/README.md`](test/README.md).
+The scheduler, the database, the service worker and the file formats are the
+real ones, because every bug worth catching here has been in how those behave
+together rather than in any one of them — including the offline suite, which
+stops the server and means it.
+
+Two things are stood in for, and it is worth knowing which. **Claude** is, in
+every suite: the tests must not spend money and must not depend on what a model
+says today. **The server** is, in the account suite — and that stub is how a
+real bug got through. Playwright answers a routed request *before* the
+browser's own CORS check runs, so a reply every browser would refuse looked
+fine to the suite: `Access-Control-Allow-Methods` omitted `PUT` while the vault
+was written with `PUT`, nothing could be saved for a week, and every test
+passed throughout. So one suite now talks to the real Worker on a real port,
+from a page on a different one, with no stub at all — and in CI it is not
+allowed to skip. See [`test/README.md`](test/README.md).

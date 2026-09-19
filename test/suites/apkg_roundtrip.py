@@ -29,6 +29,13 @@ def run(t):
             avow.get("hook"), "vow and a! to the public")
     t.check("its clue came from the front", avow.get("clue"), "공언하다")
     t.truthy("its example came too", "politician" in (avow.get("example") or ""))
+    t.check("the recording of the sentence came with it", avow.get("audio"), "ttsex-avow.mp3")
+    # The note also carries the word said on its own, on the answer field. Only
+    # the first of a note's recordings used to survive being read, so that one
+    # was dropped here and then written back out as though it had never been
+    # there - and the file would sit in the media folder looking healthy.
+    t.check("and so did the one of the word itself",
+            avow.get("audioMore"), ["say-avow.mp3"])
     t.check("it is in the deck it was in", avow.get("deck"), "Testing")
     t.check("a reviewed card arrives reviewed", avow.get("fsrs", {}).get("state"), 2)
     t.truthy("with a stability derived from its interval",
@@ -51,10 +58,16 @@ def run(t):
     cardrows = con.execute("select count() from cards").fetchone()[0]
     version = con.execute("select ver from col").fetchone()[0]
     guids = {g for (g,) in con.execute("select guid from notes")}
+    import re
+    wrote_sounds = []
+    for (flds,) in con.execute("select flds from notes where flds like '%avow%'"):
+        wrote_sounds += re.findall(r"\[sound:[^\]]*\]", flds)
     reviewed = con.execute("select count() from cards where type = 2").fetchone()[0]
     con.close()
 
     t.check("what comes out is a schema 11 collection", version, 11)
+    t.check("both of the recordings are written back", sorted(wrote_sounds), sorted([
+        "[sound:say-avow.mp3]", "[sound:ttsex-avow.mp3]"]))
     t.check("one note per card", notes, cardrows)
     t.check("and every card is in it", notes, len(t.cards()))
     t.truthy("the note ids from the file that was read travel back out",

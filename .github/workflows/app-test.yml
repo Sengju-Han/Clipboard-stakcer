@@ -1,11 +1,20 @@
 name: Test the app
 
+# docs/** rather than docs/app/**. The account suite drives docs/index.html -
+# the Add to Anki page, which holds the GitHub token and the Anthropic key -
+# and that file sat outside the filter, so every change to the page that gave
+# the most trouble ran no tests at all. docs/deck/** is in there for the same
+# reason from the other end: several suites read the published deck, and
+# rebuilding it has broken them before.
+#
+# server/** is in there because one suite now drives the page against the real
+# Worker rather than a stub, so a change to the server can break the app.
 on:
   pull_request:
-    paths: ["docs/app/**", "docs/deck/**", "anki/**", "test/**", ".github/workflows/app-test.yml"]
+    paths: ["docs/**", "anki/**", "test/**", "server/**", ".github/workflows/app-test.yml"]
   push:
     branches: [main]
-    paths: ["docs/app/**", "docs/deck/**", "anki/**", "test/**"]
+    paths: ["docs/**", "anki/**", "test/**", "server/**"]
   workflow_dispatch:
 
 jobs:
@@ -17,14 +26,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install
         run: |
           pip install -r test/requirements.txt -r test/python/requirements.txt
           playwright install --with-deps chromium
+      # The real Worker one suite talks to. Without this that suite skips, and
+      # a skip in CI is the protection quietly going away.
+      - name: Install the server, so there is a real one to talk to
+        working-directory: server
+        run: npm install --no-audit --no-fund
       # The quick ones first: they need no browser and they fail in a tenth of
       # a second, so a broken conversion is not waiting behind a browser
       # download to tell you.
       - name: The Python side
         run: python3 -m pytest test/python -q
       - name: The app in a browser
+        env:
+          REQUIRE_REAL_SERVER: "1"
         run: python3 test/run.py

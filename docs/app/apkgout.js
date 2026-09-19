@@ -251,8 +251,16 @@ export async function buildApkg(cards, reviews = [], { now = Date.now(), media =
     // already resolve. A missing name costs a silent card; a stripped one
     // costs the card its sound forever.
     const hasSound = card.audio && (!card.audioLocal || captured.has(card.audio));
-    const example = [esc(card.example || ""), hasSound ? `[sound:${card.audio}]` : ""]
-      .filter(Boolean).join(" ");
+    // Anything else the note referred to when it was read. Those names came
+    // out of the collection too, so they resolve on the other side; only a
+    // clip captured on this phone can be missing, and there is one of those
+    // at most, which is card.audio above.
+    const alsoSound = Array.isArray(card.audioMore) ? card.audioMore.filter(Boolean) : [];
+    const example = [
+      esc(card.example || ""),
+      ...(hasSound ? [`[sound:${card.audio}]`] : []),
+      ...alsoSound.map((name) => `[sound:${name}]`),
+    ].filter(Boolean).join(" ");
     const front = esc(card.clue || card.word);
     const flds = [front, back, example].join(FIELD_SEP);
 

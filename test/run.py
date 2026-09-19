@@ -35,6 +35,7 @@ SUITES = [
     "explain",           # why a word will not stick
     "speak",             # a conversation out of this week's words
     "apkg_roundtrip",    # somebody else's file, read and written
+    "real_server",       # the page and the server, no stub between them
     "study_ahead",       # an evening with nothing due is not a dead end
     "timezones",         # a card due today is due today, wherever you are
     "markup",            # a word containing a < is a word, not markup
