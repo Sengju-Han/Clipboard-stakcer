@@ -141,6 +141,34 @@ def nearest(token: str, example: str) -> tuple[str, float]:
     return best, score
 
 
+def field_names(col: Collection, note_ids: list[int]) -> set[str]:
+    """Every field name in play, for saying what is there when a name is wrong."""
+    names = set()
+    for note_id in note_ids[:200]:
+        names.update(name for name, _ in col.get_note(note_id).items())
+    return names
+
+
+def insist_on_fields(col: Collection, note_ids: list[int], *wanted: str) -> None:
+    """Stop if a field name matches nothing, rather than reporting an empty deck.
+
+    Getting the name wrong is the likeliest way to run this for nothing: every
+    note is skipped, every count comes out zero, and the report reads as a
+    collection with nothing wrong in it. Which is the same failure as the
+    unjudged run claiming zero misspellings, and wrong in the same direction.
+    """
+    have = field_names(col, note_ids)
+    astray = [name for name in wanted if name and name not in have]
+    if not astray:
+        return
+    fail(
+        f"No note has a field called {', '.join(repr(n) for n in astray)}.",
+        "Nothing was checked. Field names are case-sensitive and this would "
+        "otherwise have reported a collection with nothing wrong in it.\n"
+        "The fields your notes actually have: " + ", ".join(sorted(have)),
+    )
+
+
 def collect(col: Collection, note_ids: list[int], word_field: str, example_field: str):
     """Every card whose word does not appear in its own example."""
     found, skipped = [], {"no word": 0, "no example": 0, "the word is there": 0}
@@ -495,6 +523,7 @@ def main() -> int:
 
     query = build_deck_query(parse_deck_list(args.deck), deck_inventory(col))
     note_ids = list(col.find_notes(query))
+    insist_on_fields(col, note_ids, args.word_field, args.example_field)
     items, skipped = collect(col, note_ids, args.word_field, args.example_field)
     if args.limit:
         items = items[: args.limit]

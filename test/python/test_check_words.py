@@ -577,3 +577,30 @@ def test_a_list_that_fits_says_nothing_extra(tmp_path, monkeypatch):
     words.write_report([{"word": "hidious", "nearest": "hideous"}],
                        {"the word is there": 10}, 11, applied=False, faults={})
     assert "more. The whole list" not in where.read_text(encoding="utf-8")
+
+
+def test_a_field_name_that_matches_nothing_stops_the_run(tmp_path):
+    # The likeliest way to run this for nothing. Every note is skipped, every
+    # count is zero, and the report reads as a collection with nothing wrong
+    # in it - wrong in the same reassuring direction as everything else here.
+    col = _collection(tmp_path, [("a", "hidious", "I'm hideous.")])
+    ids = list(col.find_notes(""))
+
+    with pytest.raises(SystemExit):
+        words.insist_on_fields(col, ids, "Word")       # it is called Back
+    with pytest.raises(SystemExit):
+        words.insist_on_fields(col, ids, "back")       # and names are case-sensitive
+    # The ones that are really there pass.
+    words.insist_on_fields(col, ids, "Back", "Example")
+    assert words.field_names(col, ids) == {"Front", "Back", "Example"}
+    col.close()
+
+
+def test_the_wrong_field_name_says_what_is_there(tmp_path, capsys):
+    col = _collection(tmp_path, [("a", "hidious", "I'm hideous.")])
+    with pytest.raises(SystemExit):
+        words.insist_on_fields(col, list(col.find_notes("")), "Vocabulary")
+    said = capsys.readouterr().out
+    assert "'Vocabulary'" in said
+    assert "Back" in said and "Example" in said and "Front" in said
+    col.close()
