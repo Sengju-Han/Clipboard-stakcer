@@ -293,6 +293,26 @@ check("preflight is answered", pre.status, 204);
 check("and only for the origin the app is served from",
   pre.headers.get("access-control-allow-origin"), "https://example.test");
 
+// The list used to be written out by hand and said "GET, POST, OPTIONS" while
+// the vault was written with PUT. A browser reads that list, refuses the
+// request before it leaves, and reports "Failed to fetch" - which looks exactly
+// like the server being down, and is why nothing could be saved for a week.
+const advertised = new Set(
+  (pre.headers.get("access-control-allow-methods") || "").split(",").map((m) => m.trim()));
+check("every method the routes actually use is advertised",
+  ["GET", "POST", "PUT"].filter((m) => !advertised.has(m)), []);
+note("advertised", [...advertised].join(", "));
+
+// And the one that was refused, end to end through the same path a browser
+// would take: preflight, then the write.
+const put = await mf.dispatchFetch("http://server/api/vault", {
+  method: "OPTIONS",
+  headers: { origin: "https://example.test", "access-control-request-method": "PUT" },
+});
+check("a browser asking to PUT the vault is told it may", put.status, 204);
+check("and told so for its own origin",
+  put.headers.get("access-control-allow-origin"), "https://example.test");
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 await mf.dispose();
 process.exit(failed ? 1 : 0);

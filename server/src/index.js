@@ -36,10 +36,22 @@ const now = () => Date.now();
 
 // ---- plumbing --------------------------------------------------------------
 
+// Read off the routes rather than written out by hand. The hand-written list
+// said "GET, POST, OPTIONS" while the vault was written with PUT, so every
+// attempt to save one was refused by the browser before it left - which arrives
+// as "Failed to fetch", indistinguishable from the server being down.
+function allowedMethods() {
+  const methods = new Set(["OPTIONS"]);
+  for (const route of [...Object.keys(PUBLIC), ...Object.keys(PRIVATE)]) {
+    methods.add(route.split(" ")[0]);
+  }
+  return [...methods].join(", ");
+}
+
 function cors(env, extra = {}) {
   return {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": allowedMethods(),
     "Access-Control-Allow-Headers": "content-type, authorization",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",

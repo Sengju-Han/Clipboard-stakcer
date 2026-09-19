@@ -822,9 +822,31 @@ for (const id of ["gh-token", "gh-owner", "gh-repo"]) {
 // adds a place for the cards to meet, it does not move them anywhere.
 let accountBusy = false;
 
+// Both pages are served from the same origin, so they can share where the
+// server is. Typing it in on one is typing it in for both, and for good: it
+// used to be remembered only as part of a signed-in account, which meant a
+// fresh device, a sign-out, or any attempt that failed left the box empty and
+// the address had to be found again.
+const WHERE = "lexis:server";
+
 function accountBase() {
   return $("acct-base").value.trim();
 }
+
+function rememberWhere() {
+  try { localStorage.setItem(WHERE, $("acct-base").value.trim()); } catch { /* blocked */ }
+}
+
+for (const event of ["input", "change"]) {
+  $("acct-base").addEventListener(event, rememberWhere);
+}
+
+try {
+  // The Add to Anki page writes the same key under its own prefix, so either
+  // one having been used is enough.
+  const known = localStorage.getItem(WHERE) || localStorage.getItem("addcard.acct.server") || "";
+  if (known && !$("acct-base").value) $("acct-base").value = known;
+} catch { /* blocked */ }
 
 async function showAccount() {
   const mod = await part("account");
@@ -832,7 +854,7 @@ async function showAccount() {
   $("acct-in").hidden = !account;
   $("acct-out").hidden = Boolean(account);
   if (account) {
-    $("acct-base").value = account.base;
+    if (account.base) $("acct-base").value = account.base;
     $("acct-who").textContent = account.email ? `Signed in as ${account.email}.` : "Signed in.";
   }
   return mod;

@@ -222,18 +222,19 @@ def run(t):
     # The whole point of one vault rather than two: the review app needs the
     # same GitHub token and the same Anthropic key, and used to ask for them
     # again, separately, on every device.
+    # The same device, not a scrubbed one: this is somebody who set the other
+    # page up a minute ago and now opens the review app.
     t.open_app()
-    t.page.evaluate("() => { try { localStorage.clear(); } catch {} }")
-    t.page.reload()
-    t.page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
-    t.page.wait_for_timeout(900)
     t.open_settings()
 
     t.check("the review app starts with no keys either",
             [t.page.locator("#anthropic").input_value(), t.page.locator("#gh-token").input_value()],
             ["", ""])
+    # The address was typed into the other page. Both are the same origin, so
+    # typing it again here is work nobody should have to do.
+    t.check("but it already knows where the server is",
+            t.page.locator("#acct-base").input_value(), "https://vault.test")
 
-    t.page.locator("#acct-base").fill("https://vault.test")
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill(PASSWORD)
     t.page.locator("#acct-in-btn").click()
