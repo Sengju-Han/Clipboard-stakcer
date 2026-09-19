@@ -1,0 +1,95 @@
+name: Anki check words
+
+# Checks the word each card exists for, which nothing else here ever looks at.
+#
+# The sentence audit deliberately leaves the word alone - a correction that
+# replaces it makes a better sentence and a worthless card - so a card whose
+# word is misspelled has never been checked by anything, and teaches the
+# misspelling every time it comes up.
+#
+# Read-only unless 'apply' is ticked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck name(s), comma-separated. * = the whole collection.'
+        required: false
+        default: '*'
+      word_field:
+        description: 'Field holding the word being practised'
+        required: false
+        default: 'Back'
+      example_field:
+        description: 'Field holding the example sentence'
+        required: false
+        default: 'Example'
+      limit:
+        description: 'Only the first N of the cards that need judging (0 = all)'
+        required: false
+        default: '0'
+      apply:
+        description: 'Write the corrections back and sync. Leave off to just look.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Shares the write lock with the other workflows that sync.
+concurrency:
+  group: anki-write
+  cancel-in-progress: false
+
+jobs:
+  words:
+    name: Check the words
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-tts.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
+
+      - name: Check
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          WORD_FIELD: ${{ inputs.word_field }}
+          EXAMPLE_FIELD: ${{ inputs.example_field }}
+          LIMIT: ${{ inputs.limit }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          FLAGS=""
+          if [ "$APPLY" = "true" ]; then FLAGS="--apply"; fi
+          python anki/check_words.py \
+            --deck "$DECK" \
+            --word-field "$WORD_FIELD" \
+            --example-field "$EXAMPLE_FIELD" \
+            --limit "${LIMIT:-0}" \
+            --out-dir word-check $FLAGS
+
+      - name: Upload the findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: word-check
+          path: |
+            word-check/words.jsonl
+            word-check/before-word-check.colpkg
+          if-no-files-found: ignore
+          retention-days: 14

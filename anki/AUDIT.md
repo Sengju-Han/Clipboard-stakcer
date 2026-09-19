@@ -51,6 +51,45 @@ notes with no audio, which is exactly what those are afterwards.
 > Every correction applied before that date took the card's recording with it
 > in silence. Re-running **Anki TTS package** records them again.
 
+## The word itself
+
+The audit above never touches the word a card exists for. That is deliberate —
+a correction that replaces it makes a better sentence and a worthless card —
+but it means nothing has ever looked at the word, and a card whose *word* is
+misspelled teaches the misspelling every time it comes up.
+
+**Actions → Anki check words → Run workflow**, with *apply* off.
+
+It asks one question per card: does the word turn up in its own example
+sentence? Almost always yes, because the sentence was written separately and
+has the word spelled properly in it. When the answer is no, that is either a
+misspelling —
+
+| on the card | the sentence has |
+| --- | --- |
+| `entiments` | sentiments |
+| `hidious` | hideous |
+| `achipelago` | archipelago |
+| `bone marrorw` | bone marrow |
+| `sraggly` | scraggly |
+
+— or an ordinary thing: `avow` against *he avowed it*, `come full circle`
+against *came full circle*. Both are a letter or two from the word on the card,
+so no rule tells them apart; the ones that are missing get sent to Claude to be
+judged, and nothing else does. On a thousand-card collection that is about
+seven requests.
+
+**A correction is only ever a respelling.** The word on the card is what the
+card is: `entiments` → `sentiments` is a repair, `beatnik` → `hipster` is a
+card with a year of scheduling on it that is now about something else. Anything
+that is not close enough to the original spelling is refused and reported for
+you to decide, whatever the model says. A word carrying formatting is left
+alone for the same reason the audit leaves a formatted sentence alone.
+
+Only the word changes. The sentence is untouched, no recording moves, and the
+same checks run before anything is synced: no note gone, nothing else changed,
+no card's scheduling moved.
+
 ## Resuming
 
 Results are written as each batch lands and cached between runs. A run that
