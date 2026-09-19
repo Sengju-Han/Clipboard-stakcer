@@ -604,3 +604,34 @@ def test_the_wrong_field_name_says_what_is_there(tmp_path, capsys):
     assert "'Vocabulary'" in said
     assert "Back" in said and "Example" in said and "Front" in said
     col.close()
+
+
+def test_a_run_that_stopped_partway_says_how_much_it_did_not_do(tmp_path, monkeypatch):
+    # A failing batch breaks the loop, so a run can end with some words judged
+    # and some not. Those belong to none of the four verdict lists and would
+    # simply vanish from the counts - "quietly incomplete" arriving by another
+    # door.
+    where = tmp_path / "partial.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    rows = [
+        {"word": "hidious", "nearest": "hideous", "verdict": "typo", "corrected": "hideous"},
+        {"word": "avow", "nearest": "avowed", "verdict": "form", "corrected": ""},
+        {"word": "sraggly", "nearest": "scraggly"},        # never reached
+        {"word": "survile", "nearest": "servile"},          # never reached
+    ]
+    words.write_report(rows, {"the word is there": 100}, 110, applied=False)
+    said = where.read_text(encoding="utf-8")
+
+    assert "**2 were not judged at all**" in said
+    assert "Run it again to carry on" in said
+    # And it is not the unjudged layout: two of them were judged.
+    assert "unjudged" not in said.split("\n")[0]
+
+
+def test_a_run_that_finished_says_nothing_about_stopping(tmp_path, monkeypatch):
+    where = tmp_path / "whole.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report(
+        [{"word": "hidious", "nearest": "hideous", "verdict": "typo", "corrected": "hideous"}],
+        {"the word is there": 100}, 110, applied=False)
+    assert "not judged at all" not in where.read_text(encoding="utf-8")

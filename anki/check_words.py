@@ -388,6 +388,11 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
     # were misspelled" when the truth is "not checked". That is the worse of
     # the two wrong answers, because it is the reassuring one.
     judged = any("verdict" in row for row in rows)
+    # A batch that fails stops the loop, so a run can end with some words
+    # judged and some not. Those belong to none of the four lists above and
+    # would simply vanish from the counts - the same "quietly incomplete"
+    # answer, arriving by a different door.
+    unjudged = [r for r in rows if "verdict" not in r]
 
     if not judged:
         lines = [
@@ -420,6 +425,12 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
         f"- Of those: **{len(typos)}** misspelled, **{len(forms)}** the word in another "
         f"form, **{len(fine)}** deliberate",
     ]
+    if unjudged:
+        lines += [
+            f"- **{len(unjudged)} were not judged at all**, because a batch failed and "
+            "the run stopped there. Run it again to carry on from that point — what "
+            "was already judged is in `words.jsonl` under Artifacts.",
+        ]
     if typos:
         lines += ["", "### Misspelled", "",
                   "| on the card | should be | the sentence has |", "|---|---|---|"]
