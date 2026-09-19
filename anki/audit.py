@@ -33,6 +33,7 @@ from export_deck import (  # noqa: E402
     build_deck_query,
     deck_inventory,
     fail,
+    insist_on_fields,
     log,
     parse_deck_list,
     plural,
@@ -221,6 +222,9 @@ def main() -> int:
     decks = deck_inventory(col)
     query = build_deck_query(parse_deck_list(args.deck), decks)
     note_ids = list(col.find_notes(query))
+    # Before anything else: a field name that matches nothing would skip every
+    # note and report a collection with nothing wrong in it.
+    insist_on_fields(col, note_ids, args.field)
     items, skipped = collect(col, note_ids, args.field)
     if args.limit:
         items = items[: args.limit]

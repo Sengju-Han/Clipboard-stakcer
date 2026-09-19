@@ -221,3 +221,19 @@ def test_the_report_says_which_recordings_it_took_away(tmp_path, monkeypatch):
 
     # And keeps quiet when it took nothing.
     assert "recordings removed" not in _report(tmp_path, monkeypatch, rows, silenced=0)
+
+
+def test_a_field_name_that_matches_nothing_stops_the_audit(tmp_path):
+    """The same silent no-op the word check had, in the older job.
+
+    The audit counted it — "Skipped, no field: 1240" — but the headline above
+    that line still read "0 sentences checked, 0 need work", which is the
+    reassuring wrong answer and the one people stop reading at.
+    """
+    col = _collection(tmp_path, [("avow", "He avow it.")])
+    ids = list(col.find_notes(""))
+
+    with pytest.raises(SystemExit):
+        audit.insist_on_fields(col, ids, "Sentence")     # it is called Example
+    audit.insist_on_fields(col, ids, "Example", "Back")  # these are really there
+    col.close()

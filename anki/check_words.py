@@ -44,6 +44,8 @@ from export_deck import (  # noqa: E402
     build_deck_query,
     deck_inventory,
     fail,
+    field_names,
+    insist_on_fields,
     log,
     parse_deck_list,
     plural,
@@ -139,34 +141,6 @@ def nearest(token: str, example: str) -> tuple[str, float]:
         if ratio > score:
             best, score = other, ratio
     return best, score
-
-
-def field_names(col: Collection, note_ids: list[int]) -> set[str]:
-    """Every field name in play, for saying what is there when a name is wrong."""
-    names = set()
-    for note_id in note_ids[:200]:
-        names.update(name for name, _ in col.get_note(note_id).items())
-    return names
-
-
-def insist_on_fields(col: Collection, note_ids: list[int], *wanted: str) -> None:
-    """Stop if a field name matches nothing, rather than reporting an empty deck.
-
-    Getting the name wrong is the likeliest way to run this for nothing: every
-    note is skipped, every count comes out zero, and the report reads as a
-    collection with nothing wrong in it. Which is the same failure as the
-    unjudged run claiming zero misspellings, and wrong in the same direction.
-    """
-    have = field_names(col, note_ids)
-    astray = [name for name in wanted if name and name not in have]
-    if not astray:
-        return
-    fail(
-        f"No note has a field called {', '.join(repr(n) for n in astray)}.",
-        "Nothing was checked. Field names are case-sensitive and this would "
-        "otherwise have reported a collection with nothing wrong in it.\n"
-        "The fields your notes actually have: " + ", ".join(sorted(have)),
-    )
 
 
 def collect(col: Collection, note_ids: list[int], word_field: str, example_field: str):
