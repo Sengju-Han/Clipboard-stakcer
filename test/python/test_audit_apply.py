@@ -62,7 +62,7 @@ def test_a_correction_is_written_and_its_stale_recording_dropped(tmp_path):
         "issues": ["grammar"],
     }]
 
-    assert audit.apply_all(col, changed, "Example") == 1
+    assert audit.apply_all(col, changed, "Example")["applied"] == 1
     assert _example(col, "avow") == "He avowed his support."
     # And the note nobody asked about is untouched, tag and all.
     assert _example(col, "chisel") == "She chiseled the stone. [sound:ttsex-chisel.mp3]"
@@ -120,7 +120,7 @@ def test_a_note_holding_two_recordings_is_not_mistaken_for_a_loss(tmp_path):
         "issues": ["grammar"],
     }]
 
-    assert audit.apply_all(col, changed, "Example") == 1
+    assert audit.apply_all(col, changed, "Example") == {"applied": 1, "silenced": 2, "cards": 1}
     assert _example(col, "avow") == "He avowed it."
     col.close()
 
@@ -136,7 +136,7 @@ def test_a_correction_that_would_take_the_word_away_is_still_refused(tmp_path):
         "issues": ["word choice"],
     }]
 
-    assert audit.apply_all(col, changed, "Example") == 0
+    assert audit.apply_all(col, changed, "Example")["applied"] == 0
     assert _example(col, "avow") == "He avow his support."
     col.close()
 
@@ -162,7 +162,7 @@ def test_the_recording_it_removes_is_actually_reported(tmp_path, capsys):
          "was": "They gleans it.", "now": "They gleaned it.", "issues": ["g"]},
     ]
 
-    assert audit.apply_all(col, changed, "Example") == 2
+    assert audit.apply_all(col, changed, "Example") == {"applied": 2, "silenced": 2, "cards": 2}
     said = capsys.readouterr().out
     assert "2 cards had audio of the old wording" in said, said
     assert "re-run the TTS package workflow" in said
@@ -178,7 +178,7 @@ def test_a_recording_after_the_learners_own_note_is_counted_too(tmp_path, capsys
     changed = [{"guid": _guid(col, "avow"), "target": "avow",
                 "was": "He avow it.", "now": "He avowed it.", "issues": ["g"]}]
 
-    assert audit.apply_all(col, changed, "Example") == 1
+    assert audit.apply_all(col, changed, "Example") == {"applied": 1, "silenced": 1, "cards": 1}
     assert "[sound:" not in _example(col, "avow")
     assert "1 card had audio of the old wording" in capsys.readouterr().out
     col.close()
@@ -190,6 +190,34 @@ def test_a_sentence_with_no_recording_reports_nothing(tmp_path, capsys):
                 "was": "He avow his support.", "now": "He avowed his support.",
                 "issues": ["g"]}]
 
-    assert audit.apply_all(col, changed, "Example") == 1
+    assert audit.apply_all(col, changed, "Example") == {"applied": 1, "silenced": 0, "cards": 0}
     assert "audio of the old wording" not in capsys.readouterr().out
     col.close()
+
+
+_reports = 0
+
+
+def _report(tmp_path, monkeypatch, rows, **kwargs):
+    # A fresh file each time: the job summary is appended to, not overwritten,
+    # so reusing one path would let the first report answer for the second.
+    global _reports
+    _reports += 1
+    where = tmp_path / f"summary-{_reports}.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    audit.write_report(rows, {}, len(rows), tmp_path, applied=True, **kwargs)
+    return where.read_text(encoding="utf-8")
+
+
+def test_the_report_says_which_recordings_it_took_away(tmp_path, monkeypatch):
+    # The log is not what anybody reads on a phone. The job summary is, and it
+    # said nothing about the one thing here that makes a card worse.
+    rows = [{"deck": "English", "target": "avow", "issues": ["grammar"],
+             "was": "He avow it.", "now": "He avowed it."}]
+
+    said = _report(tmp_path, monkeypatch, rows, silenced=3)
+    assert "3 recordings removed" in said
+    assert "Anki TTS package" in said, "it has to say how to get them back"
+
+    # And keeps quiet when it took nothing.
+    assert "recordings removed" not in _report(tmp_path, monkeypatch, rows, silenced=0)

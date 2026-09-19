@@ -107,7 +107,8 @@ def check_batch(batch: list[dict], checker: str, client) -> list:
     return results
 
 
-def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, applied: bool) -> None:
+def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, applied: bool,
+                 silenced: int = 0) -> None:
     # A correction that replaces the word the card exists for is never applied,
     # so it is reported apart from the ones that would be rather than counted
     # among them. See keeps_the_word.
@@ -154,6 +155,21 @@ def write_report(rows: list[dict], skipped: dict, checked: int, out_dir: Path, a
             lines += [
                 f"- **{row['target']}** — ~~{row['was']}~~ → {row['now']}",
             ]
+    if silenced:
+        # In the report rather than only in the log, because the log is not
+        # what anybody reads on a phone - and because this is the one thing
+        # here that takes something away rather than improving it.
+        lines += [
+            "",
+            f"### {plural(silenced, 'recording')} removed",
+            "",
+            "These sentences carried audio of the wording they used to have, so the "
+            "recording now says something the card does not. The tag was taken off; "
+            "the file itself is untouched in your media folder.",
+            "",
+            "Run **Anki TTS package** to record the corrected sentences. It looks for "
+            "notes with no audio, which is exactly what these are now.",
+        ]
     if not applied and changed:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write these "
                       "back and sync them."]
@@ -245,20 +261,28 @@ def main() -> int:
     changed = [r for r in rows if r["issues"]]
     log(f"{plural(len(changed), 'sentence')} would change.")
 
+    outcome = {"applied": 0, "silenced": 0, "cards": 0}
     if args.apply and changed:
-        applied = apply_all(col, changed, args.field)
-        log(f"Applied {plural(applied, 'correction')}.")
+        outcome = apply_all(col, changed, args.field)
+        log(f"Applied {plural(outcome['applied'], 'correction')}.")
         if auth:
             sync_up(col, auth)
             log("Synced to AnkiWeb.")
 
     col.close()
-    write_report(rows, skipped, len(rows), out_dir, bool(args.apply and changed))
+    write_report(rows, skipped, len(rows), out_dir, bool(args.apply and changed),
+                 outcome["silenced"])
     return 0
 
 
-def apply_all(col: Collection, changed: list[dict], field: str) -> int:
-    """Write the corrections back, and refuse to sync if anything else moved."""
+def apply_all(col: Collection, changed: list[dict], field: str) -> dict:
+    """Write the corrections back, and refuse to sync if anything else moved.
+
+    Returns what happened: corrections applied, recordings dropped, and the
+    number of cards those came off. The recordings matter to the caller because
+    the report has to say so - taking audio away is the only thing this job
+    does that makes a card worse, and it went unmentioned for months.
+    """
     before_notes = existing_notes(col)
     before_audio = recordings(col)
     before_cards = {row[0]: row for row in col.db.all(
@@ -329,7 +353,7 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
     if stale_audio:
         log(f"::warning::{plural(stale_audio, 'card')} had audio of the old wording. The tag was "
             "removed; re-run the TTS package workflow to record the corrected sentence.")
-    return len(touched)
+    return {"applied": len(touched), "silenced": stale_tags, "cards": stale_audio}
 
 
 if __name__ == "__main__":
