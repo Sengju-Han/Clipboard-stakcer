@@ -22,7 +22,12 @@ from pathlib import Path
 
 from anki.collection import Collection  # noqa: E402
 
-from add_card import existing_notes, sync_up  # noqa: E402
+from add_card import (  # noqa: E402
+    check_recordings_kept,
+    existing_notes,
+    recordings,
+    sync_up,
+)
 from export_deck import (  # noqa: E402
     SOUND_TAG,
     build_deck_query,
@@ -255,10 +260,14 @@ def main() -> int:
 def apply_all(col: Collection, changed: list[dict], field: str) -> int:
     """Write the corrections back, and refuse to sync if anything else moved."""
     before_notes = existing_notes(col)
+    before_audio = recordings(col)
     before_cards = {row[0]: row for row in col.db.all(
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
 
-    touched, stale_audio, dropped = [], 0, []
+    # Two counters, not one: a note can hold more than one recording, and the
+    # guard below counts recordings while the warning counts cards. Conflating
+    # them would make a note with two tags look like a recording lost to a bug.
+    touched, stale_audio, stale_tags, dropped = [], 0, 0, []
     for row in changed:
         note_id = col.db.scalar("select id from notes where guid = ?", row["guid"])
         if not note_id:
@@ -273,13 +282,23 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
         if not keeps_the_word(row["was"], row["now"], target):
             dropped.append((target, row["was"], row["now"]))
             continue
+        had = SOUND_TAG.findall(note[field])
         updated, refused = apply_correction(note[field], row["now"])
         if refused or updated == note[field]:
             continue
         # The recording was made from the old wording, so it now says something
         # the card no longer does. Drop it and let the audio workflow remake it.
-        if SOUND_TAG.search(updated):
+        #
+        # Counted from the field as it was, not as it is. apply_correction
+        # keeps the learner's own note after the sentence and nothing else, so
+        # a [sound:] tag sitting on the sentence line is already gone by the
+        # time this line runs - which meant the old check looked at a field
+        # with no tag in it, found none, and counted none. The warning below
+        # has therefore never once been printed, and every correction this job
+        # has ever applied took the card's audio with it in silence.
+        if had:
             updated = SOUND_TAG.sub("", updated).rstrip()
+            stale_tags += len(had)
             stale_audio += 1
         note[field] = updated
         col.update_note(note)
@@ -296,6 +315,11 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> int:
         "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards")}
     if after_cards != before_cards:
         fail("Card scheduling moved during the audit, so nothing was synced.")
+    # This one deliberately drops a recording per sentence it corrects, because
+    # the recording says the old wording. Exactly that many, and no more: the
+    # number is the whole check, since a run that quietly took the audio off
+    # everything would otherwise look identical to a run that worked.
+    check_recordings_kept(before_audio, recordings(col), stale_tags)
 
     if dropped:
         log(f"::warning::{plural(len(dropped), 'correction')} would have replaced the word the "

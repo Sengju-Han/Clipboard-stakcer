@@ -239,11 +239,23 @@ def snapshot(col: Collection, note_ids: list[int]) -> dict:
             "select id, nid, did, ord, type, queue, due, ivl, factor, reps, lapses from cards"
         )
     }
+    # Every note's recordings, including the ones this run never looks at. The
+    # checks below are all about the notes in the plan, which is exactly the
+    # blind spot to worry about: a package that quietly stripped the audio off
+    # everything else would pass every one of them.
+    elsewhere = {}
+    for note_id, flds in col.db.all("select id, flds from notes"):
+        if note_id in fields:
+            continue
+        names = SOUND_TAG.findall(flds or "")
+        if names:
+            elsewhere[note_id] = sorted(names)
     return {
         "fields": fields,
         "cards": cards,
         "notes": col.note_count(),
         "notetypes": col.db.scalar("select count() from notetypes"),
+        "elsewhere": elsewhere,
     }
 
 
@@ -469,6 +481,18 @@ def verify(
         check(f"every `{field}` ends with exactly one [sound:] tag", not doubled,
               f"{len(doubled)} with a different count: " + ", ".join(doubled[:5]))
         check("every other field is byte-identical", not bad_other, f"{len(bad_other)} changed")
+
+        # And the notes this run never planned to touch. Their audio is not
+        # this package's business at all, so anything missing here is damage.
+        quieted = []
+        for note_id, names in snap.get("elsewhere", {}).items():
+            flds = col.db.scalar("select flds from notes where id = ?", note_id)
+            kept = set(SOUND_TAG.findall(flds or "")) if flds is not None else set()
+            gone = [name for name in names if name not in kept]
+            if gone:
+                quieted.append(f"{note_id} ({len(gone)})")
+        check("no note outside this run lost a recording", not quieted,
+              f"{len(quieted)} went quiet: " + ", ".join(quieted[:5]))
 
         moved = []
         for row in col.db.all(

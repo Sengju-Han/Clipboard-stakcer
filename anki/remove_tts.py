@@ -21,7 +21,7 @@ from pathlib import Path
 
 from anki.collection import Collection  # noqa: E402
 
-from add_card import sync_up  # noqa: E402
+from add_card import check_recordings_kept, recordings, sync_up  # noqa: E402
 from build_tts_apkg import strip_tts  # noqa: E402
 from export_deck import TTS_DIRECTIVE, fail, log, plural, sync_down, write_summary  # noqa: E402
 
@@ -109,6 +109,7 @@ def main() -> int:
         log(f"Backup written to {target} ({target.stat().st_size // 1024}KB, no media).")
 
     before = notetype_shape(col)
+    before_audio = recordings(col)
     removed = strip_tts(col, [n["id"] for n in speaking_notetypes(col)
                               if not args.notetype or n["name"] == args.notetype])
     after = notetype_shape(col)
@@ -121,6 +122,12 @@ def main() -> int:
         still = [n for n in still if n["name"] == args.notetype]
     if still:
         fail("A {{tts}} directive survived the edit, so nothing was synced.")
+
+    # This edits templates and nothing else, so no note's audio should move at
+    # all. Checked anyway: this job ran in the window a thousand recordings
+    # went missing in, and "it only touches templates" was an argument rather
+    # than a measurement.
+    check_recordings_kept(before_audio, recordings(col))
 
     log("Removed: " + ", ".join(removed))
     if auth:
