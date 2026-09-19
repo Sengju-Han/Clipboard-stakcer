@@ -311,6 +311,18 @@ def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
     return {"applied": len(touched)}
 
 
+def and_the_rest(shown: int, total: int, where: str = "`words.jsonl` under Artifacts") -> list[str]:
+    """Say how many were left out, rather than ending mid-list.
+
+    A report that stops at sixty of a hundred and sixty-seven looks like a
+    report of sixty, and the forty percent nobody is told about are exactly the
+    ones nobody will ever look at.
+    """
+    if total <= shown:
+        return []
+    return ["", f"_…and {total - shown} more. The whole list is in {where}._"]
+
+
 def report_other(faults: dict) -> list[str]:
     """The rule-based findings, which are reported and never acted on."""
     lines = []
@@ -331,16 +343,19 @@ def report_other(faults: dict) -> list[str]:
                   "Two cards for one word means answering it twice for the rest of "
                   "your life, on two separate schedules.", ""]
         lines += [f"- `{row['word']}` — {row['count']} cards" for row in twice[:40]]
+        lines += and_the_rest(40, len(twice))
     if no_example:
         lines += ["", f"### {plural(len(no_example), 'card')} with no example sentence", "",
                   "A word with nothing to hang it on is the hardest kind to keep. The "
                   "audio workflow also has nothing to record for these.", ""]
         lines += [f"- `{row['word']}`" for row in no_example[:40]]
+        lines += and_the_rest(40, len(no_example))
     if no_context:
         lines += ["", f"### {plural(len(no_context), 'card')} whose example is just the word",
                   "", "The sentence is the word again, so there is nothing to remember "
                   "it by — and nothing for the audio workflow to read out but the word.", ""]
         lines += [f"- `{row['word']}`" for row in no_context[:40]]
+        lines += and_the_rest(40, len(no_context))
     if shared:
         lines += ["", f"### {plural(len(shared), 'sentence')} used by two cards or more", "",
                   "Two words mined from one sentence. Reviewing either card shows the "
@@ -348,6 +363,7 @@ def report_other(faults: dict) -> list[str]:
         for row in shared[:40]:
             words_ = ", ".join(f"`{w}`" for w in sorted(set(row["words"])))
             lines.append(f"- {words_} — _{row['sentence'][:70]}_")
+        lines += and_the_rest(40, len(shared))
     if given:
         lines += ["", f"### {plural(len(given), 'card')} whose clue contains the answer", "",
                   "The front of the card says the word it is asking for, so it is "
@@ -355,6 +371,7 @@ def report_other(faults: dict) -> list[str]:
         for row in given[:40]:
             clue = tidy(row["clue"])[:70]
             lines.append(f"- `{row['word']}` — {row['field']}: _{clue}_")
+        lines += and_the_rest(40, len(given))
     return lines
 
 
@@ -386,6 +403,7 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
             lines += ["", "| on the card | the sentence has |", "|---|---|"]
             for row in sorted(rows, key=lambda r: r["word"].lower())[:60]:
                 lines.append(f"| `{row['word']}` | {row.get('nearest', '')} |")
+            lines += and_the_rest(60, len(rows))
         lines += report_other(faults or {})
         write_summary(lines)
         return
@@ -403,8 +421,9 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
     if typos:
         lines += ["", "### Misspelled", "",
                   "| on the card | should be | the sentence has |", "|---|---|---|"]
-        for row in sorted(typos, key=lambda r: r["word"].lower()):
+        for row in sorted(typos, key=lambda r: r["word"].lower())[:80]:
             lines.append(f"| `{row['word']}` | **{row['corrected']}** | {row['nearest']} |")
+        lines += and_the_rest(80, len(typos))
     if refused:
         lines += [
             "", f"### Left alone — {plural(len(refused), 'card')} where the fix is not a respelling",
@@ -416,6 +435,7 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
         ]
         for row in refused[:30]:
             lines.append(f"- `{row['word']}` — {row.get('why', '')} — _{tidy(row['example'])[:80]}_")
+        lines += and_the_rest(30, len(refused))
     if not applied and typos:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write "
                       "these back and sync them."]

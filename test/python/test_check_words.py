@@ -553,3 +553,27 @@ def test_the_report_carries_the_two_new_ones(tmp_path, monkeypatch):
     assert "whose example is just the word" in said and "`ensconce`" in said
     assert "used by two cards or more" in said
     assert "`agility`" in said and "`gymnast`" in said
+
+
+def test_a_list_that_is_cut_short_says_so(tmp_path, monkeypatch):
+    # A report that stops at sixty of a hundred and sixty-seven looks like a
+    # report of sixty, and the rest are exactly the ones nobody looks at.
+    where = tmp_path / "long.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report(
+        [{"word": f"word{i:03d}", "nearest": "x"} for i in range(167)],
+        {"the word is there": 1000}, 1240, applied=False,
+        faults={"no_example": [{"word": f"e{i}"} for i in range(55)]})
+    said = where.read_text(encoding="utf-8")
+
+    assert "…and 107 more" in said, "167 listed 60 at a time leaves 107"
+    assert "…and 15 more" in said, "55 empty cards listed 40 at a time leaves 15"
+    assert "words.jsonl" in said
+
+
+def test_a_list_that_fits_says_nothing_extra(tmp_path, monkeypatch):
+    where = tmp_path / "short.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report([{"word": "hidious", "nearest": "hideous"}],
+                       {"the word is there": 10}, 11, applied=False, faults={})
+    assert "more. The whole list" not in where.read_text(encoding="utf-8")
