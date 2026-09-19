@@ -74,17 +74,19 @@ export async function signIn(base, email, password) {
 // both and is never stored, which is why these take it rather than reading it
 // from somewhere.
 
-export async function pullKeys(password) {
+export async function pullKeys(key, password = "") {
   const account = saved();
   if (!account) throw new Error("Sign in first.");
-  return fetchVault(account.base, account.token, password);
+  return fetchVault(account.base, account.token, key, password);
 }
 
-export async function pushKeys(password, values) {
+export async function pushKeys(key, values) {
   const account = saved();
   if (!account) throw new Error("Sign in first.");
-  return saveVault(account.base, account.token, password, values);
+  return saveVault(account.base, account.token, key, values);
 }
+
+export { vaultKey, keepable, restore } from "./vault.js";
 
 export async function signOut() {
   const account = saved();

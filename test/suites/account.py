@@ -53,9 +53,18 @@ def _fake_server(t):
 def _open(t):
     t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
     t.page.wait_for_selector("#settings", timeout=30000)
-    t.page.evaluate("() => { try { localStorage.clear(); } catch {} }")
+    t.page.evaluate("""() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    }""")
     t.page.reload()
     t.page.wait_for_selector("#settings", timeout=30000)
+
+
+def _panels(t):
+    """Both open. The keys live with the sign-in; the rest lives in Settings."""
+    for panel in ("account", "settings"):
+        t.page.locator(f"#{panel}").evaluate("el => el.open = true")
 
 
 def _fill(t, field, value):
@@ -68,13 +77,13 @@ def run(t):
     _open(t)
 
     # ---- first device ----------------------------------------------------
-    t.page.locator("#settings").evaluate("el => el.open = true")
+    _panels(t)
     _fill(t, "token", TOKEN)
     _fill(t, "anthropic", KEY)
     _fill(t, "owner", "Sengju-Han")
     _fill(t, "repo", "Clipboard-stakcer")
 
-    t.page.locator("#account").evaluate("el => el.open = true")
+    _panels(t)
     _fill(t, "acct-server", "https://vault.test")
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill(PASSWORD)
@@ -101,8 +110,8 @@ def run(t):
     t.check("nor the Anthropic key", KEY in blob, False)
     t.check("nor any recognisable part of them",
             any(part in blob for part in ("github_pat", "sk-ant", "Sengju-Han")), False)
-    t.check("what it got is a versioned, salted box", blob.startswith("v1."), True)
-    t.check("with a salt, a nonce and the ciphertext", len(blob.split(".")), 4)
+    t.check("what it got is a versioned box", blob.startswith("v2."), True)
+    t.check("with a nonce and the ciphertext", len(blob.split(".")), 3)
 
     # A second write must not reuse the nonce, or two versions of the same
     # settings leak their difference.
@@ -114,10 +123,10 @@ def run(t):
     # ---- second device ---------------------------------------------------
     # Same page, nothing remembered: exactly what a new phone sees.
     _open(t)
-    t.page.locator("#settings").evaluate("el => el.open = true")
+    _panels(t)
     t.check("the new device starts with no token", t.page.locator("#token").input_value(), "")
 
-    t.page.locator("#account").evaluate("el => el.open = true")
+    _panels(t)
     _fill(t, "acct-server", "https://vault.test")
     t.page.locator("#acct-email").fill("me@example.test")
     t.page.locator("#acct-pw").fill("the wrong password")
@@ -144,6 +153,51 @@ def run(t):
     t.check("and the branch saved after signing in", t.page.locator("#ref").input_value(), "main")
     t.check("the password box is emptied once it has been used",
             t.page.locator("#acct-pw").input_value(), "")
+
+    # ---- after a reload --------------------------------------------------
+    # The session outlives a reload and the password does not, so a change made
+    # after one used to be dropped without a word: the page looked signed in,
+    # said nothing, and saved nothing. That reads as the whole thing not
+    # working, and it is the case somebody actually meets.
+    before = len(state["seen"])
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(900)
+    _panels(t)
+    t.check("the address is still there after a reload",
+            t.page.locator("#acct-server").input_value(), "https://vault.test")
+    t.check("and so is the email", t.page.locator("#acct-email").input_value(), "me@example.test")
+    t.check("and it is not asking to be unlocked",
+            "locked" in t.page.locator("#acct-who").inner_text(), False)
+
+    _panels(t)
+    _fill(t, "anthropic", "sk-ant-api03-typed-after-a-reload")
+    t.page.wait_for_timeout(2200)
+    t.check("a key changed after a reload is still saved", len(state["seen"]) > before, True)
+    t.note("it said", t.page.locator("#acct-say").inner_text())
+
+    # And the state where it genuinely cannot save says so out loud.
+    t.page.evaluate("() => { try { sessionStorage.clear(); } catch {} }")
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(900)
+    _panels(t)
+    stuck = len(state["seen"])
+    _fill(t, "anthropic", "sk-ant-api03-typed-while-locked")
+    t.page.wait_for_timeout(2200)
+    t.check("but a locked device does not pretend to have saved",
+            len(state["seen"]), stuck)
+    t.truthy("and says it is locked rather than nothing at all",
+             "locked" in t.page.locator("#acct-say").inner_text())
+
+    # Put it back for the rest of the suite.
+    _panels(t)
+    t.page.locator("#acct-pw").fill(PASSWORD)
+    t.page.locator("#acct-in").click()
+    t.page.wait_for_timeout(2500)
+    _fill(t, "anthropic", KEY)
+    t.page.wait_for_timeout(1800)
+
 
     # ---- what is left behind --------------------------------------------
     stored = t.page.evaluate("""() => {

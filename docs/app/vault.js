@@ -14,7 +14,7 @@
 // The salt travels inside the box rather than being remembered anywhere, so a
 // new device fetches exactly one thing and that one thing is enough.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const ITERATIONS = 210000;   // the same figure the server uses for passwords
 
 const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -46,32 +46,64 @@ export function tidy(values) {
   return out;
 }
 
-async function keyFrom(password, salt) {
+async function keyFrom(password, salt, extractable = true) {
   const base = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", hash: "SHA-256", salt, iterations: ITERATIONS },
-    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"],
+    base, { name: "AES-GCM", length: 256 }, extractable, ["encrypt", "decrypt"],
   );
 }
 
-export async function lock(values, password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await keyFrom(password, salt);
-  const plain = new TextEncoder().encode(JSON.stringify(tidy(values)));
-  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
-  return [VERSION, b64(salt), b64(iv), b64(sealed)].join(".");
+/** The key for an account, derived the same way on every device.
+ *
+ * Salted with the email and a tag of its own, so it is not the same value as
+ * the secret that is sent to the server even though both start from the
+ * password. Deterministic on purpose: a key that can be derived again is a key
+ * that can be kept for the session and used after a reload, and a vault that
+ * locks itself every time the page is refreshed is a vault nobody can save to.
+ */
+export function vaultKey(email, password) {
+  const salt = new TextEncoder().encode("lexis-vault|" + String(email || "").trim().toLowerCase());
+  return keyFrom(password, salt);
 }
 
-export async function unlock(blob, password) {
-  const [version, salt, iv, sealed] = String(blob).split(".");
-  if (version !== VERSION) throw new Error("This was locked by a newer version of the page.");
-  const key = await keyFrom(password, unb64(salt));
-  // AES-GCM refuses rather than returning nonsense, so a wrong password throws
-  // here and can be told apart from an empty or damaged vault.
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) }, key, unb64(sealed));
+/** Small enough for sessionStorage, and not the password. */
+export async function keepable(key) {
+  return b64(await crypto.subtle.exportKey("raw", key));
+}
+
+export function restore(text) {
+  return crypto.subtle.importKey(
+    "raw", unb64(text), { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"],
+  );
+}
+
+export async function lock(values, key) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(tidy(values)));
+  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  return [VERSION, b64(iv), b64(sealed)].join(".");
+}
+
+export async function unlock(blob, key, password = "") {
+  const parts = String(blob).split(".");
+  // The first version salted every write separately, which meant the key could
+  // only be had by deriving it again from the password. Those are still read,
+  // and rewritten in the newer shape the next time anything is saved.
+  if (parts[0] === "v1") {
+    if (!password) throw new Error("This vault was made by an older version; sign in again to open it.");
+    const older = await keyFrom(password, unb64(parts[1]));
+    const was = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: unb64(parts[2]) }, older, unb64(parts[3]));
+    return tidy(JSON.parse(new TextDecoder().decode(was)));
+  }
+  if (parts[0] !== VERSION) throw new Error("This was locked by a newer version of the page.");
+  // AES-GCM refuses rather than returning nonsense, so a wrong key throws here
+  // and can be told apart from an empty or damaged vault.
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: unb64(parts[1]) }, key, unb64(parts[2]));
   return tidy(JSON.parse(new TextDecoder().decode(plain)));
 }
 
@@ -93,14 +125,14 @@ async function call(base, path, { token, method = "GET", body = null } = {}) {
 }
 
 /** What is stored, opened. Null when there is nothing stored yet. */
-export async function fetchVault(base, token, password) {
+export async function fetchVault(base, token, key, password = "") {
   const { blob } = await call(base, "/api/vault", { token });
   if (!blob) return null;
-  return unlock(blob, password);
+  return unlock(blob, key, password);
 }
 
-export async function saveVault(base, token, password, values) {
+export async function saveVault(base, token, key, values) {
   await call(base, "/api/vault", {
-    token, method: "PUT", body: { blob: await lock(values, password) },
+    token, method: "PUT", body: { blob: await lock(values, key) },
   });
 }
