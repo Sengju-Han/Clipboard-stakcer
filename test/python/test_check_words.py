@@ -635,3 +635,56 @@ def test_a_run_that_finished_says_nothing_about_stopping(tmp_path, monkeypatch):
         [{"word": "hidious", "nearest": "hideous", "verdict": "typo", "corrected": "hideous"}],
         {"the word is there": 100}, 110, applied=False)
     assert "not judged at all" not in where.read_text(encoding="utf-8")
+
+
+def test_a_second_note_type_is_counted_not_swallowed(tmp_path):
+    """A collection with two note types, which is the ordinary case.
+
+    The deck this was written against has 1,067 cards on one note type and 173
+    on another. A note lacking the field was skipped with no counter at all, so
+    a whole note type could vanish from every number on the report and the
+    report would still look complete.
+    """
+    from anki.collection import Collection
+
+    col = _collection(tmp_path, [("a", "hidious", "I'm hideous.")])
+    other = col.models.new("Different")
+    for name in ("Term", "Usage"):
+        col.models.add_field(other, col.models.new_field(name))
+    template = col.models.new_template("Card 1")
+    template["qfmt"], template["afmt"] = "{{Term}}", "{{Usage}}"
+    col.models.add_template(other, template)
+    col.models.add(other)
+    other = col.models.by_name("Different")
+    for term in ("sraggly", "survile"):
+        note = col.new_note(other)
+        note["Term"], note["Usage"] = term, "a sentence without it"
+        col.add_note(note, col.decks.id("Default"))
+
+    found, skipped = words.collect(col, list(col.find_notes("")), "Back", "Example")
+
+    assert [f["word"] for f in found] == ["hidious"]
+    assert skipped["a note type without these fields"] == 2
+    col.close()
+
+
+def test_the_report_says_a_note_type_was_passed_over(tmp_path, monkeypatch):
+    where = tmp_path / "other-type.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report(
+        [{"word": "hidious", "nearest": "hideous"}],
+        {"the word is there": 1000, "a note type without these fields": 173},
+        1240, applied=False, fields=("Back", "Example"))
+    said = where.read_text(encoding="utf-8")
+
+    assert "173 cards were not looked at at all" in said
+    assert "`Back`" in said and "`Example`" in said
+
+
+def test_nothing_is_said_when_every_note_had_the_fields(tmp_path, monkeypatch):
+    where = tmp_path / "one-type.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report([{"word": "hidious", "nearest": "hideous"}],
+                       {"the word is there": 10, "a note type without these fields": 0},
+                       11, applied=False, fields=("Back", "Example"))
+    assert "not looked at at all" not in where.read_text(encoding="utf-8")

@@ -145,10 +145,16 @@ def nearest(token: str, example: str) -> tuple[str, float]:
 
 def collect(col: Collection, note_ids: list[int], word_field: str, example_field: str):
     """Every card whose word does not appear in its own example."""
-    found, skipped = [], {"no word": 0, "no example": 0, "the word is there": 0}
+    found, skipped = [], {"a note type without these fields": 0, "no word": 0,
+                         "no example": 0, "the word is there": 0}
     for note_id in note_ids:
         note = col.get_note(note_id)
         if word_field not in note or example_field not in note:
+            # A second note type that names its fields differently. Counted,
+            # not skipped in silence: a collection with two note types would
+            # otherwise have a whole one of them vanish from every number on
+            # the report, and the report would look complete.
+            skipped["a note type without these fields"] += 1
             continue
         word = headword(note[word_field])
         example = note[example_field]
@@ -325,6 +331,20 @@ def and_the_rest(shown: int, total: int, where: str = "`words.jsonl` under Artif
     return ["", f"_…and {total - shown} more. The whole list is in {where}._"]
 
 
+def report_elsewhere(skipped: dict, word_field: str = "", example_field: str = "") -> list[str]:
+    """Say when a whole note type was passed over, rather than letting it vanish."""
+    missed = skipped.get("a note type without these fields", 0)
+    if not missed:
+        return []
+    named = " and ".join(f"`{n}`" for n in (word_field, example_field) if n)
+    return [
+        "",
+        f"> **{plural(missed, 'card')} were not looked at at all**, because their "
+        f"note type has no {named or 'such'} field. Run again with the field names "
+        "that note type uses, if you want those checked too.",
+    ]
+
+
 def report_other(faults: dict) -> list[str]:
     """The rule-based findings, which are reported and never acted on."""
     lines = []
@@ -378,7 +398,7 @@ def report_other(faults: dict) -> list[str]:
 
 
 def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
-                 faults: dict | None = None) -> None:
+                 faults: dict | None = None, fields: tuple[str, str] | None = None) -> None:
     typos = [r for r in rows if r.get("verdict") == "typo" and r.get("corrected")]
     refused = [r for r in rows if r.get("verdict") == "typo" and not r.get("corrected")]
     forms = [r for r in rows if r.get("verdict") == "form"]
@@ -411,6 +431,7 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
             for row in sorted(rows, key=lambda r: r["word"].lower())[:60]:
                 lines.append(f"| `{row['word']}` | {row.get('nearest', '')} |")
             lines += and_the_rest(60, len(rows))
+        lines += report_elsewhere(skipped, *(fields or ("", "")))
         lines += report_other(faults or {})
         write_summary(lines)
         return
@@ -452,6 +473,7 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
     if not applied and typos:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write "
                       "these back and sync them."]
+    lines += report_elsewhere(skipped, *(fields or ("", "")))
     lines += report_other(faults or {})
     write_summary(lines)
 
@@ -551,7 +573,8 @@ def main() -> int:
     if not judging:
         log("::notice::No ANTHROPIC_API_KEY, so the words that are missing from their "
             "own sentence are listed but not judged.")
-    write_report(items, skipped, len(note_ids), bool(args.apply and fixes), faults)
+    write_report(items, skipped, len(note_ids), bool(args.apply and fixes), faults,
+                 (args.word_field, args.example_field))
     return 0
 
 
