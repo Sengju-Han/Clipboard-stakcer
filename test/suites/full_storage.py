@@ -78,3 +78,44 @@ def run(t):
         const g = db.transaction('log').objectStore('log').getAll(); g.onsuccess = () => r(g.result.length); });
     }""")
     t.check("and the answer was written down this time", after, 1)
+
+    _on_the_add_screen(t)
+
+
+def _on_the_add_screen(t):
+    """The same failure somewhere the review footer cannot be seen.
+
+    The warning started life in the review footer, which is the one place a
+    card is answered — and the wrong place for every other write. Adding a
+    card, editing one and syncing all write too, and would have reported into
+    an element on a screen nobody was looking at.
+    """
+    t.page.locator("#quit-btn").click()
+    t.page.wait_for_timeout(400)
+    before = len(t.cards())
+
+    t.page.locator("#add-btn").click()
+    t.page.wait_for_timeout(500)
+    t.check("the add screen is open", t.screen(), "screen-add")
+
+    t.page.locator("#a-word").fill("wharfinger")
+    t.page.locator("#a-clue").fill("부두 관리인")
+    t.page.locator("#a-example").fill("The wharfinger logged every crate.")
+    _fail_writes_to(t, "cards")
+    t.page.locator("#add-form button[type=submit]").click()
+    t.page.wait_for_timeout(1000)
+
+    said = t.page.locator("#write-note")
+    t.check("a card that could not be saved says so, on this screen too",
+            said.is_visible(), True)
+    t.check("and does not claim the card was added",
+            "added to" in t.page.locator("#add-note").inner_text(), False)
+    t.check("because it was not", len(t.cards()), before)
+
+    _stop_failing(t)
+    t.page.locator("#add-form button[type=submit]").click()
+    t.page.wait_for_timeout(1000)
+    t.truthy("and adding works once there is room",
+             "added to" in t.page.locator("#add-note").inner_text())
+    t.check("the warning is gone", said.is_visible(), False)
+    t.check("and the card is really there", len(t.cards()), before + 1)

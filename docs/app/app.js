@@ -311,17 +311,15 @@ async function undo() {
   offerUndo();
   if (!step) return;
 
-  try {
+  if (!await writing(async () => {
     await store.unrecord(step.log.at);
     await store.saveCard(step.before);
-  } catch (err) {
-    // Put it back on the stack: the undo did not happen, so it is still owed.
+  })) {
+    // Back on the stack: the undo did not happen, so it is still owed.
     undoable.push(step);
     offerUndo();
-    sayWrite(whyItDidNotSave(err));
     return;
   }
-  sayWrite("");
 
   const i = cache.findIndex((c) => c.id === step.before.id);
   if (i >= 0) cache[i] = step.before;
@@ -382,6 +380,22 @@ addEventListener("unhandledrejection", (event) => {
 });
 
 
+// Every write goes through here, so no path can quietly grow back the silence.
+// Returns whether it worked, and callers stop when it did not: nothing after a
+// failed write is true any more.
+async function writing(doIt) {
+  try {
+    await doIt();
+    sayWrite("");
+    return true;
+  } catch (err) {
+    console.error("write failed", err);
+    sayWrite(whyItDidNotSave(err));
+    return false;
+  }
+}
+
+
 async function grade(rating) {
   if (!current) return;
   const wasNew = current.fsrs.state === State.New;
@@ -391,17 +405,13 @@ async function grade(rating) {
 
   // The log first: an answer that was given and not scheduled can be replayed,
   // a schedule with no answer behind it cannot be explained.
-  try {
+  // Nothing below this runs if it fails, so the card is still up and the
+  // session still owes it - rather than advancing past an answer that was
+  // never written down.
+  if (!await writing(async () => {
     await store.record(log);
     await store.saveCard(card);
-  } catch (err) {
-    // Nothing below this line has run, so the card is still up and the session
-    // still owes it. Say so and stop, rather than advancing past an answer
-    // that was never written down.
-    sayWrite(whyItDidNotSave(err));
-    return;
-  }
-  sayWrite("");
+  })) return;
   if (wasNew) noteIntroduced();
 
   const i = cache.findIndex((c) => c.id === card.id);
@@ -608,7 +618,7 @@ $("leech-fix").addEventListener("click", () => current && openEdit(current.id, "
 $("leech-rest").addEventListener("click", async () => {
   if (!current) return;
   const updated = { ...current, restUntil: new Date(Date.now() + 14 * 86400000).toISOString() };
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   // The Again put a copy back at the end of the session; a card being rested
@@ -1158,7 +1168,7 @@ $("edit-rest").addEventListener("click", async () => {
   if (!editing) return;
   const wake = resting(editing) ? "" : new Date(Date.now() + 14 * 86400000).toISOString();
   const updated = { ...editing, restUntil: wake };
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   editing = updated;
@@ -1186,7 +1196,7 @@ $("edit-form").addEventListener("submit", async (event) => {
     deck: $("e-deck").value.trim() || editing.deck,
   };
 
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   editing = updated;
@@ -1196,7 +1206,7 @@ $("edit-form").addEventListener("submit", async (event) => {
 $("edit-delete").addEventListener("click", async () => {
   if (!editing) return;
   if (!confirm(`Delete "${editing.word}"? Its review history goes with it, and that cannot be undone.`)) return;
-  await store.deleteCard(editing.id);
+  if (!await writing(() => store.deleteCard(editing.id))) return;
   cache = cache.filter((c) => c.id !== editing.id);
   editing = null;
   openBrowse();
@@ -1275,7 +1285,7 @@ $("add-form").addEventListener("submit", async (event) => {
     reviewedHere: 0,
   };
 
-  await store.saveCard(card);
+  if (!await writing(() => store.saveCard(card))) return;
   cache.push(card);
 
   // Mined from a transcript: go straight back to it, and to a line where that
