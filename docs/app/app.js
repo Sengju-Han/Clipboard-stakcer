@@ -728,12 +728,70 @@ $("stats-close").addEventListener("click", goHome);
 // other device has and this one does not simply arrives.
 let syncing = false;
 
-$("anthropic").addEventListener("change", (e) => prefs.write({ anthropic: e.target.value.trim() }));
+// Held only while the page is open, and never written down. A reload leaves
+// the session but not this, which is why signing in again is what reopens the
+// box rather than something happening silently in the background.
+let vaultPassword = "";
+
+const AS_VAULT = {
+  anthropic: "anthropic", ghToken: "githubToken",
+  ghOwner: "githubOwner", ghRepo: "githubRepo",
+};
+
+// Pushing on every keystroke would be a request per character; pushing on
+// nothing would quietly lose the change somebody just made.
+let keysTimer = 0;
+function keysToAccount() {
+  if (!vaultPassword) return;
+  clearTimeout(keysTimer);
+  keysTimer = setTimeout(async () => {
+    try {
+      const settings = prefs.read();
+      const mod = await part("account");
+      await mod.pushKeys(vaultPassword, Object.fromEntries(
+        Object.entries(AS_VAULT).map(([mine, theirs]) => [theirs, settings[mine] || ""])));
+      $("acct-note").textContent = "Keys saved to your account.";
+    } catch (err) {
+      $("acct-note").textContent = `Keys not saved: ${err.message}`;
+    }
+  }, 800);
+}
+
+async function keysFromAccount(password, say) {
+  const mod = await part("account");
+  const values = await mod.pullKeys(password);
+  vaultPassword = password;
+  if (!values) {
+    // Nothing stored yet, so what this device has becomes the first version
+    // rather than being wiped by an empty one.
+    keysToAccount();
+    return "and this device's keys are now the ones on your account";
+  }
+  const patch = {};
+  for (const [mine, theirs] of Object.entries(AS_VAULT)) {
+    if (values[theirs]) patch[mine] = values[theirs];
+  }
+  if (!Object.keys(patch).length) return "there were no keys stored yet";
+  prefs.write(patch);
+  const settings = prefs.read();
+  $("anthropic").value = settings.anthropic;
+  $("gh-token").value = settings.ghToken;
+  $("gh-owner").value = settings.ghOwner;
+  $("gh-repo").value = settings.ghRepo;
+  say?.("");
+  return `and your ${Object.keys(patch).length === 1 ? "key is" : "keys are"} back`;
+}
+
+$("anthropic").addEventListener("change", (e) => {
+  prefs.write({ anthropic: e.target.value.trim() });
+  keysToAccount();
+});
 
 for (const id of ["gh-token", "gh-owner", "gh-repo"]) {
   $(id).addEventListener("change", (e) => {
     const key = { "gh-token": "ghToken", "gh-owner": "ghOwner", "gh-repo": "ghRepo" }[id];
     prefs.write({ [key]: e.target.value.trim() });
+    keysToAccount();
   });
 }
 
@@ -775,16 +833,30 @@ async function account(what, run) {
 }
 
 $("acct-new-btn").addEventListener("click", () => account("Creating the account…", async (mod, say) => {
-  const out = await mod.register(accountBase(), $("acct-email").value.trim(), $("acct-pw").value);
+  const password = $("acct-pw").value;
+  const out = await mod.register(accountBase(), $("acct-email").value.trim(), password);
   $("acct-pw").value = "";
-  say(`Account created for ${out.email}. Sync to send this deck up.`);
+  const keys = await withKeys(password);
+  say(`Account created for ${out.email} — ${keys}. Sync to send this deck up.`);
 }));
 
 $("acct-in-btn").addEventListener("click", () => account("Signing in…", async (mod, say) => {
-  const out = await mod.signIn(accountBase(), $("acct-email").value.trim(), $("acct-pw").value);
+  const password = $("acct-pw").value;
+  const out = await mod.signIn(accountBase(), $("acct-email").value.trim(), password);
   $("acct-pw").value = "";
-  say(`Signed in as ${out.email}.`);
+  const keys = await withKeys(password);
+  say(`Signed in as ${out.email} — ${keys}.`);
 }));
+
+// The deck is the point and the keys are a convenience, so a vault that will
+// not open says so and leaves the sign-in standing rather than undoing it.
+async function withKeys(password) {
+  try {
+    return await keysFromAccount(password);
+  } catch (err) {
+    return `but the stored keys would not open (${err.message})`;
+  }
+}
 
 $("acct-claim-btn").addEventListener("click", () => account("Using the code…", async (mod, say) => {
   const who = await mod.usePairCode(accountBase(), $("acct-code").value.trim());
