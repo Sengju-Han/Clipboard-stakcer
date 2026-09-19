@@ -8,6 +8,7 @@ is a hard thing to read, and the only feedback is a push.
 This asks the questions GitHub would, on the way in.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -71,6 +72,29 @@ def test_actions_are_pinned(path):
             uses = step.get("uses")
             if uses and not uses.startswith("./"):
                 assert "@" in uses, f"{path.name} uses `{uses}` without a version"
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=_ids(WORKFLOWS))
+def test_an_if_reads_env_from_the_job_not_the_step(path):
+    """`if: env.X` sees the job's env, never the step's own.
+
+    A step that sets X in its own `env:` and asks about it in its `if:` gets an
+    empty string every time, so the step never runs - and nothing is logged,
+    because as far as Actions is concerned the condition was simply false. It is
+    the same silent shape as the invalid permission above: no error, no step, no
+    clue. The fix is always to declare it at job level, which is why this asks.
+    """
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for job_name, job in loaded.get("jobs", {}).items():
+        at_job = set((job.get("env") or {}).keys()) | set((loaded.get("env") or {}).keys())
+        for step in job.get("steps", []):
+            asked = re.findall(r"\benv\.([A-Za-z_][A-Za-z0-9_]*)", str(step.get("if", "")))
+            for name in asked:
+                assert name in at_job, (
+                    f"{path.name}: the step '{step.get('name', '?')}' asks about "
+                    f"env.{name} in its `if`, but {name} is not set on the job. "
+                    f"A step's own env: is not visible there, so this reads as empty "
+                    f"and the step never runs.")
 
 
 def test_there_are_workflows_to_check():

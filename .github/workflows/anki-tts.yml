@@ -39,6 +39,10 @@ on:
         description: 'Only the first N notes (0 = all). Useful for a first look.'
         required: false
         default: '0'
+      drive_folder:
+        description: 'Folder in your Google Drive. Made if it is not there.'
+        required: false
+        default: 'Anki audio'
       confirm_public:
         description: 'Tick only if this repo is PUBLIC and you accept that the package is public too'
         required: false
@@ -57,6 +61,10 @@ jobs:
     name: Build the .apkg
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # At job level so the steps below can ask whether Drive is connected. A
+    # secret cannot be tested directly in an `if`.
+    env:
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
 
     steps:
       - name: Check out the scripts
@@ -112,6 +120,39 @@ jobs:
             --voice "$VOICE" \
             --limit "${LIMIT:-0}" \
             --out-dir tts-build $FLAGS
+
+      # Straight into Drive, where a phone can open it and hand it to Anki. The
+      # artifact below stays as well: it costs nothing, and a run where Drive is
+      # having a bad day should still leave the package somewhere.
+      #
+      # Named files rather than the folder, because tts-build also holds the
+      # audio cache - some thousands of mp3 files that are a means, not a
+      # result, and have no business in anybody's Drive.
+      - name: Put it in Google Drive
+        if: ${{ !inputs.dry_run && env.GOOGLE_REFRESH_TOKEN != '' }}
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          # Passed as an environment variable, never interpolated into the shell.
+          FOLDER: ${{ inputs.drive_folder || 'Anki audio' }}
+        run: |
+          python anki/to_drive.py \
+            --file tts-build/tts-update.apkg \
+            --file tts-build/manifest.jsonl \
+            --folder "$FOLDER" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Say how to turn that on
+        if: ${{ !inputs.dry_run && env.GOOGLE_REFRESH_TOKEN == '' }}
+        run: |
+          {
+            echo "### The package is in the artifacts below"
+            echo ""
+            echo "Run **Connect Google Drive** once and it will go straight into your"
+            echo "Drive instead. On a phone that is the difference between tapping the"
+            echo "file and unzipping an artifact by hand."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the package
         if: ${{ !inputs.dry_run }}
