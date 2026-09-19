@@ -40,6 +40,13 @@ offered for download.
    **anki-tts-package** under *Artifacts* and unzip it; `tts-update.apkg` is
    inside.
 
+Set *deck* to `*` for the whole collection. That is also how to get back
+recordings that went missing: this only records notes that have no audio, so a
+run over everything fills in whatever is silent and leaves the rest alone. The
+sentence audit removes a recording whenever it corrects the sentence it was
+made from — and until 19 September 2026 it did that without saying so, so a
+collection audited before then has silent cards nobody was told about.
+
 Tick *dry_run* to see what a deck would produce — how many files, how many
 characters — without generating anything.
 

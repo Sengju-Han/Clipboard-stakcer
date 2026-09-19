@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       deck:
-        description: 'Deck name(s), comma-separated. Start with one small deck.'
+        description: 'Deck name(s), comma-separated. * = the whole collection. Start with one small deck.'
         required: false
         default: 'Steve Jobs'
       field:
