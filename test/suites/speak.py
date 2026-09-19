@@ -56,11 +56,6 @@ def run(t):
     t.page.wait_for_timeout(2000)
     t.truthy("what they said is on screen",
              target in t.page.locator("#t-log .bubble.me").last.inner_text())
-    # The word they used, not a count of one. The six are drawn at random from
-    # the deck, and two of them can legitimately both be ticked by one sentence:
-    # saying "chiseled" uses "chisel" as well, and both were targets. Counting
-    # made that a failure about four runs in a hundred, which is exactly often
-    # enough to look like something else.
     # The matcher itself, on the words that used to defeat it. Deterministic,
     # unlike the six drawn at random above: a hyphen survived in the word and
     # not in the sentence, so the regex could never match, and saying one of
@@ -73,12 +68,28 @@ def run(t):
     }""")
     t.check("every awkward word matches itself",
             [w for w, hit in matched if not hit], [])
+    # A machine chooses how to spell an accent, and a card should not depend on
+    # which way it chose: a recogniser writes "seance" where a subtitle writes
+    # "séance". Before accents were folded the word tidied to "s ance", which
+    # needed the sentence to contain a lone "s" — so the card ticked off or did
+    # not according to how the transcription happened to come out.
+    t.check("an accent is a spelling, not a different word",
+            t.page.evaluate("""async () => {
+              const { spotted } = await import("./talk.js");
+              return ["seance", "s\u00e9ance"].map((w) => spotted("we went to a " + w, "s\u00e9ance"));
+            }"""), [True, True])
+
     t.truthy("and a word that was not said does not match",
              not t.page.evaluate("""async () => {
                const { spotted } = await import("./talk.js");
                return spotted("Well I would say nothing about that", "tie-dye");
              }"""))
 
+    # The word they used, not a count of one. The six are drawn at random from
+    # the deck, and two of them can legitimately both be ticked by one sentence:
+    # saying "chiseled" uses "chisel" as well, and both were targets. Counting
+    # made that a failure about four runs in a hundred, which is exactly often
+    # enough to look like something else.
     ticked = [x.strip().lstrip("\u2713").strip()
               for x in t.page.locator("#t-words .chip.on").all_inner_texts()]
     t.truthy(f"the word they used is ticked off ({target})", target in ticked)

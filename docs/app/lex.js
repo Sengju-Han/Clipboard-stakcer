@@ -96,6 +96,12 @@ function stripSuffix(word) {
 export function normalise(raw) {
   return String(raw || "").toLowerCase()
     .replace(/[’]/g, "'")
+    // An accent is a spelling, not a different word. A subtitle writes
+    // "séance" and a speech recogniser writes "seance", and a card for one
+    // should be found by the other. Decompose, drop the combining marks,
+    // recompose - the last step matters, because NFD also takes Hangul apart
+    // and every Korean clue in this deck would come back as loose jamo.
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC")
     .replace(/^['-]+|['-]+$/g, "");
 }
 

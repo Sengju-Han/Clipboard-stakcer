@@ -137,7 +137,14 @@ export function targets(cards, n = 6, now = Date.now()) {
 // verb counts however it was split. Claude is asked the same question and is
 // better at it; this is the check that runs when Claude says nothing.
 export function spotted(said, word) {
-  const tidy = (text) => String(text).toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ");
+  // Accents fold before the a-z filter, or they become spaces and split the
+  // word: "séance" tidied to "s ance", which then needed the sentence to
+  // contain a lone "s" to match. It did when the sentence also carried the
+  // accent, and did not when the recogniser wrote "seance" - so the card
+  // worked or failed depending on how a machine chose to spell it.
+  const tidy = (text) => String(text).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC")
+    .replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ");
   const text = ` ${tidy(said)} `;
   // The word is tidied the same way the sentence is. It used to be split on
   // whitespace alone, so a hyphen survived in the word and not in the text:

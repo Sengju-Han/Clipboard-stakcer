@@ -195,3 +195,14 @@ def _every_word_in_the_deck_is_seen(t):
     t.note("checked", f"{missed['total']} cards")
     t.check("every word in the deck is recognised when it is said",
             missed["missed"][:10], [])
+
+    # And however the accent was written. A subtitle file spells it "séance";
+    # plenty spell it "seance". One card, either spelling.
+    t.check("an accent is a spelling, not a different word",
+            t.page.evaluate("""async () => {
+              const { index, read } = await import("./lex.js");
+              const idx = index([{ word: "s\u00e9ance", fsrs: { state: 2, stability: 30 } }], []);
+              return ["s\u00e9ance", "seance"].map((w) =>
+                read("We went to a " + w + " last night.", idx)
+                  .tokens.some((tok) => tok.word && tok.card));
+            }"""), [True, True])
