@@ -13,7 +13,7 @@
 // answered on a train.
 
 import {
-  derive, hashPassword, checkPassword, newToken, tokenHash, id, pairingCode,
+  hashPassword, checkPassword, newToken, tokenHash, id, pairingCode,
 } from "./crypto.js";
 
 const SESSION_DAYS = 90;
@@ -27,7 +27,10 @@ const MAX_PER_ADDRESS = 60;
 const LOCKOUT_MINUTES = 15;
 const MAX_BODY = 12 * 1024 * 1024;   // a 1,200-card push is about 2MB
 const BATCH = 100;                   // statements per D1 batch
-const MIN_PASSWORD = 10;
+// What arrives instead of a password: 32 bytes, base64. The length of the
+// password behind it is the browser's business to check, because the browser is
+// the only side that can see it.
+const SECRET_CHARS = 44;
 
 const now = () => Date.now();
 
@@ -97,6 +100,12 @@ async function startSession(env, userId, device = "") {
 // one person on a shared network lock out everyone else; counting only by email
 // lets somebody work through a list of emails from one machine unhindered.
 
+// Shape only. It cannot tell a real derivation from 32 random bytes, and does
+// not need to: what it catches is an older app still sending a password, which
+// would otherwise be hashed as if it were a secret and quietly accepted.
+const looksLikeSecret = (value) =>
+  typeof value === "string" && value.length === SECRET_CHARS && /^[A-Za-z0-9+/]+=*$/.test(value);
+
 const limitFor = (key) => (key.startsWith("ip:") ? MAX_PER_ADDRESS : MAX_PER_EMAIL);
 
 async function blocked(env, keys) {
@@ -136,14 +145,15 @@ function emailLooksReal(email) {
 }
 
 async function register(request, env) {
-  const { email: raw, password } = await body(request);
+  const { email: raw, secret } = await body(request);
   const email = tidyEmail(raw);
   if (!emailLooksReal(email)) return fail(env, 400, "That does not look like an email address.");
-  if (String(password || "").length < MIN_PASSWORD) {
-    return fail(env, 400, `A password needs at least ${MIN_PASSWORD} characters. Length is what matters; a short phrase beats a mangled word.`);
+  if (!looksLikeSecret(secret)) {
+    return fail(env, 400, "That was not a derived secret. Update the app: it is supposed to do "
+      + "the password hashing itself and send the result, and this server never takes a password.");
   }
 
-  const { hash, salt, iterations } = await hashPassword(password);
+  const { hash, salt, iterations } = await hashPassword(secret);
   const userId = id();
   try {
     await env.DB.prepare(
@@ -158,7 +168,7 @@ async function register(request, env) {
 }
 
 async function login(request, env) {
-  const { email: raw, password } = await body(request);
+  const { email: raw, secret } = await body(request);
   const email = tidyEmail(raw);
   const address = request.headers.get("cf-connecting-ip") || "unknown";
   const keys = [`email:${email}`, `ip:${address}`];
@@ -174,7 +184,7 @@ async function login(request, env) {
 
   // The same answer whether the email is unknown or the password is wrong:
   // telling them apart turns this into a way to find out who has an account.
-  if (!user || !(await checkPassword(String(password || ""), user))) {
+  if (!user || !looksLikeSecret(secret) || !(await checkPassword(String(secret), user))) {
     await noteFailure(env, keys);
     return fail(env, 401, "That email and password do not match.");
   }
@@ -367,7 +377,7 @@ export default {
       }
       try {
         const started = Date.now();
-        await derive("a password to time it with", new Uint8Array(16));
+        await hashPassword("a secret to time the hashing with");
         report.hash_ms = Date.now() - started;
       } catch (err) {
         report.ok = false;

@@ -38,6 +38,23 @@ const statements = schema
   .split(";").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
 for (const stmt of statements) await db.exec(stmt + ";");
 
+// The same derivation the browser does, so what these tests send is what a
+// real client sends. If the two ever drift apart, every sign-in fails and this
+// is the file that should notice.
+const secretFor = async (email, password) => {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2", hash: "SHA-256",
+      salt: new TextEncoder().encode(String(email || "").trim().toLowerCase()),
+      iterations: 210000,
+    }, key, 256,
+  );
+  return Buffer.from(bits).toString("base64");
+};
+
 const call = async (method, path, { token = "", body = null, headers = {} } = {}) => {
   const res = await mf.dispatchFetch(`http://server${path}`, {
     method,
@@ -54,53 +71,66 @@ const call = async (method, path, { token = "", body = null, headers = {} } = {}
 };
 
 console.log("\n— registering —");
-let r = await call("POST", "/api/register", { body: { email: "A@Example.test ", password: "correct horse battery" } });
+let r = await call("POST", "/api/register", { body: { email: "A@Example.test ", secret: await secretFor("A@Example.test ", "correct horse battery") } });
 check("a new account is created", r.status, 200);
 const token = r.payload.token;
 check("the email is stored tidied", r.payload.email, "a@example.test");
 note("token length", token.length);
 
-r = await call("POST", "/api/register", { body: { email: "a@example.test", password: "another long one" } });
+r = await call("POST", "/api/register", { body: { email: "a@example.test", secret: await secretFor("a@example.test", "another long one") } });
 check("the same email twice is refused", [r.status, r.payload.error], [409, "There is already an account with that email."]);
 
-r = await call("POST", "/api/register", { body: { email: "b@example.test", password: "short" } });
-check("a short password is refused", r.status, 400);
+// Password length is the browser's to check now, because the browser is the
+// only side that ever sees a password. What this side must refuse is anything
+// that is not a derived secret - above all an older app still sending the
+// password itself, which would otherwise be hashed as though it were one and
+// quietly accepted, at a thousand rounds instead of two hundred thousand.
+r = await call("POST", "/api/register", { body: { email: "b@example.test", password: "a long enough password" } });
+check("a password sent where a secret belongs is refused", r.status, 400);
 note("said", r.payload.error);
+r = await call("POST", "/api/register", { body: { email: "b@example.test", secret: "not base64 and far too short" } });
+check("and so is anything the wrong shape", r.status, 400);
+r = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
+check("signing in with a raw password does not work either", r.status, 401);
 
-r = await call("POST", "/api/register", { body: { email: "not-an-email", password: "correct horse battery" } });
+r = await call("POST", "/api/register", { body: { email: "not-an-email", secret: await secretFor("not-an-email", "correct horse battery") } });
 check("a bad address is refused", r.status, 400);
 
 console.log("\n— what is stored —");
 const row = await db.prepare("SELECT email, pw_hash, pw_salt, iterations FROM users WHERE email = ?")
   .bind("a@example.test").first();
 check("the password itself is not in the database", row.pw_hash.includes("correct"), false);
-check("the iteration count is recorded", row.iterations, 210000);
+check("the iteration count is recorded", row.iterations, 1000);
+// The number above is small on purpose and only safe because of the number
+// below: what it hashes is already 256 bits of derived secret, not a password.
+check("and the browser did the expensive part",
+  (await secretFor("a@example.test", "correct horse battery")).length, 44);
 note("hash", row.pw_hash.slice(0, 24) + "…");
 const sess = await db.prepare("SELECT token_hash FROM sessions").first();
 check("the session token is not stored either", sess.token_hash === token, false);
 
 console.log("\n— signing in —");
-r = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
+r = await call("POST", "/api/login", { body: { email: "a@example.test", secret: await secretFor("a@example.test", "correct horse battery") } });
 check("the right password works", r.status, 200);
 const second = r.payload.token;
 check("and gives a different token to the first device", second === token, false);
 
-r = await call("POST", "/api/login", { body: { email: "a@example.test", password: "wrong" } });
+r = await call("POST", "/api/login", { body: { email: "a@example.test", secret: await secretFor("a@example.test", "wrong") } });
 check("the wrong password is refused", r.status, 401);
-const unknownSaid = (await call("POST", "/api/login", { body: { email: "nobody@example.test", password: "wrong" } })).payload.error;
+const unknownSaid = (await call("POST", "/api/login", { body: { email: "nobody@example.test", secret: await secretFor("nobody@example.test", "wrong") } })).payload.error;
 check("an unknown email says exactly the same thing", unknownSaid, r.payload.error);
 
 console.log("\n— slowing down guessing —");
 for (let i = 0; i < 8; i += 1) {
-  await call("POST", "/api/login", { body: { email: "c@example.test", password: "no" } });
+  await call("POST", "/api/login", { body: { email: "c@example.test", secret: await secretFor("c@example.test", "no") } });
 }
-r = await call("POST", "/api/login", { body: { email: "c@example.test", password: "no" } });
+r = await call("POST", "/api/login", { body: { email: "c@example.test", secret: await secretFor("c@example.test", "no") } });
 check("nine wrong tries at one account are stopped", r.status, 429);
 note("said", r.payload.error);
 
 // The reason the two limits are different. In this test every request arrives
 // from the same address, which is exactly the shape of a family or an office.
-r = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
+r = await call("POST", "/api/login", { body: { email: "a@example.test", secret: await secretFor("a@example.test", "correct horse battery") } });
 check("and somebody else on the same connection is not locked out", r.status, 200);
 
 console.log("\n— the deck —");
@@ -192,12 +222,12 @@ check("no token, no deck", r.status, 401);
 r = await call("GET", "/api/state", { token: "made-up-token" });
 check("a made-up token, no deck", r.status, 401);
 
-const outsider = await call("POST", "/api/register", { body: { email: "z@example.test", password: "a quite long password" } });
+const outsider = await call("POST", "/api/register", { body: { email: "z@example.test", secret: await secretFor("z@example.test", "a quite long password") } });
 r = await call("GET", "/api/state", { token: outsider.payload.token });
 check("a different account sees an empty deck, not this one", r.payload.cards.length, 0);
 
 console.log("\n— leaving —");
-const back = await call("POST", "/api/login", { body: { email: "a@example.test", password: "correct horse battery" } });
+const back = await call("POST", "/api/login", { body: { email: "a@example.test", secret: await secretFor("a@example.test", "correct horse battery") } });
 r = await call("GET", "/api/takeout", { token: back.payload.token });
 // Two from the earlier merge checks plus the 250 pushed in bulk.
 check("everything comes out in one file", r.payload.cards.length, 252);
