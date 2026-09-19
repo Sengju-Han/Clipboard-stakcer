@@ -87,6 +87,8 @@ def _anki_reads_the_csv(t, path):
     import shutil
     import tempfile
 
+    mine = {tag for card in t.cards() for tag in (card.get("tags") or [])}
+
     work = tempfile.mkdtemp(prefix="lexis-csv-")
     try:
         col = Collection(f"{work}/c.anki2")
@@ -105,7 +107,16 @@ def _anki_reads_the_csv(t, path):
         # nine tags ['around','beating','bush.','just','me','stop','tell','The','—'].
         tags = {tag for nid in notes for tag in col.get_note(nid).tags}
         t.note("every tag in the imported collection", ", ".join(sorted(tags)) or "none")
-        t.check("no tag is a word out of a sentence", sorted(tags - {"lexis"}), [])
+        # Compared against the deck rather than against nothing. The deck used
+        # to carry no tags at all, so "no tags but lexis" was the same check as
+        # this one and shorter to write; it stopped being true the moment a
+        # rebuilt deck brought the collection's own tags across, and a suite
+        # that goes red because somebody's data changed is a suite nobody
+        # believes. What must hold is that the round trip invents nothing.
+        t.check("every tag came from a card, none from a sentence",
+                sorted(tags - {"lexis"} - mine), [])
+        t.truthy(f"and the ones the cards had survived it ({len(mine & tags)} of {len(mine)})",
+                 mine <= tags or not mine)
         t.note("why that matters",
                "four columns onto a two-field notetype turns every sentence into nine tags")
         decks = sorted(d["name"] for d in col.decks.all())
