@@ -12,7 +12,9 @@
 // opinion about scheduling at all — FSRS stays in the browser, where it can be
 // answered on a train.
 
-import { hashPassword, checkPassword, newToken, tokenHash, id, pairingCode } from "./crypto.js";
+import {
+  derive, hashPassword, checkPassword, newToken, tokenHash, id, pairingCode,
+} from "./crypto.js";
 
 const SESSION_DAYS = 90;
 const PAIRING_MINUTES = 10;
@@ -348,7 +350,33 @@ export default {
     const route = `${request.method} ${url.pathname}`;
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(env) });
-    if (url.pathname === "/api/health") return json(env, { ok: true });
+    // Health answers the two questions that a 500 on sign-in cannot: whether
+    // the database is really there, and whether this runtime will do the
+    // password hashing at the cost we are asking of it. Both are plain GETs, so
+    // they can be read from a phone's address bar with no app and no CORS.
+    if (url.pathname === "/api/health") {
+      const report = { ok: true };
+      try {
+        const row = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'",
+        ).first();
+        report.tables = row?.n ?? 0;
+      } catch (err) {
+        report.ok = false;
+        report.database = String(err?.message || err).slice(0, 300);
+      }
+      try {
+        const started = Date.now();
+        await derive("a password to time it with", new Uint8Array(16));
+        report.hash_ms = Date.now() - started;
+      } catch (err) {
+        report.ok = false;
+        // The likeliest failure here is a limit on how much work one request
+        // may do, and it is worth saying which limit rather than "went wrong".
+        report.hashing = String(err?.message || err).slice(0, 300);
+      }
+      return json(env, report);
+    }
 
     try {
       const open = PUBLIC[route];
@@ -366,7 +394,14 @@ export default {
       // anything unexpected says nothing about the inside of this.
       const said = String(err?.message || err);
       const theirs = /JSON|accepts in one go/.test(said);
-      return fail(env, theirs ? 400 : 500, theirs ? said : "Something went wrong here. Nothing was changed.");
+      if (theirs) return fail(env, 400, said);
+      // Worth saying out loud even though nobody is watching the console: a
+      // deployed Worker's exception is otherwise lost, and "something went
+      // wrong" is the least useful sentence in software.
+      console.error("unhandled", route, said, err?.stack || "");
+      return fail(env, 500, env.DEBUG_ERRORS === "1"
+        ? `Something went wrong here. Nothing was changed. (${said})`
+        : "Something went wrong here. Nothing was changed.");
     }
   },
 };
