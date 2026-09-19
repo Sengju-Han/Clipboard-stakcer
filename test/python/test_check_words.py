@@ -317,6 +317,11 @@ def _deck(tmp_path):
         ("d", "beatnik", "there was this cool unconventional type guy"),
         ("e", "alliteration", "Peter Piper picked a peck of pickled peppers."),
         ("f", "hideous", "That's funny because I'm hideous."),
+        # A second card for a word that is already here, and one with no
+        # sentence at all: the half that needs no key has to have something to
+        # find, or a run that reports nothing proves nothing.
+        ("g", "hideous", "A quite separate hideous thing."),
+        ("h", "transduction", ""),
     ])
     path = col.path
     col.close()
@@ -338,6 +343,10 @@ def test_looking_changes_nothing(tmp_path, monkeypatch):
     assert "2 misspelled words" in said
     assert "`hidious`" in said and "**hideous**" in said
     assert "Re-run with **apply**" in said
+    # The half that needs no key rides along on a judged run too.
+    assert "And while it was looking" in said
+    assert "`hideous` — 2 cards" in said
+    assert "`transduction`" in said
 
     col = Collection(str(path))
     assert _field(col, "a", "Back") == "hidious"     # untouched
@@ -459,9 +468,20 @@ def test_without_a_key_it_still_says_what_it_can(tmp_path, monkeypatch):
                                       "--out-dir", str(tmp_path / "out2")])
     assert words.main() == 0
     said = (tmp_path / "nokey.md").read_text(encoding="utf-8")
-    assert "misspelled word" in said
-    # Nothing was judged, so nothing is claimed as a correction.
+
+    # It must not say "0 misspelled", which reads as "checked, and they were
+    # all fine" when the truth is that nothing was checked. That is the worse
+    # of the two wrong answers because it is the reassuring one.
+    assert "misspelled" not in said.split("And while it was looking")[0].lower() \
+        or "unjudged" in said
+    assert "unjudged" in said
+    assert "ANTHROPIC_API_KEY" in said
+    # The words are still listed, with what their sentence has instead.
+    assert "`hidious`" in said and "hideous" in said
+    # But nothing is claimed as a correction.
     assert "**hideous**" not in said
+    # And the rule-based half, which needs no key, is all there.
+    assert "And while it was looking" in said
 
 
 def test_without_a_key_apply_is_refused(tmp_path, monkeypatch):

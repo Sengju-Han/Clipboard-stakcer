@@ -330,6 +330,31 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
     refused = [r for r in rows if r.get("verdict") == "typo" and not r.get("corrected")]
     forms = [r for r in rows if r.get("verdict") == "form"]
     fine = [r for r in rows if r.get("verdict") == "fine"]
+    # Whether anything was judged at all. Without a key nothing is, and every
+    # count below would read as zero - which says "checked, and none of them
+    # were misspelled" when the truth is "not checked". That is the worse of
+    # the two wrong answers, because it is the reassuring one.
+    judged = any("verdict" in row for row in rows)
+
+    if not judged:
+        lines = [
+            f"## {plural(len(rows), 'word')} not in their own sentence, unjudged",
+            "",
+            f"- Cards whose word is in their own sentence: **{skipped['the word is there']}**",
+            f"- Cards where it is not: **{len(rows)}**",
+            "",
+            "Which of these are misspellings and which are the word in another form "
+            "was not worked out: that needs `ANTHROPIC_API_KEY`, because `hidious` "
+            "against \"I'm hideous\" and `avow` against \"he avowed it\" are both one "
+            "letter from the word on the card.",
+        ]
+        if rows:
+            lines += ["", "| on the card | the sentence has |", "|---|---|"]
+            for row in sorted(rows, key=lambda r: r["word"].lower())[:60]:
+                lines.append(f"| `{row['word']}` | {row.get('nearest', '')} |")
+        lines += report_other(faults or {})
+        write_summary(lines)
+        return
 
     lines = [
         f"## {plural(len(typos), 'misspelled word')} out of {checked} cards"
