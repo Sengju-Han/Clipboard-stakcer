@@ -36,6 +36,32 @@ def _fill(t, field, value):
     t.page.locator(f"#{field}").dispatch_event("change")
 
 
+# What the page says while it is still working. The browser derives the secret
+# with 210,000 rounds of PBKDF2, which is a quarter of a second on a laptop and
+# several on a loaded runner - so waiting a fixed number of seconds is either
+# flaky or slow, and usually manages both.
+WORKING = ("Creating the account\u2026", "Signing in\u2026")
+
+
+def _settled(t, timeout=45000):
+    """Wait until the account line has something conclusive on it."""
+    t.page.wait_for_function(
+        """(working) => {
+          const el = document.getElementById("acct-say");
+          const text = ((el && el.textContent) || "").trim();
+          return text !== "" && !working.includes(text);
+        }""", arg=list(WORKING), timeout=timeout)
+    return t.page.locator("#acct-say").inner_text().strip()
+
+
+def _quiet(t):
+    """Empty the line, so the next thing on it is the next thing that happened."""
+    t.page.evaluate("""() => {
+      const el = document.getElementById("acct-say");
+      if (el) el.textContent = "";
+    }""")
+
+
 def _open(t, where):
     t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
     t.page.wait_for_selector("#settings", timeout=30000)
@@ -68,8 +94,19 @@ def run(t):
     # Anything the browser refuses before sending arrives here and nowhere
     # else: a blocked request never reaches the server, so the server's log
     # cannot show it and the page only ever sees "Failed to fetch".
+    #
+    # Only requests to the server, and never ERR_ABORTED: a reload cancels
+    # whatever was in flight and that is not a refusal, it is a reload.
     refused = []
-    t.page.on("requestfailed", lambda r: refused.append(f"{r.method} {r.url} — {r.failure}"))
+
+    def blocked(request):
+        if not request.url.startswith(where):
+            return
+        if "ABORTED" in (request.failure or ""):
+            return
+        refused.append(f"{request.method} {request.url} — {request.failure}")
+
+    t.page.on("requestfailed", blocked)
 
     try:
         t.note("the server is at", where)
@@ -86,9 +123,7 @@ def run(t):
         t.page.locator("#acct-email").fill(EMAIL)
         t.page.locator("#acct-pw").fill(PASSWORD)
         t.page.locator("#acct-up").click()
-        t.page.wait_for_timeout(4000)
-
-        said = t.page.locator("#acct-say").inner_text()
+        said = _settled(t)
         t.note("it said", said[:120])
         t.check("an account is made against the real server",
                 "account" in said.lower() and "went wrong" not in said.lower(), True)
@@ -97,9 +132,9 @@ def run(t):
         # This is the one. The vault is written with PUT, and a PUT the
         # preflight does not allow never leaves the browser.
         _panels(t)
+        _quiet(t)
         _fill(t, "ref", "some-branch")
-        t.page.wait_for_timeout(3000)
-        saved = t.page.locator("#acct-say").inner_text()
+        saved = _settled(t)
         t.note("saving said", saved[:120])
         t.check("a setting saves without the browser refusing the request",
                 "failed to fetch" in saved.lower(), False)
@@ -116,8 +151,7 @@ def run(t):
         t.page.locator("#acct-email").fill(EMAIL)
         t.page.locator("#acct-pw").fill(PASSWORD)
         t.page.locator("#acct-in").click()
-        t.page.wait_for_timeout(4000)
-        t.note("signing in said", t.page.locator("#acct-say").inner_text()[:120])
+        t.note("signing in said", _settled(t)[:120])
 
         t.check("the GitHub token comes back through a real round trip",
                 t.page.locator("#token").input_value(), TOKEN)
@@ -131,8 +165,7 @@ def run(t):
         t.page.locator("#acct-email").fill(EMAIL)
         t.page.locator("#acct-pw").fill("not the password")
         t.page.locator("#acct-in").click()
-        t.page.wait_for_timeout(4000)
-        wrong = t.page.locator("#acct-say").inner_text()
+        wrong = _settled(t)
         t.truthy("a wrong password is refused by the real server",
                  "do not match" in wrong or "does not open" in wrong)
         t.check("and nothing is filled in from it", t.page.locator("#token").input_value(), "")
