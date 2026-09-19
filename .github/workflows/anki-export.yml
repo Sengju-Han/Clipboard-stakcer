@@ -23,6 +23,10 @@ on:
         description: 'Advanced: raw Anki search, e.g. deck:English is:due. Overrides deck.'
         required: false
         default: ''
+      drive_folder:
+        description: 'Folder in your Google Drive. Made if it is not there.'
+        required: false
+        default: 'Anki exports'
       confirm_public:
         description: 'Tick only if this repo is PUBLIC and you accept that the export is public too'
         required: false
@@ -46,6 +50,10 @@ jobs:
     name: Export from AnkiWeb
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # At job level so the steps below can ask whether Drive is connected.
+    # A secret cannot be tested directly in an `if`.
+    env:
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
 
     steps:
       - name: Check out the scripts
@@ -84,6 +92,34 @@ jobs:
             --word-field "$WORD_FIELD" \
             --timezone "$TZ_NAME" \
             --out-dir anki-export
+
+      # Straight into Drive, where a phone can actually open it. The artifact
+      # below stays as well: it costs nothing, and a run where Drive is having
+      # a bad day should still leave the export somewhere.
+      - name: Put it in Google Drive
+        id: drive
+        if: ${{ env.GOOGLE_REFRESH_TOKEN != '' }}
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          # Passed as an environment variable, never interpolated into the shell.
+          FOLDER: ${{ inputs.drive_folder || 'Anki exports' }}
+        run: |
+          python anki/to_drive.py \
+            --from-dir anki-export \
+            --folder "$FOLDER" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Say how to turn that on
+        if: ${{ env.GOOGLE_REFRESH_TOKEN == '' }}
+        run: |
+          {
+            echo "### The export is in the artifacts below"
+            echo ""
+            echo "Run **Connect Google Drive** once and it will go straight into your"
+            echo "Drive instead, which is a great deal easier to get at from a phone."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the export
         uses: actions/upload-artifact@v4

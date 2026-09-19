@@ -1,0 +1,56 @@
+name: Connect Google Drive
+
+# Run once, in two goes. The first prints a link to approve; the second takes
+# the code that link gives back and stores the lasting half of the connection
+# as a secret. After that the export workflow puts its files straight into
+# your Drive.
+#
+# The refresh token is never printed, here or anywhere. The code in between is
+# single-use and worth nothing once spent, which is why that one is safe to
+# read off a screen.
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: 'Leave empty the first time. The second time, paste the code from the page Google sent you to.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  # Writing GOOGLE_REFRESH_TOKEN is the whole point; without this the second
+  # go fails at the last step with a 403 and nothing to show for it.
+  secrets: write
+
+concurrency:
+  group: google-connect
+  cancel-in-progress: false
+
+jobs:
+  connect:
+    name: Approve, then store
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: pip install --disable-pip-version-check pynacl
+
+      - name: Connect
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed as an environment variable, never interpolated into the shell.
+          CODE: ${{ inputs.code }}
+        run: |
+          python anki/google_connect.py \
+            --code "$CODE" \
+            --redirect "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/connected.html"
