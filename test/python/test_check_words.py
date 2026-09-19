@@ -12,6 +12,7 @@ year's scheduling on it that is now about something else. That is what most of
 this file is about.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -249,3 +250,129 @@ def test_the_report_names_the_card_and_what_it_should_say(tmp_path, monkeypatch)
     # And the one the model wanted to replace rather than respell is set apart.
     assert "not a respelling" in said and "`deficit`" in said
     assert "Re-run with **apply**" in said
+
+
+# ---- the whole thing, end to end ----------------------------------------
+
+class _Parsed:
+    def __init__(self, results):
+        self.parsed_output = type("Out", (), {"results": results})()
+        self.stop_reason = "end_turn"
+
+
+class _FakeClaude:
+    """Answers the way the real one does, from a table keyed by the word.
+
+    The judging is the one part of this that cannot be checked for real without
+    spending money, and it is also the part that decides what gets written into
+    somebody's collection. So it is faked at the transport rather than at the
+    function: the prompt is built, the batching happens, and the answers come
+    back through the same parsing the API's would.
+    """
+
+    ANSWERS = {
+        "hidious": ("typo", "hideous", ""),
+        "entiments": ("typo", "sentiments", ""),
+        "avow": ("form", "", "the sentence has avowed"),
+        "beatnik": ("typo", "hipster", "the sentence describes one without naming it"),
+        "alliteration": ("fine", "", "the sentence demonstrates it"),
+    }
+
+    def __init__(self):
+        self.asked = []
+        self.messages = self
+
+    def parse(self, *, model, max_tokens, system, messages, output_format):
+        import re as _re
+
+        text = messages[0]["content"]
+        self.asked.append(text)
+        results = []
+        for index, word in enumerate(_re.findall(r"<word>(.*?)</word>", text, _re.S)):
+            verdict, corrected, why = self.ANSWERS.get(word.strip(), ("fine", "", ""))
+            results.append(words.Judged(index=index, verdict=verdict,
+                                        corrected=corrected, why=why))
+        return _Parsed(results)
+
+
+def _run(tmp_path, monkeypatch, col_path, apply=False):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-not-a-real-key")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / f"summary-{apply}.md"))
+    fake = _FakeClaude()
+    monkeypatch.setattr(words, "client", lambda: fake)
+    argv = ["check_words.py", "--local-collection", str(col_path),
+            "--out-dir", str(tmp_path / "out")]
+    if apply:
+        argv.append("--apply")
+    monkeypatch.setattr(sys, "argv", argv)
+    assert words.main() == 0
+    return fake, (tmp_path / f"summary-{apply}.md").read_text(encoding="utf-8")
+
+
+def _deck(tmp_path):
+    col = _collection(tmp_path, [
+        ("a", "hidious", "That's funny because I'm hideous."),
+        ("b", "entiments<br><i>감정</i>", "He hid his sentiments well."),
+        ("c", "avow", "The politician avowed his commitment."),
+        ("d", "beatnik", "there was this cool unconventional type guy"),
+        ("e", "alliteration", "Peter Piper picked a peck of pickled peppers."),
+        ("f", "hideous", "That's funny because I'm hideous."),
+    ])
+    path = col.path
+    col.close()
+    return path
+
+
+def test_looking_changes_nothing(tmp_path, monkeypatch):
+    from anki.collection import Collection
+
+    path = _deck(tmp_path)
+    fake, said = _run(tmp_path, monkeypatch, path)
+
+    # Only the cards whose word is missing were sent; the one that is fine
+    # never left the machine.
+    asked = "\n".join(fake.asked)
+    assert "hidious" in asked and "entiments" in asked
+    assert asked.count("<word>hideous</word>") == 0
+
+    assert "2 misspelled words" in said
+    assert "`hidious`" in said and "**hideous**" in said
+    assert "Re-run with **apply**" in said
+
+    col = Collection(str(path))
+    assert _field(col, "a", "Back") == "hidious"     # untouched
+    col.close()
+
+
+def test_applying_writes_only_the_respellings(tmp_path, monkeypatch):
+    from anki.collection import Collection
+
+    path = _deck(tmp_path)
+    _run(tmp_path, monkeypatch, path, apply=True)
+
+    col = Collection(str(path))
+    assert _field(col, "a", "Back") == "hideous"
+    # The hook under the word survives the correction.
+    assert _field(col, "b", "Back") == "sentiments<br><i>감정</i>"
+    # An inflection is not a typo, and is left exactly as it was.
+    assert _field(col, "c", "Back") == "avow"
+    # And the one the model wanted to replace rather than respell is refused,
+    # which is the only thing here that could quietly ruin a card.
+    assert _field(col, "d", "Back") == "beatnik"
+    assert _field(col, "e", "Back") == "alliteration"
+    # No sentence moved.
+    assert _field(col, "a", "Example") == "That's funny because I'm hideous."
+    col.close()
+
+
+def test_what_it_refused_is_written_down(tmp_path, monkeypatch):
+    path = _deck(tmp_path)
+    _, said = _run(tmp_path, monkeypatch, path)
+    assert "not a respelling" in said
+    assert "beatnik" in said
+
+    ledger = (tmp_path / "out" / "words.jsonl").read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in ledger.splitlines() if line.strip()]
+    beatnik = next(r for r in rows if r["word"] == "beatnik")
+    assert beatnik["corrected"] == ""
+    assert "hipster" in beatnik["why"], "the answer it refused has to be recoverable"

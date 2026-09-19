@@ -307,7 +307,11 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.local_collection:
-        col, auth = Collection(args.local_collection), None
+        # Defined in both branches on purpose: the backup below reopens it, and
+        # a name that exists on only one path is a NameError waiting for the
+        # day somebody allows a local collection to sync.
+        work = Path(args.local_collection)
+        col, auth = Collection(str(work)), None
     else:
         work = Path("anki-work") / "collection.anki2"
         work.parent.mkdir(exist_ok=True)
