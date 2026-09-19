@@ -17,11 +17,13 @@ on:
         required: false
         default: ''
 
+# `secrets: write` is not a thing. There is no permission that lets the token a
+# workflow is given write a repository secret - that needs a personal token,
+# which is what REPO_ADMIN_TOKEN below is for. Asking for it here did not fail
+# at the last step; it stopped the file parsing at all, so this workflow never
+# appeared in the Actions list to be run.
 permissions:
   contents: read
-  # Writing GOOGLE_REFRESH_TOKEN is the whole point; without this the second
-  # go fails at the last step with a 403 and nothing to show for it.
-  secrets: write
 
 concurrency:
   group: google-connect
@@ -47,7 +49,9 @@ jobs:
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A personal token with "Secrets: Read and write" on this repository.
+          # The token Actions hands out cannot write secrets at all.
+          GITHUB_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
           # Passed as an environment variable, never interpolated into the shell.
           CODE: ${{ inputs.code }}
         run: |

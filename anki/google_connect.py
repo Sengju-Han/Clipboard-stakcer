@@ -172,9 +172,16 @@ def main() -> int:
 
     repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
     gh_token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if not repo or not gh_token:
-        fail("There is nowhere to store the result.",
-             "GITHUB_REPOSITORY and GITHUB_TOKEN are set by Actions; this needs to run there.")
+    if not gh_token:
+        fail("There is no token that can store the result.",
+             "The token a workflow is given cannot write secrets - there is no "
+             "permission for it. Make a fine-grained personal access token with "
+             "'Secrets: Read and write' on this repository, and add it as a secret "
+             "called REPO_ADMIN_TOKEN.\n\n"
+             "It is used once, here, to store the Google connection, and for nothing "
+             "else. Delete it afterwards if you would rather.")
+    if not repo:
+        fail("GITHUB_REPOSITORY is not set; this needs to run in Actions.")
 
     try:
         refresh = exchange(client_id, client_secret, code, args.redirect)
@@ -185,9 +192,8 @@ def main() -> int:
         store_secret(repo, gh_token, SECRET_NAME, refresh)
     except RuntimeError as err:
         fail(f"Could not store {SECRET_NAME}.",
-             f"{err}\n\nThe token this workflow runs with needs permission to write "
-             "secrets. In the workflow that is `permissions: secrets: write`; for a "
-             "fine-grained personal token it is 'Secrets: Read and write'.")
+             f"{err}\n\nA 403 here means REPO_ADMIN_TOKEN is missing the "
+             "'Secrets: Read and write' permission on this repository, or has expired.")
 
     write_summary([
         "## Connected",
