@@ -181,6 +181,23 @@ def last_review_from(card: dict):
     return datetime(when.year, when.month, when.day, tzinfo=timezone.utc).isoformat()
 
 
+def was_bigger(target: Path, kept: int) -> str:
+    """Whether the deck this is about to replace held a great deal more.
+
+    The proportion above is blind to an export that came back short: twelve
+    rows in, twelve cards out, nothing skipped, and a deck of twelve published
+    over a deck of twelve hundred. What the app is reading today is the only
+    record of how big the collection was yesterday.
+    """
+    if not target.exists():
+        return ""
+    try:
+        before = json.loads(target.read_text(encoding="utf-8")).get("card_count", 0)
+    except (ValueError, OSError):
+        return ""                      # unreadable is not evidence of anything
+    return losing_too_much(kept, int(before or 0), "that were in the deck are not in this one")
+
+
 def build_card(card: dict, today: date, tally: dict | None = None) -> dict | None:
     fields = card.get("fields_raw") or card.get("fields") or {}
     if not isinstance(fields, dict) or not fields:
@@ -260,10 +277,29 @@ def build_card(card: dict, today: date, tally: dict | None = None) -> dict | Non
     }
 
 
+# How much of a collection may disappear between one build and the next before
+# this refuses to publish the result. The deck it writes is committed and
+# pushed to Pages by the workflow with nothing in between, so a build that
+# quietly lost most of the cards is a deck the next phone downloads.
+MAX_LOSS = 0.10
+
+
+def losing_too_much(kept: int, total: int, what: str) -> str:
+    """The sentence to fail with, or empty when the loss is within reason."""
+    if total <= 0 or kept >= total * (1 - MAX_LOSS):
+        return ""
+    gone = total - kept
+    return (f"{gone} of {total} cards {what} — {kept} left, "
+            f"which is {kept * 100 // total}% of what there was.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the review app's deck from an Anki export.")
     parser.add_argument("--export", required=True, help="cards.json written by export_deck.py")
     parser.add_argument("--out", default="docs/deck", help="Directory to write deck.json into.")
+    parser.add_argument("--allow-loss", action="store_true",
+                        help="Write the deck even if most of the collection has gone. "
+                             "For a collection that really did shrink.")
     args = parser.parse_args()
 
     source = Path(args.export)
@@ -328,6 +364,29 @@ def main() -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / "deck.json"
+
+    # Two ways this can be wrong and still look like a build.
+    #
+    # Most of the rows failing to become cards is the field names having moved:
+    # build_card returns None when it cannot find a word, so a wrong word_field
+    # empties the deck one card at a time and reports it as a skip count.
+    #
+    # The export itself coming back short is the other, and the proportion
+    # above cannot see it - twelve rows in, twelve cards out, nothing lost.
+    # Only the deck already on disk knows the collection used to be bigger.
+    complaints = [c for c in (
+        losing_too_much(len(unique), len(rows), "in the export did not become cards"),
+        was_bigger(target, len(unique)),
+    ) if c]
+    if complaints and not args.allow_loss:
+        for line in complaints:
+            print(f"::error::{line}", flush=True)
+        print("Nothing was written. The deck on disk is the one the app still reads.\n"
+              "If the collection really did shrink, run again with --allow-loss.", flush=True)
+        return 1
+    for line in complaints:
+        print(f"::warning::{line} Written anyway, because --allow-loss was given.", flush=True)
+
     target.write_text(json.dumps(deck, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
 
     size_kb = target.stat().st_size / 1024
