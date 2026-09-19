@@ -7,3 +7,6 @@ anki-work/
 
 # TTS build output (audio cache, package, manifest)
 tts-build/
+
+# installed by `npm install` to run the server's tests
+node_modules/

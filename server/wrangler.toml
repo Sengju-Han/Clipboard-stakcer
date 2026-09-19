@@ -14,3 +14,8 @@ database_id = "03227337-958f-4510-a92e-06b2d47a1ffb"
 # Where the app is served from. Anything else is refused at the CORS check, so
 # a page on another domain cannot quietly use somebody's session.
 ALLOWED_ORIGIN = "https://sengju-han.github.io"
+
+# Puts the real reason into the 500 instead of "something went wrong". On while
+# a problem is being found, off the rest of the time: an error message is a
+# description of the inside of this, and the inside is nobody else's business.
+DEBUG_ERRORS = "1"
