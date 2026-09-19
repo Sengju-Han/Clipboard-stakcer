@@ -168,6 +168,52 @@ def collect(col: Collection, note_ids: list[int], word_field: str, example_field
     return found, skipped
 
 
+def other_faults(col: Collection, note_ids: list[int], word_field: str,
+                 example_field: str) -> dict:
+    """Card problems a rule can see on its own, with no model and no key.
+
+    None of these is corrected. Every one is a judgement a person has to make:
+    whether a word in two decks is a duplicate or deliberate, whether a clue is
+    too generous, whether a card with no sentence is unfinished or fine. The
+    report names them and stops there.
+    """
+    seen: dict[str, list] = {}
+    no_example, gives_it_away = [], []
+
+    for note_id in note_ids:
+        note = col.get_note(note_id)
+        if word_field not in note:
+            continue
+        word = headword(note[word_field])
+        plain = tidy(word)
+        if not plain:
+            continue
+        seen.setdefault(plain, []).append({"note_id": note_id, "word": word})
+
+        if example_field in note and not tidy(note[example_field]):
+            no_example.append({"note_id": note_id, "word": word})
+
+        # The front of the card. A clue that contains the word is a card
+        # answered by reading it, which is a card that teaches nothing and
+        # still takes up a review.
+        for name, value in note.items():
+            if name in (word_field, example_field):
+                continue
+            clue = tidy(value)
+            if len(plain) > 3 and clue and re.search(rf"\b{re.escape(plain)}", clue):
+                gives_it_away.append({"note_id": note_id, "word": word,
+                                      "field": name, "clue": value})
+                break
+
+    twice = [{"word": rows[0]["word"], "count": len(rows)}
+             for rows in seen.values() if len(rows) > 1]
+    return {
+        "twice": sorted(twice, key=lambda r: r["word"].lower()),
+        "no_example": no_example,
+        "gives_it_away": gives_it_away,
+    }
+
+
 def judge(batch: list[dict], api) -> list[Judged]:
     lines = []
     for index, item in enumerate(batch):
@@ -244,7 +290,39 @@ def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
     return {"applied": len(touched)}
 
 
-def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool) -> None:
+def report_other(faults: dict) -> list[str]:
+    """The rule-based findings, which are reported and never acted on."""
+    lines = []
+    twice, no_example, given = (faults.get(k) or []
+                                for k in ("twice", "no_example", "gives_it_away"))
+    if not (twice or no_example or given):
+        return lines
+
+    lines += ["", "## And while it was looking", "",
+              "None of this is changed by this job. Each one is a decision only you "
+              "can make, so it is named and left alone."]
+    if twice:
+        lines += ["", f"### The same word on {plural(len(twice), 'card')}, twice or more", "",
+                  "Two cards for one word means answering it twice for the rest of "
+                  "your life, on two separate schedules.", ""]
+        lines += [f"- `{row['word']}` — {row['count']} cards" for row in twice[:40]]
+    if no_example:
+        lines += ["", f"### {plural(len(no_example), 'card')} with no example sentence", "",
+                  "A word with nothing to hang it on is the hardest kind to keep. The "
+                  "audio workflow also has nothing to record for these.", ""]
+        lines += [f"- `{row['word']}`" for row in no_example[:40]]
+    if given:
+        lines += ["", f"### {plural(len(given), 'card')} whose clue contains the answer", "",
+                  "The front of the card says the word it is asking for, so it is "
+                  "answered by reading it — and still takes a review every time.", ""]
+        for row in given[:40]:
+            clue = tidy(row["clue"])[:70]
+            lines.append(f"- `{row['word']}` — {row['field']}: _{clue}_")
+    return lines
+
+
+def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool,
+                 faults: dict | None = None) -> None:
     typos = [r for r in rows if r.get("verdict") == "typo" and r.get("corrected")]
     refused = [r for r in rows if r.get("verdict") == "typo" and not r.get("corrected")]
     forms = [r for r in rows if r.get("verdict") == "form"]
@@ -279,6 +357,7 @@ def write_report(rows: list[dict], skipped: dict, checked: int, applied: bool) -
     if not applied and typos:
         lines += ["", "Nothing has been changed. Re-run with **apply** ticked to write "
                       "these back and sync them."]
+    lines += report_other(faults or {})
     write_summary(lines)
 
 
@@ -298,10 +377,17 @@ def main() -> int:
     password = os.environ.get("ANKIWEB_PASSWORD", "")
     if not args.local_collection and (not username or not password):
         fail("ANKIWEB_USERNAME / ANKIWEB_PASSWORD are not set.")
-    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
-        fail("ANTHROPIC_API_KEY is not set.",
-             "Telling a misspelling from an ordinary inflection is the whole job here, "
-             "and both are one letter away from the word on the card.")
+    # A key is what tells a misspelling from an ordinary inflection, and both are
+    # one letter from the word on the card. Without one the rest still runs -
+    # the duplicates, the cards with no sentence, the clues that give the answer
+    # away, and the plain list of words missing from their own example - and
+    # says what it could not judge.
+    judging = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    if args.apply and not judging:
+        fail("ANTHROPIC_API_KEY is not set, so nothing can be corrected.",
+             "Without it there is no telling `hidious` (a misspelling) from `avow` "
+             "against \"he avowed it\" (the word in another form), and correcting the "
+             "second would be a card ruined. Run without apply to see the rest.")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -332,8 +418,10 @@ def main() -> int:
         items = items[: args.limit]
     log(f"{len(note_ids)} notes; {len(items)} whose word is not in their own sentence.")
 
-    api = client()
-    for start in range(0, len(items), args.batch):
+    faults = other_faults(col, note_ids, args.word_field, args.example_field)
+
+    api = client() if judging else None
+    for start in range(0, len(items) if judging else 0, args.batch):
         batch = items[start : start + args.batch]
         try:
             for item, verdict in zip(batch, judge(batch, api)):
@@ -364,7 +452,10 @@ def main() -> int:
             log("Synced to AnkiWeb.")
 
     col.close()
-    write_report(items, skipped, len(note_ids), bool(args.apply and fixes))
+    if not judging:
+        log("::notice::No ANTHROPIC_API_KEY, so the words that are missing from their "
+            "own sentence are listed but not judged.")
+    write_report(items, skipped, len(note_ids), bool(args.apply and fixes), faults)
     return 0
 
 

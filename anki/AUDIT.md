@@ -90,6 +90,22 @@ Only the word changes. The sentence is untouched, no recording moves, and the
 same checks run before anything is synced: no note gone, nothing else changed,
 no card's scheduling moved.
 
+The same run also names three things a rule can see on its own, and **changes
+none of them** — each is a decision only you can make:
+
+- **the same word on two cards**, which means answering it twice for the rest
+  of your life, on two separate schedules
+- **cards with no example sentence** — the hardest kind to keep, and the audio
+  workflow has nothing to record for them either
+- **cards whose clue contains the answer**, like a card for *ditch* whose front
+  says `ditch`. It is answered by reading it and still takes a review every
+  time.
+
+Those need no key. Without `ANTHROPIC_API_KEY` the run still reports them, and
+lists the words missing from their own sentence without judging them; only
+*apply* requires one, because telling `hidious` from `avow` is the entire
+difference between a repair and a ruined card.
+
 ## Resuming
 
 Results are written as each batch lands and cached between runs. A run that

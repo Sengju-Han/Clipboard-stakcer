@@ -376,3 +376,96 @@ def test_what_it_refused_is_written_down(tmp_path, monkeypatch):
     beatnik = next(r for r in rows if r["word"] == "beatnik")
     assert beatnik["corrected"] == ""
     assert "hipster" in beatnik["why"], "the answer it refused has to be recoverable"
+
+
+# ---- what a rule can see on its own --------------------------------------
+
+def test_the_same_word_on_two_cards_is_named(tmp_path):
+    col = _collection(tmp_path, [
+        ("a", "revelation", "It was a revelation."),
+        ("b", "revelation", "Another revelation entirely."),
+        ("c", "avow", "He avowed it."),
+    ])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+
+    assert [r["word"] for r in faults["twice"]] == ["revelation"]
+    assert faults["twice"][0]["count"] == 2
+    col.close()
+
+
+def test_a_card_with_no_sentence_is_named(tmp_path):
+    col = _collection(tmp_path, [
+        ("a", "transduction", ""),
+        ("b", "avow", "He avowed it."),
+        ("c", "twitching", "   <br>  "),     # markup and nothing else
+    ])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+
+    assert sorted(r["word"] for r in faults["no_example"]) == ["transduction", "twitching"]
+    col.close()
+
+
+def test_a_clue_that_says_the_answer_is_named(tmp_path):
+    col = _collection(tmp_path, [
+        # The front of the card is the word it is asking for.
+        ("ditch", "ditch", "They ditched the plan."),
+        ("jockey on back of his horse", "jockey", "The jockey rode well."),
+        ("포기하다", "abandon", "They abandoned it."),
+    ])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+
+    given = sorted(r["word"] for r in faults["gives_it_away"])
+    assert given == ["ditch", "jockey"]
+    assert "abandon" not in given
+    col.close()
+
+
+def test_a_short_word_inside_a_longer_one_is_not_a_giveaway(tmp_path):
+    # "vice" is inside "advice"; the clue does not give the answer away.
+    col = _collection(tmp_path, [("some advice for you", "vice", "He had his vices.")])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+    assert faults["gives_it_away"] == []
+    col.close()
+
+
+def test_the_report_carries_them(tmp_path, monkeypatch):
+    where = tmp_path / "with-faults.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report([], {"the word is there": 10}, 10, applied=False, faults={
+        "twice": [{"word": "revelation", "count": 2}],
+        "no_example": [{"word": "transduction"}],
+        "gives_it_away": [{"word": "ditch", "field": "Front", "clue": "ditch"}],
+    })
+    said = where.read_text(encoding="utf-8")
+
+    assert "And while it was looking" in said
+    assert "`revelation` — 2 cards" in said
+    assert "`transduction`" in said
+    assert "`ditch`" in said
+    assert "None of this is changed" in said
+
+
+def test_without_a_key_it_still_says_what_it_can(tmp_path, monkeypatch):
+    # The rule-based half needs nothing, and a run with no key is worth more
+    # than a refusal: the duplicates and the empty cards are still findings.
+    path = _deck(tmp_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "nokey.md"))
+    monkeypatch.setattr(words, "client", lambda: pytest.fail("it must not ask without a key"))
+    monkeypatch.setattr(sys, "argv", ["check_words.py", "--local-collection", str(path),
+                                      "--out-dir", str(tmp_path / "out2")])
+    assert words.main() == 0
+    said = (tmp_path / "nokey.md").read_text(encoding="utf-8")
+    assert "misspelled word" in said
+    # Nothing was judged, so nothing is claimed as a correction.
+    assert "**hideous**" not in said
+
+
+def test_without_a_key_apply_is_refused(tmp_path, monkeypatch):
+    path = _deck(tmp_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "nokey2.md"))
+    monkeypatch.setattr(sys, "argv", ["check_words.py", "--local-collection", str(path),
+                                      "--out-dir", str(tmp_path / "out3"), "--apply"])
+    with pytest.raises(SystemExit):
+        words.main()
