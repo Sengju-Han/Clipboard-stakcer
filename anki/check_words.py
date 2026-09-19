@@ -178,7 +178,8 @@ def other_faults(col: Collection, note_ids: list[int], word_field: str,
     report names them and stops there.
     """
     seen: dict[str, list] = {}
-    no_example, gives_it_away = [], []
+    sentences: dict[str, list] = {}
+    no_example, gives_it_away, no_context = [], [], []
 
     for note_id in note_ids:
         note = col.get_note(note_id)
@@ -190,8 +191,17 @@ def other_faults(col: Collection, note_ids: list[int], word_field: str,
             continue
         seen.setdefault(plain, []).append({"note_id": note_id, "word": word})
 
-        if example_field in note and not tidy(note[example_field]):
+        example = tidy(note[example_field]) if example_field in note else ""
+        if example_field in note and not example:
             no_example.append({"note_id": note_id, "word": word})
+        elif example == plain:
+            # The "example sentence" is the word again. Nothing to remember it
+            # by, and nothing for the audio workflow to read out but the word.
+            no_context.append({"note_id": note_id, "word": word})
+        elif len(example.split()) >= 3:
+            # Two cards mined from one sentence. Reviewing either one shows the
+            # answer to the other, so both are weaker than they look.
+            sentences.setdefault(example, []).append({"note_id": note_id, "word": word})
 
         # The front of the card. A clue that contains the word is a card
         # answered by reading it, which is a card that teaches nothing and
@@ -207,10 +217,14 @@ def other_faults(col: Collection, note_ids: list[int], word_field: str,
 
     twice = [{"word": rows[0]["word"], "count": len(rows)}
              for rows in seen.values() if len(rows) > 1]
+    shared = [{"words": [r["word"] for r in rows], "sentence": text}
+              for text, rows in sentences.items() if len(rows) > 1]
     return {
         "twice": sorted(twice, key=lambda r: r["word"].lower()),
         "no_example": no_example,
+        "no_context": no_context,
         "gives_it_away": gives_it_away,
+        "shared": sorted(shared, key=lambda r: r["sentence"]),
     }
 
 
@@ -300,9 +314,10 @@ def apply_all(col: Collection, fixes: list[dict], word_field: str) -> dict:
 def report_other(faults: dict) -> list[str]:
     """The rule-based findings, which are reported and never acted on."""
     lines = []
-    twice, no_example, given = (faults.get(k) or []
-                                for k in ("twice", "no_example", "gives_it_away"))
-    if not (twice or no_example or given):
+    twice, no_example, no_context, given, shared = (
+        faults.get(k) or []
+        for k in ("twice", "no_example", "no_context", "gives_it_away", "shared"))
+    if not (twice or no_example or no_context or given or shared):
         return lines
 
     lines += ["", "## And while it was looking", "",
@@ -321,6 +336,18 @@ def report_other(faults: dict) -> list[str]:
                   "A word with nothing to hang it on is the hardest kind to keep. The "
                   "audio workflow also has nothing to record for these.", ""]
         lines += [f"- `{row['word']}`" for row in no_example[:40]]
+    if no_context:
+        lines += ["", f"### {plural(len(no_context), 'card')} whose example is just the word",
+                  "", "The sentence is the word again, so there is nothing to remember "
+                  "it by — and nothing for the audio workflow to read out but the word.", ""]
+        lines += [f"- `{row['word']}`" for row in no_context[:40]]
+    if shared:
+        lines += ["", f"### {plural(len(shared), 'sentence')} used by two cards or more", "",
+                  "Two words mined from one sentence. Reviewing either card shows the "
+                  "answer to the other, so both are easier than they look.", ""]
+        for row in shared[:40]:
+            words_ = ", ".join(f"`{w}`" for w in sorted(set(row["words"])))
+            lines.append(f"- {words_} — _{row['sentence'][:70]}_")
     if given:
         lines += ["", f"### {plural(len(given), 'card')} whose clue contains the answer", "",
                   "The front of the card says the word it is asking for, so it is "

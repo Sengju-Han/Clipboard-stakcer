@@ -97,6 +97,12 @@ none of them** — each is a decision only you can make:
   of your life, on two separate schedules
 - **cards with no example sentence** — the hardest kind to keep, and the audio
   workflow has nothing to record for them either
+- **cards whose example is just the word again** — `ensconce`, whose sentence
+  reads *ensconce*. Nothing to remember it by, and nothing for the audio
+  workflow to read out but the word
+- **one sentence used by two cards**, which happens when two words are mined
+  from the same line. Reviewing either one shows the answer to the other, so
+  both are easier than they look
 - **cards whose clue contains the answer**, like a card for *ditch* whose front
   says `ditch`. It is answered by reading it and still takes a review every
   time.

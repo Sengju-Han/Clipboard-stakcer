@@ -496,3 +496,60 @@ def test_without_a_key_apply_is_refused(tmp_path, monkeypatch):
                                       "--out-dir", str(tmp_path / "out3"), "--apply"])
     with pytest.raises(SystemExit):
         words.main()
+
+
+def test_a_sentence_used_by_two_cards_is_named(tmp_path):
+    # Mining two words from one sentence is efficient and it is also two cards
+    # that give each other away: seeing "the gymnast showed incredible agility"
+    # on the card for `gymnast` answers the card for `agility`.
+    shared = "The gymnast showed incredible agility during her routine."
+    col = _collection(tmp_path, [
+        ("a", "agility", shared),
+        ("b", "gymnast", shared),
+        ("c", "avow", "He avowed it plainly."),
+    ])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+
+    assert len(faults["shared"]) == 1
+    assert sorted(faults["shared"][0]["words"]) == ["agility", "gymnast"]
+    col.close()
+
+
+def test_two_cards_with_a_very_short_sentence_in_common_are_not(tmp_path):
+    # Three words is the floor. Below it, two cards sharing "they're loaded"
+    # is a coincidence rather than a mined pair.
+    col = _collection(tmp_path, [("a", "loaded", "they're loaded"),
+                                 ("b", "flush", "they're loaded")])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+    assert faults["shared"] == []
+    col.close()
+
+
+def test_an_example_that_is_only_the_word_is_named(tmp_path):
+    col = _collection(tmp_path, [
+        ("a", "ensconce", "ensconce"),
+        ("b", "Ambassador", "ambassador"),
+        ("c", "casserole", "a chicken casserole"),   # short, but a sentence
+        ("d", "avow", "He avowed it plainly."),
+    ])
+    faults = words.other_faults(col, list(col.find_notes("")), "Back", "Example")
+
+    assert sorted(r["word"] for r in faults["no_context"]) == ["Ambassador", "ensconce"]
+    # And it is not counted as having no example, which is a different problem.
+    assert faults["no_example"] == []
+    col.close()
+
+
+def test_the_report_carries_the_two_new_ones(tmp_path, monkeypatch):
+    where = tmp_path / "more-faults.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(where))
+    words.write_report([], {"the word is there": 10}, 10, applied=False, faults={
+        "no_context": [{"word": "ensconce"}],
+        "shared": [{"words": ["agility", "gymnast"],
+                    "sentence": "the gymnast showed incredible agility"}],
+    })
+    said = where.read_text(encoding="utf-8")
+
+    assert "whose example is just the word" in said and "`ensconce`" in said
+    assert "used by two cards or more" in said
+    assert "`agility`" in said and "`gymnast`" in said
