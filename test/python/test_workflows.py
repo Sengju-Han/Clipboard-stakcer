@@ -97,6 +97,39 @@ def test_an_if_reads_env_from_the_job_not_the_step(path):
                     f"and the step never runs.")
 
 
+# Every file a browser suite actually opens. A suite that drives a page the
+# workflow's path filter does not cover is a suite that never runs on the
+# change that breaks it.
+DRIVEN = ["docs/index.html", "docs/app/app.js", "docs/app/sw.js", "test/run.py"]
+
+
+def _covered(patterns, path):
+    """Does one of GitHub's path filters match this file?"""
+    from fnmatch import fnmatch
+
+    for pattern in patterns:
+        # `**` matches across directory separators; fnmatch's `*` already does,
+        # which is close enough for the shapes used here.
+        if fnmatch(path, pattern.replace("**", "*")):
+            return True
+    return False
+
+
+def test_the_app_test_runs_on_everything_it_tests():
+    loaded = yaml.safe_load((Path(__file__).resolve().parents[2]
+                             / ".github" / "workflows" / "app-test.yml").read_text(encoding="utf-8"))
+    # PyYAML reads a bare `on:` as the boolean True, which is a YAML 1.1 rule
+    # and a well-known trap - the key is there, it is simply not a string.
+    triggers = loaded.get("on", loaded.get(True, {}))
+    for event in ("pull_request", "push"):
+        patterns = triggers.get(event, {}).get("paths", [])
+        assert patterns, f"app-test.yml has no paths for {event}"
+        for path in DRIVEN:
+            assert _covered(patterns, path), (
+                f"app-test.yml does not run on {path} for {event}, but a suite drives it. "
+                f"A change there would go out with no test having run.")
+
+
 def test_there_are_workflows_to_check():
     # A glob that matches nothing makes every test above pass silently.
     assert len(WORKFLOWS) >= 8, f"only found {len(WORKFLOWS)}"

@@ -12,6 +12,7 @@ working, which is worse than no test at all.
 """
 
 import http.server
+import json
 import socket
 import socketserver
 import subprocess
@@ -63,6 +64,84 @@ class Server:
     @property
     def app_url(self):
         return f"http://127.0.0.1:{self.port}/app/index.html"
+
+
+class Worker:
+    """The real Lexis server, on a real port, for a suite that needs one.
+
+    Every other suite stubs the server with Playwright's routing, which answers
+    a request before the browser's own CORS check runs. That is how
+    "Access-Control-Allow-Methods: GET, POST, OPTIONS" survived a week while the
+    vault was written with PUT: every browser refused the request before it
+    left, reported "Failed to fetch" - indistinguishable from the server being
+    down - and the suite saw a stub answering happily.
+
+    start() returns "" when node or miniflare is not installed, so the browser
+    tests stay runnable on a machine that has never touched the server.
+    """
+
+    READY = 90          # seconds; the first run compiles the worker runtime
+
+    def __init__(self, origin):
+        self.origin = origin
+        self.proc = None
+        self.url = ""
+
+    def start(self):
+        script = ROOT / "server" / "test" / "serve.mjs"
+        if not script.exists() or not (ROOT / "server" / "node_modules" / "miniflare").is_dir():
+            return ""
+        try:
+            self.proc = subprocess.Popen(
+                ["node", str(script), self.origin, "0"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, cwd=str(ROOT / "server"),
+            )
+        except (FileNotFoundError, OSError):
+            return ""
+
+        # Read the ready line on a thread: a miniflare that fails to boot prints
+        # to stderr and never to stdout, and a blocking read would hang the
+        # whole run rather than skipping one suite.
+        answer = {}
+
+        def listen():
+            try:
+                answer["line"] = self.proc.stdout.readline()
+            except Exception:
+                answer["line"] = ""
+
+        reader = threading.Thread(target=listen, daemon=True)
+        reader.start()
+        reader.join(timeout=self.READY)
+        line = answer.get("line", "")
+        if not line:
+            self.stop()
+            return ""
+        try:
+            self.url = json.loads(line).get("url", "")
+        except ValueError:
+            self.url = ""
+        if not self.url:
+            self.stop()
+        return self.url
+
+    def stop(self):
+        if not self.proc:
+            return
+        try:
+            self.proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=10)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+        self.proc = None
 
 
 PREINSTALLED = Path("/opt/pw-browsers")
