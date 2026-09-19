@@ -302,7 +302,10 @@ def report_other(faults: dict) -> list[str]:
               "None of this is changed by this job. Each one is a decision only you "
               "can make, so it is named and left alone."]
     if twice:
-        lines += ["", f"### The same word on {plural(len(twice), 'card')}, twice or more", "",
+        # plural() over the words, not the cards: three duplicated words is not
+        # "the same word on three cards", which is what this said and is a
+        # different and wronger fact.
+        lines += ["", f"### {plural(len(twice), 'word')} on more than one card", "",
                   "Two cards for one word means answering it twice for the rest of "
                   "your life, on two separate schedules.", ""]
         lines += [f"- `{row['word']}` — {row['count']} cards" for row in twice[:40]]

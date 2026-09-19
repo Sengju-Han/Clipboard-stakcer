@@ -439,6 +439,9 @@ def test_the_report_carries_them(tmp_path, monkeypatch):
     said = where.read_text(encoding="utf-8")
 
     assert "And while it was looking" in said
+    # The heading counts the words, not the cards: "1 word on more than one
+    # card" is the fact; "the same word on 1 card" is a different and wronger one.
+    assert "1 word on more than one card" in said
     assert "`revelation` — 2 cards" in said
     assert "`transduction`" in said
     assert "`ditch`" in said
