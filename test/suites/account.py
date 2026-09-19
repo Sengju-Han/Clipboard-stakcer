@@ -163,3 +163,39 @@ def run(t):
     after = t.page.evaluate("() => localStorage.getItem('addcard.acct.token') || ''")
     t.check("signing out drops the session", after, "")
     t.check("but leaves this device usable", t.page.locator("#token").input_value(), TOKEN)
+
+    # ---- the other page --------------------------------------------------
+    # The whole point of one vault rather than two: the review app needs the
+    # same GitHub token and the same Anthropic key, and used to ask for them
+    # again, separately, on every device.
+    t.open_app()
+    t.page.evaluate("() => { try { localStorage.clear(); } catch {} }")
+    t.page.reload()
+    t.page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
+    t.page.wait_for_timeout(900)
+    t.open_settings()
+
+    t.check("the review app starts with no keys either",
+            [t.page.locator("#anthropic").input_value(), t.page.locator("#gh-token").input_value()],
+            ["", ""])
+
+    t.page.locator("#acct-base").fill("https://vault.test")
+    t.page.locator("#acct-email").fill("me@example.test")
+    t.page.locator("#acct-pw").fill(PASSWORD)
+    t.page.locator("#acct-in-btn").click()
+    t.page.wait_for_timeout(3000)
+
+    t.note("it said", t.page.locator("#acct-note").inner_text())
+    t.check("signing in there brings the GitHub token across",
+            t.page.locator("#gh-token").input_value(), TOKEN)
+    t.check("and the Anthropic key", t.page.locator("#anthropic").input_value(), KEY)
+    t.check("and the repository", t.page.locator("#gh-repo").input_value(), "Clipboard-stakcer")
+
+    # It was saved from the other page, so it is the one box, not a second one.
+    t.check("both pages wrote to one vault", len([b for b in state["seen"]]) >= 2, True)
+
+    # A key changed here has to go back, or the two pages disagree from now on.
+    t.page.locator("#anthropic").fill("sk-ant-api03-changed-on-the-review-app")
+    t.page.locator("#anthropic").dispatch_event("change")
+    t.page.wait_for_timeout(2000)
+    t.truthy("and a key changed here is sent back", state["seen"][-1] != blob)

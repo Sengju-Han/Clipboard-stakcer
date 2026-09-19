@@ -11,6 +11,7 @@
 // the network. Everything here is optional.
 
 import { derivedSecret, MIN_PASSWORD } from "./secret.js";
+import { fetchVault, saveVault } from "./vault.js";
 
 const KEY = "lexis:account";
 
@@ -63,6 +64,26 @@ export async function signIn(base, email, password) {
   const out = await call(base, "/api/login", { method: "POST", body: { email, secret } });
   keep({ base, token: out.token, email: out.email });
   return out;
+}
+
+// ---- the two keys -----------------------------------------------------------
+//
+// The same GitHub token and Anthropic key the Add to Anki page holds, in the
+// same box. Signing in here fills them in; changing them here sends them back,
+// so the other page has them on the next sign-in. The password is needed for
+// both and is never stored, which is why these take it rather than reading it
+// from somewhere.
+
+export async function pullKeys(password) {
+  const account = saved();
+  if (!account) throw new Error("Sign in first.");
+  return fetchVault(account.base, account.token, password);
+}
+
+export async function pushKeys(password, values) {
+  const account = saved();
+  if (!account) throw new Error("Sign in first.");
+  return saveVault(account.base, account.token, password, values);
 }
 
 export async function signOut() {
