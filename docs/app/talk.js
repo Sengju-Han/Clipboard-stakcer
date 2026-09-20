@@ -13,6 +13,8 @@
 // is a few hundred tokens a turn. Where recognition is missing — an iPhone,
 // Firefox — you type instead, and everything else is identical.
 
+import { serverUrl } from "./where.js";
+
 const MODEL = "claude-haiku-4-5";
 const TURNS = 8;
 
@@ -186,8 +188,49 @@ export function whyItStopped(code) {
   }[code] || "That did not come through. Try again, or type it.";
 }
 
+// The cards have sounded like a person since the TTS workflow shipped: their
+// audio is generated with Microsoft's neural voices and en-US-AvaNeural is what
+// plays when you tap one. This screen did not. It used speechSynthesis, which
+// on Android is the flat, clipped, unmistakably synthetic voice - so the same
+// app in the same session was half person and half robot, and the half doing
+// the talking was the robot.
+//
+// The page cannot fetch the neural voice itself: the service wants an Origin
+// header of `chrome-extension://...` and a browser will not let a page set
+// Origin. The server does it instead, and hands back an mp3.
+//
+// The phone's own voice is still here, underneath all of it. Every way this can
+// fail - no network, the server down, the service having retired the endpoint
+// it was never supposed to offer, a browser refusing to play audio it did not
+// see you ask for - ends with the robot talking rather than with silence.
+
+export const PHONE = "phone";
+export const VOICES = [
+  { id: "en-US-AvaNeural", label: "Ava — American" },
+  { id: "en-US-AndrewNeural", label: "Andrew — American" },
+  { id: "en-US-EmmaNeural", label: "Emma — American" },
+  { id: "en-US-BrianNeural", label: "Brian — American" },
+  { id: "en-GB-SoniaNeural", label: "Sonia — British" },
+  { id: "en-GB-RyanNeural", label: "Ryan — British" },
+  { id: PHONE, label: "This phone's own voice" },
+];
+// The one the cards use, so the two halves of the app finally agree.
+export const DEFAULT_VOICE = "en-US-AvaNeural";
+const REMEMBER = "talk.voice";
+
+export function chosenVoice() {
+  try {
+    const set = localStorage.getItem(REMEMBER) || "";
+    return VOICES.some((v) => v.id === set) ? set : DEFAULT_VOICE;
+  } catch { return DEFAULT_VOICE; }
+}
+
+export function rememberVoice(id) {
+  try { localStorage.setItem(REMEMBER, id); } catch { /* private window */ }
+}
+
 let voice = null;
-export function say(text, onDone = () => {}) {
+function phoneSays(text, onDone) {
   if (!window.speechSynthesis) { onDone(); return null; }
   try {
     speechSynthesis.cancel();
@@ -210,8 +253,68 @@ export function say(text, onDone = () => {}) {
   }
 }
 
+async function fromServer(text, id, where) {
+  const url = `${where}/api/say?${new URLSearchParams({ text, voice: id })}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`the voice server answered ${res.status}`);
+  const blob = await res.blob();
+  // A 200 with nothing in it would play as silence and pass for a turn.
+  if (!blob.size) throw new Error("the voice server sent no audio");
+  return blob;
+}
+
+// Bumped by every hush and every new turn, so audio that arrives after the
+// screen has moved on is thrown away rather than spoken over the top.
+let turnId = 0;
+let playing = null;
+let playingSrc = "";        // the blob behind it, so hushing can let it go
+
+export function say(text, onDone = () => {}) {
+  hush();
+  const mine = turnId;
+  const id = chosenVoice();
+  if (id === PHONE) return phoneSays(text, onDone);
+
+  const robot = () => { if (mine === turnId) phoneSays(text, onDone); };
+
+  fromServer(text, id, serverUrl()).then((blob) => {
+    if (mine !== turnId) return;                  // hushed while it was coming
+    const src = URL.createObjectURL(blob);
+    const audio = new Audio(src);
+    playing = audio;
+    playingSrc = src;
+    let finished = false;
+    const finish = (fallback) => {
+      if (finished) return;
+      finished = true;
+      URL.revokeObjectURL(src);
+      if (playing === audio) { playing = null; playingSrc = ""; }
+      if (fallback) robot(); else onDone();
+    };
+    audio.addEventListener("ended", () => finish(false));
+    // A file that will not decode is the phone's turn, not silence.
+    audio.addEventListener("error", () => finish(true));
+    audio.play().catch(() => finish(true));
+  }).catch(robot);
+
+  return null;
+}
+
 export function hush() {
+  turnId += 1;
   try { speechSynthesis.cancel(); } catch { /* nothing playing */ }
+  if (playing) {
+    try { playing.pause(); } catch { /* already stopped */ }
+    playing = null;
+  }
+  // Interrupted audio never reaches its own ended handler, so the blob it was
+  // reading from would sit in memory for the life of the page. One per
+  // interrupted turn is not much and adds up over a session of pressing
+  // "Say that again".
+  if (playingSrc) {
+    try { URL.revokeObjectURL(playingSrc); } catch { /* already gone */ }
+    playingSrc = "";
+  }
 }
 
 export const LENGTH = TURNS;
@@ -370,6 +473,17 @@ export function mountTalk(hooks) {
   $("t-repeat").addEventListener("click", () => {
     const last = [...$("t-log").querySelectorAll(".bubble.them p")].pop();
     if (last) say(last.textContent);
+  });
+
+  const picker = $("t-voice");
+  picker.innerHTML = VOICES.map((v) =>
+    `<option value="${v.id}">${v.label}</option>`).join("");
+  picker.value = chosenVoice();
+  picker.addEventListener("change", () => {
+    rememberVoice(picker.value);
+    // Said in the new voice rather than described, because the only question
+    // anybody has here is what it sounds like.
+    say("Alright — this is how I sound.");
   });
 }
 

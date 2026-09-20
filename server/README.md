@@ -92,6 +92,39 @@ The email is a name to sign in with. Nothing is ever sent to it, and it is
 never checked — so it is not proof of anything and is not treated as proof of
 anything.
 
+## The voice
+
+`GET /api/say?text=…&voice=en-US-AvaNeural` answers with an mp3.
+
+It is here for one reason: the page cannot fetch it itself. Microsoft's neural
+voices — the ones **Anki TTS package** already puts on the cards — are reached
+through an endpoint that checks an `Origin` header of `chrome-extension://…`,
+and a browser will not let a page set `Origin`. A Worker will. Without this the
+Speak screen falls back to the phone's own `speechSynthesis`, which is where it
+started and which sounds nothing like the cards.
+
+Open, with no account. Everything in this app works without one, and a voice
+that quietly turns back into the phone's robot for anyone not signed in is the
+kind of silent downgrade this project keeps finding and taking out. What keeps
+it modest instead: the text is capped at 600 characters, the voice has to be one
+of six, and the same sentence twice is served from the cache rather than
+generated twice.
+
+That last one comes with a caveat. The Cache API is documented as doing nothing
+on a `workers.dev` subdomain, and this is deployed to one — so the cache may be
+a saving that only starts once the server has a domain of its own. The response
+carries `x-voice-cache: hit` or `miss`, so it is a thing you can check rather
+than a thing to believe:
+
+```
+curl -sD- -o /dev/null "$SERVER/api/say?text=hello&voice=en-US-AvaNeural" | grep -i x-voice-cache
+```
+
+Reverse-engineered rather than documented — `anki/TTS.md` says the same about
+the workflow that uses it. If it stops working, change provider rather than
+debug it; nothing breaks in the meantime except that the app sounds like a
+satnav again.
+
 ## Running the tests
 
 ```

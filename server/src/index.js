@@ -15,6 +15,7 @@
 import {
   hashPassword, checkPassword, newToken, tokenHash, id, pairingCode,
 } from "./crypto.js";
+import { speak, VOICES, DEFAULT_VOICE, MAX_TEXT } from "./say.js";
 
 const SESSION_DAYS = 90;
 const PAIRING_MINUTES = 10;
@@ -385,7 +386,78 @@ async function writeVault(request, userId, env) {
 
 // ---- the router ------------------------------------------------------------
 
+// ---- the voice -------------------------------------------------------------
+
+async function saying(request, env) {
+  const url = new URL(request.url);
+  const text = (url.searchParams.get("text") || "").trim();
+  const voice = url.searchParams.get("voice") || DEFAULT_VOICE;
+
+  if (!text) return fail(env, 400, "Nothing to say.");
+  if (text.length > MAX_TEXT) {
+    return fail(env, 400, `That is longer than the ${MAX_TEXT} characters this speaks in one go.`);
+  }
+  if (!VOICES.includes(voice)) {
+    return fail(env, 400, `${voice} is not one of the voices this offers.`);
+  }
+
+  // The same sentence twice - a replayed turn, two phones, somebody leaning on
+  // the button - costs one generation. Worth having on a public route, and
+  // worth having anyway: a cached turn plays with no wait at all.
+  //
+  // On a workers.dev subdomain the Cache API is documented as doing nothing,
+  // and this is deployed to one. So this may be a saving that never happens
+  // until the server has a domain of its own - which is a thing worth knowing
+  // rather than assuming either way. `x-voice-cache` on the response says
+  // which it was: ask for the same sentence twice and read the header.
+  const key = new Request(
+    `https://say.invalid/${encodeURIComponent(voice)}/${encodeURIComponent(text)}`,
+    { method: "GET" },
+  );
+  const cache = caches.default;
+  const hit = await cache.match(key);
+  if (hit) return new Response(hit.body, { status: 200, headers: cors(env, spokenHeaders("hit")) });
+
+  // Caught here rather than left to the handler at the bottom, which tells a
+  // stranger nothing on purpose. Nothing about the voice service is anybody's
+  // private business, and "Something went wrong" would be the third thing in a
+  // row that does not say what happened.
+  //
+  // EDGE_WSS is for the tests, which run this against a socket on the test
+  // machine rather than Microsoft's. Unset everywhere else.
+  let mp3;
+  try {
+    mp3 = await speak(text, voice, { wss: env.EDGE_WSS || undefined });
+  } catch (err) {
+    const said = String(err?.message || err);
+    console.error("voice", said);
+    // 502, because what failed is the thing upstream rather than this. The app
+    // falls back to the phone's own voice either way; this is for whoever is
+    // reading afterwards wondering why it sounded like a robot again.
+    return fail(env, 502, said);
+  }
+
+  const response = new Response(mp3, { status: 200, headers: cors(env, spokenHeaders("miss")) });
+  // The copy that goes in the cache keeps its own headers; the one handed back
+  // carries this request's CORS.
+  await cache.put(key, new Response(mp3, { headers: spokenHeaders("stored") }));
+  return response;
+}
+
+const spokenHeaders = (state) => ({
+  "content-type": "audio/mpeg",
+  // The same text in the same voice is the same audio forever.
+  "cache-control": "public, max-age=604800, immutable",
+  "x-voice-cache": state,
+});
+
 const PUBLIC = {
+  // Open on purpose. The Speak screen works without an account - everything in
+  // this app does - and a voice that quietly turns back into the phone's robot
+  // for anyone not signed in is the kind of silent downgrade this project keeps
+  // finding and removing. The text is capped, the voice list is closed, and
+  // repeats are cached, so what an unwanted caller can get out of it is small.
+  "GET /api/say": saying,
   "POST /api/register": register,
   "POST /api/login": login,
   "POST /api/logout": logout,

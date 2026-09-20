@@ -1,8 +1,33 @@
 """A conversation built out of the words you are in the middle of learning."""
 
+import io
 import json
+import math
+import struct
+import wave
 
 NOTHING = {"said": "", "better": "", "why": ""}
+
+
+def playable(seconds=0.2):
+    """Audio a browser will really decode.
+
+    What the server sends is an mp3; what matters on this side is only that it
+    plays, and that when it does the phone's own voice stays quiet. A wav is
+    made here rather than an mp3 because it can be written honestly in nine
+    lines, and because the format is the server's business - its own suite
+    checks that what comes back is what Microsoft sent.
+    """
+    rate = 8000
+    out = io.BytesIO()
+    with wave.open(out, "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(
+            struct.pack("<h", int(6000 * math.sin(2 * math.pi * 440 * i / rate)))
+            for i in range(int(rate * seconds))))
+    return out.getvalue()
 
 
 def reply(n):
@@ -121,3 +146,95 @@ def run(t):
     t.check("another conversation clears the recap", t.page.locator("#t-recap").is_hidden(), True)
     t.check("the ticks", t.page.locator("#t-words .chip.on").count(), 0)
     t.check("and brings the input back", t.page.locator("#t-input").is_visible(), True)
+
+
+    _voice(t)
+
+
+def _voice(t):
+    """The voice itself, which is the whole difference between this screen
+    sounding like the cards and sounding like a satnav.
+
+    The neural voice cannot be fetched by the page - the service wants an Origin
+    header of `chrome-extension://...` and a browser will not let a page set one
+    - so it comes from the server. Everything here is about what happens when it
+    does not: the phone's own voice has to take over, out loud, rather than the
+    screen going quiet.
+    """
+    # What the phone's own voice was asked to say, if anything.
+    t.page.evaluate("""() => {
+      window.__robot = [];
+      const real = speechSynthesis.speak.bind(speechSynthesis);
+      speechSynthesis.speak = (utter) => { window.__robot.push(utter.text); real(utter); };
+    }""")
+
+    asked = []
+
+    def voice_route(route):
+        url = route.request.url
+        asked.append(url)
+        route.fulfill(status=200, content_type="audio/wav", body=playable())
+
+    t.page.route("**/api/say*", voice_route)
+
+    picker = t.page.locator("#t-voice")
+    t.check("the screen offers a voice", picker.is_visible(), True)
+    t.check("and starts on the one the cards use", picker.input_value(), "en-US-AvaNeural")
+    t.truthy("with the phone's own still on the list",
+             "phone" in picker.evaluate("el => [...el.options].map(o => o.value).join(',')"))
+
+    asked.clear()
+    t.page.evaluate("() => { window.__robot = []; }")
+    t.page.locator("#t-repeat").click()
+    t.page.wait_for_timeout(1500)
+
+    t.truthy("saying a line again asks the server for it", len(asked) >= 1)
+    t.truthy("by name", "voice=en-US-AvaNeural" in (asked[0] if asked else ""))
+    t.truthy("and with the words", "text=" in (asked[0] if asked else ""))
+    # The point of all of it. If both spoke, the reply would be said twice.
+    t.check("and the phone's own voice stays out of it",
+            t.page.evaluate("() => window.__robot.length"), 0)
+
+    # ---- when the server cannot help -------------------------------------
+    t.page.unroute("**/api/say*")
+    t.page.route("**/api/say*", lambda route: route.fulfill(
+        status=502, content_type="application/json",
+        body=json.dumps({"error": "The voice service answered 403."})))
+
+    t.page.evaluate("() => { window.__robot = []; }")
+    t.page.locator("#t-repeat").click()
+    t.page.wait_for_timeout(1500)
+    t.check("a server that cannot speak hands over to the phone",
+            t.page.evaluate("() => window.__robot.length"), 1)
+    t.truthy("saying the same words",
+             t.page.evaluate("() => window.__robot[0] || ''") != "")
+
+    # A 200 with an empty body is the failure that looks like success: it would
+    # play as silence and pass for a turn.
+    t.page.unroute("**/api/say*")
+    t.page.route("**/api/say*", lambda route: route.fulfill(
+        status=200, content_type="audio/mpeg", body=b""))
+    t.page.evaluate("() => { window.__robot = []; }")
+    t.page.locator("#t-repeat").click()
+    t.page.wait_for_timeout(1500)
+    t.check("and so does an answer with no audio in it",
+            t.page.evaluate("() => window.__robot.length"), 1)
+
+    # ---- choosing the phone on purpose -----------------------------------
+    t.page.unroute("**/api/say*")
+    asked.clear()
+    t.page.route("**/api/say*", voice_route)
+    t.page.evaluate("() => { window.__robot = []; }")
+    picker.select_option("phone")
+    t.page.wait_for_timeout(1200)
+    t.check("picking the phone's voice speaks straight away",
+            t.page.evaluate("() => window.__robot.length"), 1)
+    t.check("and does not trouble the server at all", len(asked), 0)
+
+    t.page.reload()
+    t.page.wait_for_selector("#screen-home:not([hidden])", timeout=90000)
+    t.page.wait_for_timeout(900)
+    t.page.locator("#talk-btn").click()
+    t.page.wait_for_timeout(1500)
+    t.check("and the choice is still there next time",
+            t.page.locator("#t-voice").input_value(), "phone")

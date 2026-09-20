@@ -39,9 +39,9 @@ on the other side. This is the one feature the desktop mining tools are really
 for, and it has never worked on a phone because it needed an add-on.
 
 **Speak it.** A conversation built out of the six words you are in the middle
-of learning — reachable, not yet safe. Your phone listens, Claude answers, your
-phone reads the reply out. A word only counts as used when you actually said
-it, not when Claude thinks you did.
+of learning — reachable, not yet safe. Your phone listens, Claude answers, and
+the reply is read out in the same neural voice the cards use. A word only counts
+as used when you actually said it, not when Claude thinks you did.
 
 **Why a word will not stick.** After an Again, the card stays up and explains
 itself: not the definition, which is already on the card, but when a native

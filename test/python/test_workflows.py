@@ -101,7 +101,7 @@ def test_an_if_reads_env_from_the_job_not_the_step(path):
 # workflow's path filter does not cover is a suite that never runs on the
 # change that breaks it.
 DRIVEN = ["docs/index.html", "docs/connected.html", "docs/app/app.js",
-          "docs/app/sw.js", "test/run.py"]
+          "docs/app/sw.js", "docs/app/talk.js", "test/run.py"]
 
 
 def _covered(patterns, path):

@@ -3,6 +3,7 @@
 // code that has not been checked.
 
 import { Miniflare } from "miniflare";
+import { fakeEdge } from "./edge.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -335,6 +336,124 @@ r = await call("POST", "/api/pair/claim", { body: { code: "ABCD" } });
 check("a stranger gets the same failure", r.status, 500);
 check("and is told nothing about the inside of it",
   r.payload.error, "Something went wrong here. Nothing was changed.");
+
+console.log("\n— the voice —");
+//
+// The Speak screen used the phone's own speechSynthesis while the cards spoke
+// with a neural voice, so the same app sounded like two different things. The
+// browser cannot fetch the neural one itself: the service wants an Origin of
+// `chrome-extension://...` and a page is not allowed to set Origin. This route
+// is the only reason the voices can match.
+//
+// Microsoft's endpoint is not reachable from CI, so what is checked here is the
+// half that is ours - the request, and the reassembly of what comes back. That
+// the bytes are the right bytes is settled elsewhere, by generating the frames
+// with this code and with edge-tts and diffing them.
+
+async function withEdge(options, run) {
+  const edge = await fakeEdge(options);
+  const worker = new Miniflare({
+    modules: true,
+    scriptPath: join(here, "..", "src", "index.js"),
+    modulesRoot: join(here, "..", "src"),
+    modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
+    d1Databases: { DB: "lexis-voice-test" },
+    bindings: { ALLOWED_ORIGIN: "https://example.test", EDGE_WSS: edge.url },
+    compatibilityDate: "2026-01-01",
+  });
+  try {
+    await run(worker, edge);
+  } finally {
+    await worker.dispose();
+    await edge.close();
+  }
+}
+
+const say = (worker, query) =>
+  worker.dispatchFetch(`http://server/api/say?${new URLSearchParams(query)}`);
+
+await withEdge({ audio: ["first-", "second"] }, async (worker, edge) => {
+  const res = await say(worker, { text: "Tell me about your week.", voice: "en-US-AvaNeural" });
+  check("a sentence comes back as audio", res.status, 200);
+  check("and says it is audio", res.headers.get("content-type"), "audio/mpeg");
+  const heard = await res.text();
+  check("with every frame joined back together, in order", heard, "first-second");
+
+  // The header a page cannot set. Without it the service refuses, and this is
+  // the whole reason the swap happens in the Worker rather than the browser.
+  check("the request carries the Origin a browser could not send",
+        edge.seen.origin, "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold");
+  check("and the trusted client token",
+        edge.seen.query.get("TrustedClientToken"), "6A5AA1D4EAFF4E9FB37E23D68491D6F4");
+  check("and a freshly derived Sec-MS-GEC",
+        /^[0-9A-F]{64}$/.test(edge.seen.query.get("Sec-MS-GEC") || ""), true);
+
+  const [config, ssml] = edge.seen.frames;
+  check("the settings go first", /Path:speech\.config/.test(config), true);
+  check("asking for the mp3 the cards use",
+        /audio-24khz-48kbitrate-mono-mp3/.test(config), true);
+  check("then the words", /Path:ssml/.test(ssml), true);
+  // en-US-AvaNeural is what every other part of this project calls the voice.
+  // What goes over the wire is the long name, and nothing but a comparison
+  // against edge-tts would have caught that.
+  check("under the long voice name the service wants",
+        /Microsoft Server Speech Text to Speech Voice \(en-US, AvaNeural\)/.test(ssml), true);
+  check("carrying the sentence", /Tell me about your week\./.test(ssml), true);
+
+  // GET with no odd headers is a simple request, so there is no preflight to
+  // get wrong - only this header, and without it the app hears nothing and
+  // falls back to the phone.
+  check("and the audio is allowed back to the app",
+        res.headers.get("access-control-allow-origin"), "https://example.test");
+});
+
+await withEdge({}, async (worker, edge) => {
+  const first = await say(worker, { text: "Same again.", voice: "en-US-AvaNeural" });
+  check("the first time it is generated", first.headers.get("x-voice-cache"), "miss");
+  await first.text();
+  const second = await say(worker, { text: "Same again.", voice: "en-US-AvaNeural" });
+  check("the second time it is not", second.headers.get("x-voice-cache"), "hit");
+  check("and the audio is the same", await second.text(), "first-second");
+  check("so the service was only asked once", edge.seen.connections, 1);
+});
+
+await withEdge({}, async (worker, edge) => {
+  // A closed list, because this is a public route and the voice name goes
+  // straight into the SSML.
+  let res = await say(worker, { text: "Hello.", voice: "en-US-NotARealNeural" });
+  check("a voice that is not on the list is refused", res.status, 400);
+  check("by name", /not one of the voices/.test((await res.json()).error), true);
+
+  res = await say(worker, { text: "", voice: "en-US-AvaNeural" });
+  check("and so is nothing at all", res.status, 400);
+
+  res = await say(worker, { text: "x".repeat(601), voice: "en-US-AvaNeural" });
+  check("and a paragraph rather than a turn", res.status, 400);
+  check("with the limit in the message", /600 characters/.test((await res.json()).error), true);
+  check("none of which reached the service", edge.seen.connections, 0);
+});
+
+await withEdge({ status: 403 }, async (worker) => {
+  // What a retired client token or a stale Sec-MS-GEC looks like. The app falls
+  // back to the phone's own voice, so this only has to be honest, not pretty.
+  const res = await say(worker, { text: "Hello there.", voice: "en-US-AvaNeural" });
+  check("a service that refuses the connection is a 502 here", res.status, 502);
+  const said = (await res.json()).error;
+  check("and says what it answered rather than 'something went wrong'",
+        /answered 403/.test(said), true);
+  note("said", said);
+});
+
+await withEdge({ silent: true }, async (worker) => {
+  // The failure that looks like success: a clean exchange that produced no
+  // sound. Answering 200 with an empty body would leave the app playing
+  // silence and calling it a turn.
+  const res = await say(worker, { text: "Hello there.", voice: "en-US-AvaNeural" });
+  check("a turn that ends with no audio is not a success", res.status, 502);
+  const said = (await res.json()).error;
+  check("and says that is what happened", /no audio/.test(said), true);
+  note("said", said);
+});
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 await mf.dispose();
