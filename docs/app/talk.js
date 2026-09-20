@@ -18,55 +18,53 @@ import { serverUrl } from "./where.js";
 const MODEL = "claude-haiku-4-5";
 const TURNS = 8;
 
+// Two calls, doing two different jobs, because one call was doing neither well.
+//
+// It used to be one: every turn asked for a reply, a list of which target words
+// had been used, and a correction. That made the conversation slow and the
+// recap empty.
+//
+//   - The word list was dead. `spotted()` decided, and the line that read
+//     Claude's answer was `(claimed && spotted(...)) || spotted(...)`, which is
+//     just `spotted(...)`. It was asked for on every turn and thrown away.
+//   - The correction was asked for on every turn and told to stay quiet:
+//     "at most one thing per turn, only when it would genuinely be
+//     misunderstood, ignore small slips". Which is right for a conversation -
+//     being picked up mid-sentence is how people stop talking - but it left
+//     the recap with nothing in it. The one screen that exists to say what to
+//     work on had a heading and no list under it.
+//
+// So: the conversation is now plain streamed text, which is as fast as this
+// gets and starts appearing while it is still being written. And the recap is
+// its own call at the end, given the whole transcript and told to hold nothing
+// back, at the one moment when waiting a second is fine.
+
 const SYSTEM = `You are a warm, patient conversation partner for a Korean adult learning English.
 You are talking, not teaching: keep your turns to one or two sentences, ask one question at a time,
 and sound like a person rather than a lesson.
 
 You are given a short list of TARGET WORDS the learner has recently studied. Steer the conversation
 so that using them is the natural thing to do — ask about situations where they fit — but never
-name the list, never say "try to use", and never quiz them. If they use one, react to what they
-said, not to the fact that they used it.
+name the list, never say "try to use", and never quiz them.
 
-Correct at most one thing per turn, and only when it would genuinely be misunderstood or sounds
-clearly unnatural. Say the natural version, briefly, and move on. Ignore small slips. When there is
-nothing worth correcting, leave all three correction fields as empty strings. The learner
-is speaking out loud, so what reaches you has speech-recognition errors in it: missing articles,
-wrong homophones, no punctuation. Never correct anything that is plainly a transcription artefact.
+Do not correct them and do not comment on their English at all. They get that at the end, from
+somebody else, with the whole conversation in front of them. Your only job is to be easy to talk to.
+The learner is speaking out loud, so what reaches you has speech-recognition errors in it: missing
+articles, wrong homophones, no punctuation. Read past all of it.
 
-Reply as JSON only.`;
-
-const SCHEMA = {
-  type: "object",
-  properties: {
-    reply: { type: "string", description: "What you say next. One or two sentences, spoken English." },
-    used: {
-      type: "array",
-      items: { type: "string" },
-      description: "Target words the learner actually used in their last message, naturally or not. Empty if none.",
-    },
-    // Every field is always present and every field is a plain string. A
-    // nullable union would say "no correction" more elegantly and is not worth
-    // the risk: the schema shape that is known to work with this API is the
-    // one the explanation contract already uses, and it has no unions in it.
-    // Nothing to correct is three empty strings.
-    correction: {
-      type: "object",
-      properties: {
-        said: { type: "string", description: "What they said, quoted. Empty if nothing needs correcting." },
-        better: { type: "string", description: "The natural way to say it. Empty if nothing needs correcting." },
-        why: { type: "string", description: "One short clause, no grammar jargon. Empty if nothing needs correcting." },
-      },
-      required: ["said", "better", "why"],
-      additionalProperties: false,
-    },
-  },
-  required: ["reply", "used", "correction"],
-  additionalProperties: false,
-};
+Reply with what you say next, and nothing else. No quotation marks, no stage directions, no JSON.`;
 
 // ---- talking to Claude ----------------------------------------------------
 
-export async function turn(messages, targets, apiKey) {
+/**
+ * One turn, streamed.
+ *
+ * `onText` is called with the reply so far as it arrives, so the words appear
+ * while they are being written instead of all at once a second and a half
+ * later. That second and a half is the same either way; what changes is how
+ * long the screen sits there saying nothing.
+ */
+export async function turn(messages, targets, apiKey, onText = () => {}) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -77,22 +75,166 @@ export async function turn(messages, targets, apiKey) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 400,
+      max_tokens: 200,
       system: `${SYSTEM}\n\nTARGET WORDS: ${targets.join(", ")}`,
       messages,
-      output_config: { format: { type: "json_schema", schema: SCHEMA } },
+      stream: true,
+    }),
+  });
+
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new Error(whyItRefused(res.status, payload?.error?.message || `${res.status}`));
+  }
+
+  let text = "";
+  for await (const event of events(res)) {
+    if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+      text += event.delta.text;
+      onText(text);
+    } else if (event.type === "error") {
+      throw new Error(event.error?.message || "Claude stopped partway.");
+    }
+  }
+  const said = text.trim();
+  if (!said) throw new Error("Claude sent nothing back.");
+  return said;
+}
+
+/** The server-sent events out of a streaming response, one parsed object at a time. */
+async function* events(res) {
+  const reader = res.body.getReader();
+  const decode = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decode.decode(value, { stream: true });
+    // Events are separated by a blank line; a partial one stays in the buffer.
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      for (const line of block.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const body = line.slice(5).trim();
+        if (!body || body === "[DONE]") continue;
+        try { yield JSON.parse(body); } catch { /* not ours to fix */ }
+      }
+    }
+  }
+}
+
+// The message a refusal deserves, rather than its status code.
+export function whyItRefused(status, said) {
+  if (status === 401) return "Claude rejected the key in Settings.";
+  if (status === 429) return "Claude is rate limiting; give it a moment.";
+  if (/workspace/i.test(said)) return "That key belongs to the organisation rather than a workspace.";
+  if (/credit balance/i.test(said)) return "The Anthropic account is out of credit.";
+  return said;
+}
+
+// ---- the recap ------------------------------------------------------------
+//
+// The whole point of the session, and until now the thinnest part of it: two
+// lists of words and a heading with nothing under it. This is a separate call
+// with the whole conversation in front of it, and the instruction the turn
+// prompt cannot have - say everything worth saying.
+
+const DEBRIEF = `You are an English teacher reading back a conversation one of your learners has just
+had. They are a Korean adult. You were not the one talking to them, and you are not being polite to
+the other side — your job is to tell them what is actually worth knowing.
+
+Be specific and be generous with detail. This is the one moment in the session where they have
+stopped talking and can take something in, so it is the wrong moment to be brief. Quote them. Say
+the natural version rather than describing it.
+
+PATTERNS: the things that happened more than once, or that would make a native speaker pause. Two to
+five of them. Not every slip — the repeated ones, and the ones that change the meaning. If they
+genuinely made none, say so in one line rather than inventing some.
+
+They were speaking out loud and the transcript came from speech recognition, so missing articles,
+missing punctuation and wrong homophones ("their/there", "to/too") may be the microphone rather than
+them. Never correct one of those. If a mistake could be either, leave it out.
+
+WORDS: for each target word, whether they used it and how it sounded. A word that never came up is
+worth saying so about.
+
+Warm, plain English, no grammar jargon. Reply as JSON only.`;
+
+const RECAP_SCHEMA = {
+  type: "object",
+  properties: {
+    strength: {
+      type: "string",
+      description: "One or two things they did genuinely well, quoting them. Two sentences at most.",
+    },
+    patterns: {
+      type: "array",
+      description: "Two to five things worth saying differently. Empty only if there are truly none.",
+      items: {
+        type: "object",
+        properties: {
+          heard: { type: "string", description: "What they said, quoted." },
+          natural: { type: "string", description: "How a native speaker would say it." },
+          why: { type: "string", description: "One short clause. No grammar jargon." },
+        },
+        required: ["heard", "natural", "why"],
+        additionalProperties: false,
+      },
+    },
+    words: {
+      type: "array",
+      description: "One entry per target word, in the order given.",
+      items: {
+        type: "object",
+        properties: {
+          word: { type: "string" },
+          note: {
+            type: "string",
+            description: "How it was used, or that it never came up, in one short sentence.",
+          },
+        },
+        required: ["word", "note"],
+        additionalProperties: false,
+      },
+    },
+    next: { type: "string", description: "One thing to try in the next conversation." },
+  },
+  required: ["strength", "patterns", "words", "next"],
+  additionalProperties: false,
+};
+
+/** The debrief, from the whole conversation. Throws; the caller has a fallback. */
+export async function debrief(messages, targets, apiKey) {
+  const transcript = messages
+    .filter((m) => !/^\(Open the conversation/.test(m.content))
+    .map((m) => `${m.role === "user" ? "LEARNER" : "PARTNER"}: ${m.content}`)
+    .join("\n");
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1200,
+      system: DEBRIEF,
+      messages: [{
+        role: "user",
+        content: `TARGET WORDS: ${targets.join(", ")}\n\nThe conversation:\n\n${transcript}`,
+      }],
+      output_config: { format: { type: "json_schema", schema: RECAP_SCHEMA } },
     }),
   });
 
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const said = payload?.error?.message || `${res.status}`;
-    throw new Error(
-      res.status === 401 ? "Claude rejected the key in Settings."
-      : res.status === 429 ? "Claude is rate limiting; give it a moment."
-      : /workspace/i.test(said) ? "That key belongs to the organisation rather than a workspace."
-      : /credit balance/i.test(said) ? "The Anthropic account is out of credit."
-      : said);
+    throw new Error(whyItRefused(res.status, payload?.error?.message || `${res.status}`));
   }
   const text = (payload.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
   if (!text) throw new Error("Claude sent nothing back.");
@@ -327,7 +469,6 @@ let deps = null;
 let words = [];            // the target cards
 let used = new Set();      // which of them have been reached for
 let history = [];          // the Anthropic messages array
-let corrections = [];
 let spoken = 0;            // the learner's turns so far
 let rec = null;            // the live recogniser, when listening
 let busy = false;
@@ -368,6 +509,7 @@ function progress() {
 
 async function advance(saidByLearner) {
   thinking(true);
+  let live = null;                     // the bubble being written into
   try {
     // The API needs the conversation to start with the learner, and at the very
     // beginning there is no learner yet — so the opener is an instruction, not
@@ -375,33 +517,30 @@ async function advance(saidByLearner) {
     history.push(saidByLearner === null
       ? { role: "user", content: "(Open the conversation. Greet them and ask one easy question.)" }
       : { role: "user", content: saidByLearner });
-    const result = await turn(history, words.map((c) => c.word), deps.apiKey());
-    history.push({ role: "assistant", content: JSON.stringify(result) });
 
-    // Claude is asked which target words were used and is good at it, but it
-    // is the learner's sentence that decides — a word credited that was never
-    // said is a word that quietly stops being practised.
+    const reply = await turn(history, words.map((c) => c.word), deps.apiKey(), (sofar) => {
+      // Made on the first token rather than up front, so a call that fails
+      // outright leaves no empty bubble sitting there. Once there are words to
+      // read, the words are the progress indicator and the dots are noise.
+      if (!live) { live = bubble("them", ""); $("t-thinking").hidden = true; }
+      live.querySelector("p").textContent = sofar;
+    });
+    history.push({ role: "assistant", content: reply });
+    if (!live) live = bubble("them", reply);
+    else live.querySelector("p").textContent = reply;
+
+    // What they actually said decides, not what Claude thinks they said. A word
+    // credited that was never spoken is a word that quietly stops being
+    // practised.
     if (saidByLearner) {
       for (const card of words) {
-        const claimed = (result.used || []).some((w) => w.toLowerCase() === card.word.toLowerCase());
-        if ((claimed && spotted(saidByLearner, card.word)) || spotted(saidByLearner, card.word)) {
-          used.add(card.word.toLowerCase());
-        }
+        if (spotted(saidByLearner, card.word)) used.add(card.word.toLowerCase());
       }
       drawTargets();
     }
-
-    let extra = "";
-    const fix = result.correction;
-    if (fix && String(fix.better || "").trim()) {
-      corrections.push(fix);
-      extra = `<div class="fix"><s>${esc(fix.said)}</s>` +
-        `<b>${esc(fix.better)}</b>` +
-        `<span>${esc(fix.why)}</span></div>`;
-    }
-    bubble("them", result.reply, extra);
-    say(result.reply);
+    say(reply);
   } catch (err) {
+    if (live) live.remove();
     bubble("note", err.message || String(err));
   } finally {
     thinking(false);
@@ -410,18 +549,72 @@ async function advance(saidByLearner) {
   }
 }
 
-function finish() {
+// The two word lists this used to be, kept for when the debrief cannot be had:
+// no key, no signal, Claude refusing. Thin, but true and free.
+function wordLists() {
   const got = words.filter((c) => used.has(c.word.toLowerCase()));
   const missed = words.filter((c) => !used.has(c.word.toLowerCase()));
-  let html = `<h4>you reached for</h4><p>${got.length ? got.map((c) => esc(c.word)).join(", ") : "none of them, this time"}</p>`;
-  if (missed.length) html += `<h4>still only on paper</h4><p>${missed.map((c) => esc(c.word)).join(", ")}</p>`;
-  if (corrections.length) {
-    html += `<h4>worth saying differently</h4><ul>` + corrections.map((c) =>
-      `<li><s>${esc(c.said)}</s> → <b>${esc(c.better)}</b> <span>${esc(c.why)}</span></li>`).join("") + `</ul>`;
+  let html = `<h4>you reached for</h4><p>${got.length
+    ? got.map((c) => esc(c.word)).join(", ") : "none of them, this time"}</p>`;
+  if (missed.length) {
+    html += `<h4>still only on paper</h4><p>${missed.map((c) => esc(c.word)).join(", ")}</p>`;
+  }
+  return html;
+}
+
+function recapHtml(out) {
+  const noteFor = (word) => {
+    const found = (out.words || []).find(
+      (x) => String(x.word || "").toLowerCase() === word.toLowerCase());
+    return found ? String(found.note || "") : "";
+  };
+
+  let html = "";
+  if (String(out.strength || "").trim()) {
+    html += `<h4>what went well</h4><p>${esc(out.strength)}</p>`;
+  }
+
+  const patterns = (out.patterns || []).filter((c) => String(c.natural || "").trim());
+  html += `<h4>worth saying differently</h4>`;
+  html += patterns.length
+    ? `<ul>${patterns.map((c) =>
+        `<li><s>${esc(c.heard)}</s> → <b>${esc(c.natural)}</b> <span>${esc(c.why)}</span></li>`
+      ).join("")}</ul>`
+    : `<p>Nothing that would make anybody pause. That is the point of doing this.</p>`;
+
+  // The tick is decided here and not by Claude, for the same reason as during
+  // the conversation: it is the one fact on this screen, and a word wrongly
+  // ticked stops being practised.
+  html += `<h4>your words</h4><ul class="said">` + words.map((card) => {
+    const done = used.has(card.word.toLowerCase());
+    const note = noteFor(card.word);
+    return `<li><b>${done ? "✓" : "—"} ${esc(card.word)}</b>`
+      + (note ? ` <span>${esc(note)}</span>` : "") + `</li>`;
+  }).join("") + `</ul>`;
+
+  if (String(out.next || "").trim()) {
+    html += `<h4>next time</h4><p>${esc(out.next)}</p>`;
+  }
+  return html;
+}
+
+async function finish() {
+  $("t-input").hidden = true;
+  $("t-recap").hidden = false;
+  // Said out loud, because this is a second call and the screen would otherwise
+  // sit empty at the exact moment somebody is waiting to be told how they did.
+  $("t-recap").innerHTML = `<div class="why"><p>Reading the conversation back…</p></div>`;
+
+  let html;
+  try {
+    html = recapHtml(await debrief(history, words.map((c) => c.word), deps.apiKey()));
+  } catch (err) {
+    // Never nothing. The lists below are worth less than the debrief and worth
+    // a great deal more than an empty panel with an error in it.
+    html = wordLists()
+      + `<h4>no debrief this time</h4><p>${esc(err.message || String(err))}</p>`;
   }
   $("t-recap").innerHTML = `<div class="why">${html}</div>`;
-  $("t-recap").hidden = false;
-  $("t-input").hidden = true;
 }
 
 // ---- hearing them ---------------------------------------------------------
@@ -492,7 +685,6 @@ export function openTalk() {
   words = targets(deps.cards());
   used = new Set();
   history = [];
-  corrections = [];
   spoken = 0;
   $("t-log").innerHTML = "";
   $("t-recap").hidden = true;
