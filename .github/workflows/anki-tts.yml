@@ -20,6 +20,11 @@ on:
         description: 'Voice, e.g. en-US-AvaNeural, en-US-AndrewNeural, en-US-EmmaNeural'
         required: false
         default: 'en-US-AvaNeural'
+      sync:
+        description: 'Put the audio straight into your AnkiWeb collection. No file to import - just sync your phone.'
+        required: false
+        type: boolean
+        default: false
       revoice:
         description: 'Re-record notes that already have audio, in the voice above. Recordings you made yourself are left alone.'
         required: false
@@ -62,8 +67,10 @@ jobs:
       - name: Check out the scripts
         uses: actions/checkout@v4
 
+      # Only the package is a publication. Syncing sends the audio to the
+      # AnkiWeb account it came from and uploads no artifact at all.
       - name: Refuse to publish study data from a public repository
-        if: ${{ !github.event.repository.private && !inputs.confirm_public }}
+        if: ${{ !github.event.repository.private && !inputs.confirm_public && !inputs.sync }}
         run: |
           echo "::error title=Public repository::This repository is public, so the package would be downloadable by anyone. Make the repository private (Settings -> General -> Change visibility), or re-run and tick 'confirm_public'."
           exit 1
@@ -101,11 +108,13 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           KEEP_TTS: ${{ inputs.keep_tts }}
           REVOICE: ${{ inputs.revoice }}
+          SYNC: ${{ inputs.sync }}
         run: |
           FLAGS=""
           if [ "$DRY_RUN" = "true" ]; then FLAGS="$FLAGS --dry-run"; fi
           if [ "$KEEP_TTS" = "true" ]; then FLAGS="$FLAGS --keep-tts"; fi
           if [ "$REVOICE" = "true" ]; then FLAGS="$FLAGS --revoice"; fi
+          if [ "$SYNC" = "true" ]; then FLAGS="$FLAGS --sync"; fi
           python anki/build_tts_apkg.py \
             --deck "$DECK" \
             --field "$FIELD" \
@@ -114,7 +123,7 @@ jobs:
             --out-dir tts-build $FLAGS
 
       - name: Upload the package
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.sync }}
         uses: actions/upload-artifact@v4
         with:
           name: anki-tts-package
