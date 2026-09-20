@@ -134,21 +134,26 @@ def find_one(token: str, query: str) -> dict | None:
     return files[0] if files else None
 
 
-def folder_id(token: str, name: str, parent: str = "root") -> str:
+def folder_id(token: str, name: str, parent: str = "root", *, anywhere: bool = False) -> str:
     """The folder, made if it is not there yet.
 
     Reused rather than remade, so running this every week leaves one folder
     with the newest export in it instead of a column of identical folders.
 
-    Looked for by name alone, and not by where it sits. Under drive.file the
-    only folders this can see at all are ones it made itself, so the name is
-    already as specific as it needs to be - and tidying the folder into a
-    subfolder in Drive is a thing people do. Asking for it at the top of the
-    Drive as well would mean a moved folder silently stops filling up while a
-    fresh one appears beside it.
+    `anywhere` is for the one folder at the top, which is looked for by name
+    and not by where it sits. Under drive.file the only folders this can see at
+    all are ones it made itself, so the name is already as specific as it needs
+    to be - and tidying "Anki exports" into a subfolder of your Drive is a thing
+    people do. Insisting it be at the top would mean the moved folder quietly
+    stops filling up while a fresh one appears beside it.
+
+    The folders inside it are not looked for that way: `by-deck` is only ever
+    this export's `by-deck`.
     """
     query = (f"name = '{quote_for_query(name)}' and mimeType = '{FOLDER_TYPE}' "
              "and trashed = false")
+    if not anywhere:
+        query += f" and '{quote_for_query(parent)}' in parents"
     found = find_one(token, query)
     if found:
         return found["id"]
@@ -220,8 +225,15 @@ def files_in(folder: Path) -> list[Path]:
     return sorted(p for p in folder.rglob("*") if p.is_file())
 
 
-def wanted_files(from_dir: str, named: list[str]) -> list[Path]:
-    """What to upload: a whole folder, particular files, or both.
+def wanted_files(from_dir: str, named: list[str]) -> list[tuple[Path, str]]:
+    """What to upload, each with the folder it belongs in.
+
+    The second half of each pair is where the file sits inside --from-dir, so
+    that the shape of the export survives the trip. A deck export is not a flat
+    pile: it is eight files at the top, a csv per deck in `by-deck` and a json
+    per note type in `notetypes`. Flattening it would put thirty-odd files in
+    one folder, and - worse - two files with the same name in different folders
+    would land on each other, with the log calling the second one "updated".
 
     Named files matter because a build directory is not always all wanted. The
     audio build holds a cache of thousands of mp3 files beside the one package
@@ -230,23 +242,26 @@ def wanted_files(from_dir: str, named: list[str]) -> list[Path]:
     """
     found = []
     if from_dir:
-        found.extend(files_in(Path(from_dir)))
+        base = Path(from_dir)
+        for path in files_in(base):
+            where = path.parent.relative_to(base).as_posix()
+            found.append((path, "" if where == "." else where))
     for name in named:
         path = Path(name)
         if not path.is_file():
             fail(f"{path} is not there.",
                  "Nothing was uploaded. A named file that is missing is more likely a "
                  "step that did not run than a file worth skipping.")
-        found.append(path)
+        found.append((path, ""))
     # One name twice - named and inside the folder - would otherwise upload the
     # same bytes twice and be replaced by itself.
     seen, tidy = set(), []
-    for path in found:
+    for path, where in found:
         key = path.resolve()
         if key in seen:
             continue
         seen.add(key)
-        tidy.append(path)
+        tidy.append((path, where))
     return tidy
 
 
@@ -288,7 +303,7 @@ def main() -> int:
             f"Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}.\n"
             "This file is only proof that it works. Deleting it changes nothing.\n",
             encoding="utf-8")
-        wanted = [proof]
+        wanted = [(proof, "")]
     else:
         if not args.from_dir and not args.file:
             fail("Nothing to upload.", "Give --from-dir, or --file, or both.")
@@ -307,7 +322,7 @@ def main() -> int:
              "https://sengju-han.github.io/Clipboard-stakcer/connected.html")
 
     try:
-        parent = folder_id(token, args.folder)
+        parent = folder_id(token, args.folder, anywhere=True)
     except RuntimeError as err:
         fail(f"Could not open the Drive folder “{args.folder}”.",
              f"{err}\n\nNothing was uploaded. If that is Google refusing rather than "
@@ -318,15 +333,28 @@ def main() -> int:
 
     log(f"Uploading {len(wanted)} file(s) to Drive / {args.folder}...")
 
+    # One lookup per folder rather than per file, and made in order so that
+    # by-deck/ is created once and then reused for every deck in it.
+    folders = {"": parent}
+
+    def folder_for(where: str) -> str:
+        if where not in folders:
+            here = parent
+            for part in where.split("/"):
+                here = folder_id(token, part, here)
+            folders[where] = here
+        return folders[where]
+
     done = []
-    for path in wanted:
+    for path, where in wanted:
+        shown = f"{where}/{path.name}" if where else path.name
         try:
-            file_id, what = put_file(token, path, parent)
+            file_id, what = put_file(token, path, folder_for(where))
         except RuntimeError as err:
-            fail(f"{path.name} did not go up.", f"{err}\n\n{already_up(done)}")
+            fail(f"{shown} did not go up.", f"{err}\n\n{already_up(done)}")
         size = path.stat().st_size
-        log(f"  {what}: {path.name} ({size // 1024}KB)")
-        done.append({"name": path.name, "what": what, "bytes": size, "id": file_id})
+        log(f"  {what}: {shown} ({size // 1024}KB)")
+        done.append({"name": shown, "what": what, "bytes": size, "id": file_id})
 
     if args.summary and args.check:
         lines = [

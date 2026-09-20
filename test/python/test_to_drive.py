@@ -439,3 +439,75 @@ def test_the_drive_report_is_added_to_the_summary_not_put_in_place_of_it(
     assert "| English | 1240 |" in said, "the export's own report was overwritten"
     assert "In your Google Drive" in said
     assert said.index("The export") < said.index("In your Google Drive")
+
+
+# The shape of the export. A deck export is not a flat pile: it is eight files
+# at the top, a csv per deck under by-deck/ and a json per note type under
+# notetypes/. All of that used to arrive in Drive as one heap.
+
+
+def _root(drive, name="Anki exports"):
+    return [i for i, f in drive.files.items() if f["name"] == name][0]
+
+
+def _parents_of(drive, name):
+    return [f["parents"] for f in drive.files.values() if f["name"] == name][0]
+
+
+def test_the_shape_of_the_export_survives_the_trip(tmp_path, drive, monkeypatch):
+    folder = _export(tmp_path, **{"cards.csv": "top"})
+    (folder / "by-deck").mkdir()
+    (folder / "by-deck" / "English.csv").write_text("a deck", encoding="utf-8")
+    (folder / "notetypes").mkdir()
+    (folder / "notetypes" / "Basic.json").write_text("{}", encoding="utf-8")
+
+    assert _run(tmp_path, monkeypatch) == 0
+
+    root = _root(drive)
+    by_deck = [i for i, f in drive.files.items()
+               if f["name"] == "by-deck" and f["parents"] == [root]]
+    notetypes = [i for i, f in drive.files.items()
+                 if f["name"] == "notetypes" and f["parents"] == [root]]
+    assert by_deck and notetypes, "the subfolders were not made"
+
+    assert _parents_of(drive, "cards.csv") == [root]
+    assert _parents_of(drive, "English.csv") == by_deck
+    assert _parents_of(drive, "Basic.json") == notetypes
+
+
+def test_one_name_in_two_folders_does_not_land_on_itself(tmp_path, drive, monkeypatch):
+    # Flattened, the second of these would have replaced the first and the log
+    # would have said "updated" as though that were the intention.
+    folder = _export(tmp_path)
+    for sub, body in (("by-deck", "the deck"), ("notetypes", "the note type")):
+        (folder / sub).mkdir()
+        (folder / sub / "English.csv").write_text(body, encoding="utf-8")
+
+    assert _run(tmp_path, monkeypatch) == 0
+
+    copies = [f for f in drive.files.values() if f["name"] == "English.csv"]
+    assert len(copies) == 2, "one of the two was overwritten by the other"
+    assert {f["body"] for f in copies} == {b"the deck", b"the note type"}
+
+
+def test_a_subfolder_is_reused_rather_than_remade(tmp_path, drive, monkeypatch):
+    # One lookup for by-deck/, not one per deck in it - and certainly not one
+    # by-deck folder per deck.
+    folder = _export(tmp_path)
+    (folder / "by-deck").mkdir()
+    for deck in ("English", "Korean", "Idioms"):
+        (folder / "by-deck" / f"{deck}.csv").write_text(deck, encoding="utf-8")
+
+    assert _run(tmp_path, monkeypatch) == 0
+    assert len([f for f in drive.files.values() if f["name"] == "by-deck"]) == 1
+
+
+def test_named_files_still_go_to_the_top_of_the_folder(tmp_path, drive, monkeypatch):
+    # --file names a path that has nothing to do with the export's layout, so
+    # there is no shape to keep: the audio package belongs at the top.
+    build = tmp_path / "tts-build"
+    (build / "audio").mkdir(parents=True)
+    (build / "audio" / "tts-update.apkg").write_bytes(b"a package")
+
+    assert _run_files(monkeypatch, build / "audio" / "tts-update.apkg") == 0
+    assert _parents_of(drive, "tts-update.apkg") == [_root(drive, "Anki audio")]

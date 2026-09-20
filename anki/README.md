@@ -225,7 +225,9 @@ folder and says whether that worked. Thirty seconds, nothing installed, and no
 sign-in to AnkiWeb — so the answer to "did I get that right" does not cost a
 full export.
 
-That is all. The next export goes to Drive.
+That is all. The next export goes to Drive, laid out the way it is built:
+`cards.csv`, `reviews.csv` and the spreadsheet at the top, with `by-deck` and
+`notetypes` as folders rather than thirty files in a heap.
 
 ### If it does not work
 
