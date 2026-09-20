@@ -74,6 +74,12 @@ def _workflow_links():
 FLOWS = sorted(set(_workflow_links()))
 
 
+def test_there_are_workflow_links_to_check():
+    # An empty list turns the test below into one skip, which reads in the
+    # output as though it had looked and found nothing wrong.
+    assert len(FLOWS) >= 2, f"only found {FLOWS}"
+
+
 @pytest.mark.parametrize("where,name", FLOWS, ids=[f"{w}:{n}" for w, n in FLOWS] or None)
 def test_every_link_to_a_workflow_points_at_one(where, name):
     """A workflow link is one rename away from a 404, and it is the kind of

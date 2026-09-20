@@ -220,10 +220,12 @@ secrets:
 | `GOOGLE_CLIENT_SECRET` | the client secret from step 3 |
 | `GOOGLE_REFRESH_TOKEN` | what the page gave you in step 4 |
 
-**6. Run [Check Google Drive](https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml) once.** It puts one small file in the
+**6. Run [Check Google Drive][check] once.** It puts one small file in the
 folder and says whether that worked. Thirty seconds, nothing installed, and no
 sign-in to AnkiWeb — so the answer to "did I get that right" does not cost a
 full export.
+
+[check]: https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml
 
 That is all. The next export goes to Drive, laid out the way it is built:
 `cards.csv`, `reviews.csv` and the spreadsheet at the top, with `by-deck` and
@@ -231,7 +233,7 @@ That is all. The next export goes to Drive, laid out the way it is built:
 
 ### If it does not work
 
-Two failures account for nearly all of it, and each one names itself.
+Each of these names itself, in the run's log or on Google's own page.
 
 **`Error 400: redirect_uri_mismatch`** — on Google's own page, before you ever
 get back here. The redirect URI in step 3 is not character-for-character the one
@@ -239,11 +241,22 @@ the page uses. The connect page prints the exact string with a **Copy that**
 button beside it; copy it rather than typing it, and mind that
 `Clipboard-stakcer` is spelled the way it is spelled.
 
+> If you added a redirect URI before, from the older workflow, it may be written
+> `https://Sengju-Han.github.io/...` with capitals — the browser sends the host
+> in lower case. Add the one the page shows as a second entry rather than
+> replacing the first; a client is allowed several, and it costs nothing to have
+> both.
+
 **`Google Drive API has not been used in project … before or it is disabled`** —
 in the export's log, where the run stops. Step 1 was skipped. Switching the API
 on and connecting to it are two different things in the Google console, and this
 is the one that is easy to walk past. The failure message in the run says this
 too.
+
+**`Google Drive is half connected: GOOGLE_CLIENT_SECRET is not set`** — one of
+the three secrets did not save, or saved under a slightly different name. This
+has nothing to do with Google and the connecting itself worked; fix the secret
+in step 5 and run it again.
 
 And the slow one: it all works, and then a week later the export quietly stops
 arriving in Drive. That is step 2 — the consent screen is still on *Testing*, so
@@ -255,6 +268,11 @@ Moving it is fine — it is found wherever it ends up in your Drive — but a ne
 name is a new folder as far as this is concerned, and it quietly makes itself a
 fresh one. Put the new name in the workflow's *drive_folder* box, or rename it
 back.
+
+And if the link to the folder says you need access: the browser you tapped it
+in is signed in to a different Google account from the one you approved with.
+Phones usually have two. Switch account, or connect again as the account you
+want the files in.
 
 Whatever goes wrong, the export itself is still in the run's artifacts: a failed
 upload does not take it with it.

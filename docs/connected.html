@@ -41,6 +41,10 @@
           word-break: break-all; background: var(--bg); border: 1px solid var(--line);
           border-radius: 8px; padding: 12px; margin: 10px 0; }
   .note { color: var(--muted); font-size: 13px; }
+  /* Without this a link keeps the browser's default #0000EE, which on the
+     dark panel is navy on charcoal - and one of them is the way back out
+     of a failed swap. */
+  a { color: var(--accent); }
   .bad { color: var(--bad); }
   .warn { background: var(--warn-bg); border-radius: 8px; padding: 12px; font-size: 13px; }
   ol { padding-left: 20px; margin: 8px 0; }
@@ -209,13 +213,18 @@ $("go").addEventListener("click", () => {
   // prompt=consent forces a new one even for an account that has approved
   // before — without it a second attempt returns no refresh token and there
   // is nothing to store.
+  //
+  // select_account as well, because a phone usually has two Google accounts
+  // and the files go to whichever one is signed in. Without the chooser that
+  // is a decision nobody is asked to make, and the way it shows up later is a
+  // link to the folder saying you need access.
   location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
     client_id: id,
     redirect_uri: REDIRECT,
     response_type: "code",
     scope: SCOPE,
     access_type: "offline",
-    prompt: "consent",
+    prompt: "consent select_account",
     include_granted_scopes: "true",
   });
 });

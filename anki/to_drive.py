@@ -161,6 +161,9 @@ def folder_id(token: str, name: str, parent: str = "root", *, anywhere: bool = F
                    data=json.dumps({"name": name, "mimeType": FOLDER_TYPE,
                                     "parents": [parent]}).encode("utf-8"),
                    headers={"Content-Type": "application/json"})
+    if not made.get("id"):
+        raise RuntimeError(f"Drive said it made the folder {name!r} and gave back no id, "
+                           "so there is nothing to put the files in.")
     return made["id"]
 
 
@@ -190,7 +193,13 @@ def put_file(token: str, path: Path, parent: str) -> tuple[str, str]:
     body, content_type = multipart({"name": path.name, "parents": [parent]}, payload, kind)
     out = request(f"{UPLOAD_URL}?uploadType=multipart", token=token, method="POST",
                   data=body, headers={"Content-Type": content_type})
-    return out.get("id", ""), "created"
+    # A 200 with no id is the shape of failure that reads as success: the run
+    # would go green, the log would say "created", and there would be nothing
+    # in Drive to look at.
+    if not out.get("id"):
+        raise RuntimeError(f"Drive accepted {path.name} and gave back no file id, so "
+                           "there is nothing to show it really arrived.")
+    return out["id"], "created"
 
 
 def already_up(done: list[dict]) -> str:
@@ -281,12 +290,29 @@ def main() -> int:
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
     refresh = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
-    if not (client_id and client_secret and refresh):
+    # Which ones are missing, not just that something is. Three secrets typed
+    # into a phone is three chances to fumble a name, and "not connected" would
+    # send somebody back through the whole Google consent flow to fix a typo in
+    # a secret they had already pasted.
+    missing = [name for name, value in (
+        ("GOOGLE_CLIENT_ID", client_id),
+        ("GOOGLE_CLIENT_SECRET", client_secret),
+        ("GOOGLE_REFRESH_TOKEN", refresh),
+    ) if not value]
+    fallback = ("" if args.check else
+                " Until then the export is still downloadable from the artifacts below.")
+    if len(missing) == 3:
         fail("Google Drive is not connected.",
              "Open https://sengju-han.github.io/Clipboard-stakcer/connected.html once "
-             "and follow it; the steps are written out in anki/README.md."
-             + ("" if args.check else " Until then the export is still downloadable "
-                "from the artifacts below."))
+             "and follow it; the steps are written out in anki/README.md." + fallback)
+    if missing:
+        fail(f"Google Drive is half connected: {' and '.join(missing)} "
+             f"{'is' if len(missing) == 1 else 'are'} not set.",
+             "The other secrets are there, so the connecting itself worked - this is a "
+             "secret that did not get saved, or got saved under a different name. "
+             "Settings → Secrets and variables → Actions. The client ID and client "
+             "secret come from the Google console; the refresh token is what the "
+             "connect page gave you." + fallback)
 
     if args.check and (args.from_dir or args.file):
         fail("--check uploads its own file, so it cannot take --from-dir or --file.",

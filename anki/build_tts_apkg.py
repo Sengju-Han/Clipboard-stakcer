@@ -714,7 +714,12 @@ def main() -> int:
             "### Before you import",
             "",
             "1. AnkiDroid → **export a full backup (.colpkg)** and confirm the file exists.",
-            "2. Download `tts-update.apkg` from the artifacts below.",
+            # Where the file is depends on whether Drive is connected, and this
+            # step runs before the step that would know. Both places are named
+            # rather than guessed, because somebody following six numbered steps
+            # on a phone should not have to work out which one applies.
+            "2. Get `tts-update.apkg` — from your Google Drive if it is connected, "
+            "otherwise from the artifacts at the bottom of this page.",
             "3. Import it in AnkiDroid, choosing the mode that **updates** existing notes.",
             f"4. The summary should say about **{len(attached)} notes updated, 0 added**. "
             "If it says added, stop and restore the backup without syncing.",

@@ -32,6 +32,7 @@ class Drive:
         self.next_id = 0
         self.refresh_seen = []
         self.refuse_lookups = None   # (status, payload) instead of answering a search
+        self.forget_ids = False      # answer 200 to an upload and give nothing back
         self.break_uploads_after = None   # let this many through, then fall over
         self.uploads = 0
 
@@ -99,7 +100,8 @@ def _serve(drive):
                 meta_raw, _, tail = rest.partition(b"\r\n--")
                 meta = json.loads(meta_raw.decode())
                 body = tail.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n--", 1)[0]
-                return self._send({"id": drive.make(meta["name"], meta.get("parents", []), body)})
+                made = drive.make(meta["name"], meta.get("parents", []), body)
+                return self._send({} if drive.forget_ids else {"id": made})
             meta = json.loads(raw.decode())
             return self._send({"id": drive.make(meta["name"], meta.get("parents", []))})
 
@@ -204,11 +206,29 @@ def test_the_refresh_token_only_ever_goes_to_google(tmp_path, drive, monkeypatch
 
 
 def test_not_connected_says_so_rather_than_crashing(tmp_path, drive, monkeypatch):
-    monkeypatch.delenv("GOOGLE_REFRESH_TOKEN")
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
+        monkeypatch.delenv(name)
     _export(tmp_path, **{"deck.csv": "x"})
     with pytest.raises(SystemExit) as stopped:
         _run(tmp_path, monkeypatch)
     assert stopped.value.code == 1
+
+
+def test_one_secret_missing_names_it_rather_than_saying_start_again(
+        tmp_path, drive, monkeypatch, capsys):
+    # Three secrets pasted into a phone is three chances to fumble a name.
+    # "Not connected" would send somebody back through the whole Google consent
+    # flow to fix something that has nothing to do with Google.
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET")
+    _export(tmp_path, **{"deck.csv": "x"})
+    with pytest.raises(SystemExit):
+        _run(tmp_path, monkeypatch)
+
+    said = capsys.readouterr().out
+    assert "GOOGLE_CLIENT_SECRET" in said
+    assert "half connected" in said
+    assert "GOOGLE_REFRESH_TOKEN" not in said, "named a secret that is actually set"
+    assert "connected.html" not in said, "sent them back to connect for no reason"
 
 
 def test_an_empty_export_is_refused(tmp_path, drive, monkeypatch):
@@ -511,3 +531,15 @@ def test_named_files_still_go_to_the_top_of_the_folder(tmp_path, drive, monkeypa
 
     assert _run_files(monkeypatch, build / "audio" / "tts-update.apkg") == 0
     assert _parents_of(drive, "tts-update.apkg") == [_root(drive, "Anki audio")]
+
+
+def test_an_upload_that_comes_back_with_no_id_is_not_called_a_success(
+        tmp_path, drive, monkeypatch, capsys):
+    # 200 and nothing in it is the shape of failure that reads as success: the
+    # run goes green, the log says "created", and there is nothing to look at.
+    drive.forget_ids = True
+    _export(tmp_path, **{"deck.csv": "x"})
+    with pytest.raises(SystemExit) as stopped:
+        _run(tmp_path, monkeypatch)
+    assert stopped.value.code == 1
+    assert "no file id" in capsys.readouterr().out

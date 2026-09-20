@@ -15,6 +15,7 @@ Nothing reaches a log, which matters because this repository is public.
 """
 
 import json
+from urllib.parse import parse_qs, urlparse
 
 CLIENT = "1234-abc.apps.googleusercontent.com"
 SECRET = "GOCSPX-not-a-real-secret"
@@ -36,8 +37,9 @@ def run(t):
     _open(t)
     t.check("it opens on the approve step", t.page.locator("#start").is_visible(), True)
     t.check("and says what to set up first", t.page.locator("#explain").is_visible(), True)
+    shown = t.page.locator("#redir").inner_text().strip()
     t.truthy("including the exact redirect to paste into Google",
-             "/connected.html" in t.page.locator("#redir").inner_text())
+             "/connected.html" in shown)
     # One character out and Google answers redirect_uri_mismatch and never
     # comes back here, so this is the one string that must not be retyped.
     t.check("with a button to copy it rather than type it",
@@ -70,7 +72,17 @@ def run(t):
     # Without prompt=consent a second attempt returns an access token and no
     # refresh token, and there is nothing to store.
     t.truthy("and for consent every time", "prompt=consent" in url)
+    # A phone usually has two Google accounts, and the files land in whichever
+    # one is signed in. Being asked is better than finding out from a folder
+    # link that says you need access.
+    t.truthy("and for the account to be chosen on purpose",
+             "select_account" in url)
     t.truthy("with the client id it was given", CLIENT.split(".")[0] in url)
+    # The redirect it sends and the redirect it tells you to paste have to be
+    # the same string. If they ever drift, Google answers redirect_uri_mismatch
+    # on its own page and there is nothing here to work it out from.
+    t.check("and the redirect it sends is the one it told you to paste",
+            parse_qs(urlparse(url).query).get("redirect_uri", [""])[0], shown)
 
     # ---- Google sends them back with a code ------------------------------
     _open(t, "?code=a-one-time-code")

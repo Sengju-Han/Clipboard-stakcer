@@ -77,6 +77,9 @@ From before the app, still working, still useful if you keep a collection in
 AnkiWeb:
 
 - **[Export a deck](anki/README.md)** — words, scheduling and review ratings out of AnkiWeb, no install.
+  Straight into a folder in your Google Drive once it is
+  [connected](https://sengju-han.github.io/Clipboard-stakcer/connected.html), which is a few
+  minutes on a phone and never again.
 - **[Add sentence audio](anki/TTS.md)** — neural audio for a field, packaged so it updates notes in place without touching their scheduling.
 - **[Add cards from your phone](anki/ADD-CARD.md)** — a web form that writes the card and its audio.
 - **[Audit your sentences](anki/AUDIT.md)** — finds typos and unnatural phrasing across the collection, and can fix them in place.
