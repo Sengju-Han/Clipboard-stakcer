@@ -117,8 +117,12 @@ jobs:
           {
             echo "### The export is in the artifacts below"
             echo ""
-            echo "Run **Connect Google Drive** once and it will go straight into your"
-            echo "Drive instead, which is a great deal easier to get at from a phone."
+            echo "Connect it once and it goes straight into your Drive instead,"
+            echo "which is a great deal easier to get at from a phone."
+            echo ""
+            echo "[Open the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)"
+            echo "— it is five minutes, all of it on a phone, and the steps are in"
+            echo "[anki/README.md](../blob/main/anki/README.md#getting-the-export-into-google-drive)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the export

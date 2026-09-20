@@ -220,8 +220,9 @@ def main() -> int:
     refresh = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
     if not (client_id and client_secret and refresh):
         fail("Google Drive is not connected.",
-             "Run the 'Connect Google Drive' workflow once. Until then the export is "
-             "still downloadable from the artifacts below.")
+             "Open https://sengju-han.github.io/Clipboard-stakcer/connected.html once "
+             "and follow it; anki/README.md has the five steps. Until then the export "
+             "is still downloadable from the artifacts below.")
 
     if not args.from_dir and not args.file:
         fail("Nothing to upload.", "Give --from-dir, or --file, or both.")
@@ -234,7 +235,10 @@ def main() -> int:
     except RuntimeError as err:
         fail("Google would not accept the stored connection.",
              f"{err}\n\nThis usually means the refresh token was withdrawn, or the "
-             "OAuth client was deleted. Run 'Connect Google Drive' again.")
+             "OAuth client was deleted — or the consent screen is still on Testing, "
+             "which expires a connection after seven days. Publish the app in the "
+             "Google Cloud console, then connect again at "
+             "https://sengju-han.github.io/Clipboard-stakcer/connected.html")
 
     parent = folder_id(token, args.folder)
     log(f"Uploading {len(wanted)} file(s) to Drive / {args.folder}...")

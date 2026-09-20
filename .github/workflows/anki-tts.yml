@@ -149,9 +149,13 @@ jobs:
           {
             echo "### The package is in the artifacts below"
             echo ""
-            echo "Run **Connect Google Drive** once and it will go straight into your"
-            echo "Drive instead. On a phone that is the difference between tapping the"
-            echo "file and unzipping an artifact by hand."
+            echo "Connect it once and it goes straight into your Drive instead. On a"
+            echo "phone that is the difference between tapping the file and unzipping"
+            echo "an artifact by hand."
+            echo ""
+            echo "[Open the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)"
+            echo "— the steps are in"
+            echo "[anki/README.md](../blob/main/anki/README.md#getting-the-export-into-google-drive)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the package

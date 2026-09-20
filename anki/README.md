@@ -182,36 +182,50 @@ python anki/export_deck.py --local-collection ~/.local/share/Anki2/User\ 1/colle
 An artifact is a zip behind a login with a seven-day fuse. Drive is easier to
 reach from a phone, and the export goes there instead once this is connected.
 
-Once, and then never again:
+Once, and then never again. All of it works on a phone.
 
-1. **Google Cloud console** → *APIs & Services* → enable the **Google Drive API**.
-2. *Credentials* → **Create credentials → OAuth client ID** → type **Web
-   application**. Under *Authorised redirect URIs* add exactly:
+**1. Google Cloud console → APIs & Services → enable the Google Drive API.**
 
-       https://sengju-han.github.io/Clipboard-stakcer/connected.html
+**2. OAuth consent screen** → *External* → put in a name and your own email →
+save → and then **Publish app**.
 
-3. Put the client ID and client secret into this repository under
-   **Settings → Secrets and variables → Actions**, as `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`.
-   Add a third, `REPO_ADMIN_TOKEN`: a fine-grained personal access token with
-   **Secrets: Read and write** on this repository. The connect workflow needs
-   it to store the result, because the token a workflow is given cannot write
-   secrets — there is no permission that grants that. It is used for this and
-   nothing else, and can be deleted once Drive is connected.
-4. **Actions → Connect Google Drive → Run workflow**, with the code box empty.
-   It prints a link.
-5. Open the link, approve, and the page you land on shows a code with a copy
-   button.
-6. Run **Connect Google Drive** again, pasting that code into **code**.
+> Publishing is not optional. While the consent screen says *Testing*, Google
+> expires the connection after **seven days** and the export goes quiet again
+> with nothing to say why. The one permission this asks for — files it creates
+> itself — needs no review, so publishing is a single tap.
 
-That second run swaps the code for a lasting connection and writes it into the
-repository's secrets itself. The connection is never printed — not in the log,
-not in the summary — because a public repository's logs are public. The code
-you copied is single-use and worth nothing once spent, which is why that one is
-safe to read off a screen.
+**3. Credentials → Create credentials → OAuth client ID → Web application.**
+Under *Authorised redirect URIs* add exactly:
 
-The scope asked for is `drive.file`: the files this creates, and nothing else
-in your Drive. It cannot read what was already there.
+    https://sengju-han.github.io/Clipboard-stakcer/connected.html
+
+Copy the **client ID** and **client secret** it gives you.
+
+**4. Open [the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)
+on your phone.** Paste the client ID, tap approve, say yes to Google. It sends
+you back to the same page; paste the client secret and it hands you a refresh
+token.
+
+That swap happens in your browser and nowhere else. The secret goes straight to
+Google over HTTPS and is never stored, never logged, and never reaches this
+repository — which matters, because this repository is public and so are its
+logs.
+
+**5. Settings → Secrets and variables → Actions**, three new repository
+secrets:
+
+| name | what to paste |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | the client ID from step 3 |
+| `GOOGLE_CLIENT_SECRET` | the client secret from step 3 |
+| `GOOGLE_REFRESH_TOKEN` | what the page gave you in step 4 |
+
+That is all. The next export goes to Drive.
+
+The scope is `drive.file`: the files this creates, and nothing else in your
+Drive. It cannot read what was already there. If you ever want it gone, revoke
+it at [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
+and delete the three secrets.
 
 Nothing is required. With none of it set the export still appears in the
 artifacts, exactly as before, and the run says so.
