@@ -38,6 +38,10 @@ def run(t):
     t.check("and says what to set up first", t.page.locator("#explain").is_visible(), True)
     t.truthy("including the exact redirect to paste into Google",
              "/connected.html" in t.page.locator("#redir").inner_text())
+    # One character out and Google answers redirect_uri_mismatch and never
+    # comes back here, so this is the one string that must not be retyped.
+    t.check("with a button to copy it rather than type it",
+            t.page.locator("#copy-redir").is_visible(), True)
     # Publishing is the difference between a connection that lasts and one that
     # stops after seven days, so the page has to say so.
     said = t.page.locator("#explain").inner_text().lower()
@@ -95,8 +99,18 @@ def run(t):
     t.check("the refresh token is shown", t.page.locator("#rt").inner_text(), REFRESH)
     t.truthy("and named as the secret to make",
              "GOOGLE_REFRESH_TOKEN" in t.page.locator("#done").inner_text())
+    # Pasting three secrets and hoping is where this was always going to end.
+    # There is a thirty-second job that answers it, so point at it from here.
+    t.truthy("and it says how to find out whether it worked",
+             "Check Google Drive" in t.page.locator("#then").inner_text())
+    t.truthy("with a link straight to it",
+             "google-check.yml" in t.page.locator("#then a").get_attribute("href"))
     t.check("the secret box is emptied once it has been used",
             t.page.locator("#sec").input_value(), "")
+    # A code works once. Left on the address, a reload - or Android restoring
+    # the tab tomorrow - would come back to the swap step holding a dead code.
+    t.check("and the used code is taken off the address",
+            t.page.evaluate("() => location.search"), "")
 
     # Nothing about any of this is written down.
     kept = t.page.evaluate("""() => {
@@ -141,6 +155,25 @@ def _refusals(t):
              "already been used" in t.page.locator("#swap-say").inner_text())
     t.check("and nothing is offered to copy", t.page.locator("#done").is_visible(), False)
 
+    # "Start again from the top" is not an instruction anybody can follow here
+    # unless there is something to press: the code is on the address, and
+    # getting rid of it by hand means editing an address bar on a phone.
+    t.check("and there is a way back that is not the address bar",
+            t.page.locator("#restart").is_visible(), True)
+    t.truthy("which says the client id is still there",
+             "remembered" in t.page.locator("#restart").inner_text())
+    t.page.locator("#restart-go").click()
+    t.page.wait_for_function(
+        """() => (document.getElementById("redir")?.textContent || "").includes("connected.html")""",
+        timeout=30000)
+    t.page.wait_for_timeout(300)
+    t.check("which leaves the dead code behind",
+            t.page.evaluate("() => location.search"), "")
+    t.check("and opens on the approve step again",
+            t.page.locator("#start").is_visible(), True)
+    t.check("with the client id still remembered",
+            t.page.locator("#cid").input_value(), CLIENT)
+
     # And an outright refusal from Google, verbatim: its wording is better than
     # anything this page could invent.
     _open(t, "?code=bad")
@@ -153,3 +186,19 @@ def _refusals(t):
     t.truthy("Google's own reason is shown",
              "OAuth client was not found" in t.page.locator("#swap-say").inner_text())
     t.check("and you can try again", t.page.locator("#swapgo").is_disabled(), False)
+    t.check("and get out of it without editing the address",
+            t.page.locator("#restart").is_visible(), True)
+
+    # Arriving with a code in a browser that has never seen the client id: the
+    # link opened on a different phone, or the tab restored after a clear-out.
+    # There is nothing to swap with, and saying so beats a failed exchange.
+    t.page.evaluate("() => localStorage.clear()")
+    _open(t, "?code=orphan")
+    t.page.locator("#sec").fill(SECRET)
+    t.page.locator("#swapgo").click()
+    t.page.wait_for_timeout(600)
+    said = t.page.locator("#swap-say").inner_text()
+    t.truthy("a code with no client id behind it says what is missing",
+             "forgotten the client ID" in said)
+    t.truthy("and that there is something to go and fetch",
+             "Google console" in t.page.locator("#restart").inner_text())

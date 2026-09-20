@@ -24,9 +24,11 @@ import json
 import mimetypes
 import os
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -86,6 +88,14 @@ def request(url: str, *, token: str = "", method: str = "GET",
         text = err.read().decode("utf-8", "replace")[:500]
         # Google says why in the body; the status alone never does.
         raise RuntimeError(f"{err.code} from {urllib.parse.urlparse(url).netloc}: {text}") from None
+    except (urllib.error.URLError, TimeoutError) as err:
+        # No reply at all - DNS, TLS, a refused connection, a run that timed
+        # out mid-upload. Left to itself this arrives as a traceback, and a
+        # traceback is the one kind of failure that reads as "this is broken"
+        # rather than "the network was having a moment, run it again".
+        why = getattr(err, "reason", err) or err
+        raise RuntimeError(
+            f"could not reach {urllib.parse.urlparse(url).netloc}: {why}") from None
 
 
 def access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
@@ -129,9 +139,16 @@ def folder_id(token: str, name: str, parent: str = "root") -> str:
 
     Reused rather than remade, so running this every week leaves one folder
     with the newest export in it instead of a column of identical folders.
+
+    Looked for by name alone, and not by where it sits. Under drive.file the
+    only folders this can see at all are ones it made itself, so the name is
+    already as specific as it needs to be - and tidying the folder into a
+    subfolder in Drive is a thing people do. Asking for it at the top of the
+    Drive as well would mean a moved folder silently stops filling up while a
+    fresh one appears beside it.
     """
     query = (f"name = '{quote_for_query(name)}' and mimeType = '{FOLDER_TYPE}' "
-             f"and '{quote_for_query(parent)}' in parents and trashed = false")
+             "and trashed = false")
     found = find_one(token, query)
     if found:
         return found["id"]
@@ -169,6 +186,34 @@ def put_file(token: str, path: Path, parent: str) -> tuple[str, str]:
     out = request(f"{UPLOAD_URL}?uploadType=multipart", token=token, method="POST",
                   data=body, headers={"Content-Type": content_type})
     return out.get("id", ""), "created"
+
+
+def already_up(done: list[dict]) -> str:
+    """What made it, for a run that stopped partway.
+
+    A half-finished upload looks like something to go and tidy by hand, and it
+    is not: every upload replaces the file of the same name, so the fix is to
+    run it again. That is worth saying at the moment it stops, because it is
+    the difference between a person editing their Drive and a person pressing
+    the button twice.
+    """
+    if not done:
+        return "Nothing was uploaded."
+    names = ", ".join(d["name"] for d in done)
+    return (f"{len(done)} file(s) did go up first: {names}. Running this again is safe: "
+            "each file replaces the one of the same name rather than adding a second.")
+
+
+def add_to_summary(where: str, lines: list[str]) -> None:
+    """Added to the job summary, not put in place of it.
+
+    export_deck.py appends its report - the card counts, the per-deck table -
+    to the same file. Writing over it would mean that connecting Drive quietly
+    took the report away, which is a strange price for a file arriving in a
+    nicer place.
+    """
+    with open(where, "a", encoding="utf-8") as handle:
+        handle.write("\n" + "\n".join(lines) + "\n")
 
 
 def files_in(folder: Path) -> list[Path]:
@@ -212,7 +257,10 @@ def main() -> int:
                         help="Upload this one file. May be given more than once.")
     parser.add_argument("--folder", default="Anki exports",
                         help="Folder in your Drive. Made if it is not there.")
-    parser.add_argument("--summary", default="", help="Write a report here (the job summary).")
+    parser.add_argument("--summary", default="",
+                        help="Add a report to this file (the job summary).")
+    parser.add_argument("--check", action="store_true",
+                        help="Upload one small file to prove the connection works.")
     args = parser.parse_args()
 
     client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
@@ -221,14 +269,32 @@ def main() -> int:
     if not (client_id and client_secret and refresh):
         fail("Google Drive is not connected.",
              "Open https://sengju-han.github.io/Clipboard-stakcer/connected.html once "
-             "and follow it; anki/README.md has the five steps. Until then the export "
-             "is still downloadable from the artifacts below.")
+             "and follow it; the steps are written out in anki/README.md."
+             + ("" if args.check else " Until then the export is still downloadable "
+                "from the artifacts below."))
 
-    if not args.from_dir and not args.file:
-        fail("Nothing to upload.", "Give --from-dir, or --file, or both.")
-    wanted = wanted_files(args.from_dir, args.file)
-    if not wanted:
-        fail(f"There is nothing in {args.from_dir} to upload.")
+    if args.check and (args.from_dir or args.file):
+        fail("--check uploads its own file, so it cannot take --from-dir or --file.",
+             "Nothing was uploaded. Run it with --check on its own to test the "
+             "connection, or without it to upload something.")
+
+    if args.check:
+        # Everything a real run does - a token, the folder, an upload - on one
+        # small file, so that finding out whether this is connected does not
+        # mean a full export and a sync of the whole collection first.
+        proof = Path(tempfile.mkdtemp()) / "connected.txt"
+        proof.write_text(
+            "Google Drive is connected to the Anki export.\n"
+            f"Checked {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}.\n"
+            "This file is only proof that it works. Deleting it changes nothing.\n",
+            encoding="utf-8")
+        wanted = [proof]
+    else:
+        if not args.from_dir and not args.file:
+            fail("Nothing to upload.", "Give --from-dir, or --file, or both.")
+        wanted = wanted_files(args.from_dir, args.file)
+        if not wanted:
+            fail(f"There is nothing in {args.from_dir} to upload.")
 
     try:
         token = access_token(client_id, client_secret, refresh)
@@ -240,24 +306,49 @@ def main() -> int:
              "Google Cloud console, then connect again at "
              "https://sengju-han.github.io/Clipboard-stakcer/connected.html")
 
-    parent = folder_id(token, args.folder)
+    try:
+        parent = folder_id(token, args.folder)
+    except RuntimeError as err:
+        fail(f"Could not open the Drive folder “{args.folder}”.",
+             f"{err}\n\nNothing was uploaded. If that is Google refusing rather than "
+             "Google not answering, the likeliest reason is that the Drive API is not "
+             "switched on for this Google Cloud project - which is a separate thing "
+             "from connecting, and the step that is easiest to skip. APIs & Services "
+             "→ Library → Google Drive API → Enable.")
+
     log(f"Uploading {len(wanted)} file(s) to Drive / {args.folder}...")
 
     done = []
     for path in wanted:
-        file_id, what = put_file(token, path, parent)
+        try:
+            file_id, what = put_file(token, path, parent)
+        except RuntimeError as err:
+            fail(f"{path.name} did not go up.", f"{err}\n\n{already_up(done)}")
         size = path.stat().st_size
         log(f"  {what}: {path.name} ({size // 1024}KB)")
         done.append({"name": path.name, "what": what, "bytes": size, "id": file_id})
 
-    if args.summary:
+    if args.summary and args.check:
+        lines = [
+            "## Google Drive is connected",
+            "",
+            f"A file went into **{args.folder}** and came back with an id, which means "
+            "the client ID, the client secret and the refresh token are all right and "
+            "the Drive API is switched on.",
+            "",
+            f"[Open the folder](https://drive.google.com/drive/folders/{parent})",
+            "",
+            "The next **Anki deck export** goes here by itself.",
+        ]
+        add_to_summary(args.summary, lines)
+    elif args.summary:
         lines = [
             f"## In your Google Drive — {args.folder}",
             "",
             f"[Open the folder](https://drive.google.com/drive/folders/{parent})",
             "",
         ] + [f"- `{d['name']}` — {d['what']}, {d['bytes'] // 1024}KB" for d in done]
-        Path(args.summary).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        add_to_summary(args.summary, lines)
     log("Done.")
     return 0
 

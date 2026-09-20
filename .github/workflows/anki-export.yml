@@ -76,6 +76,7 @@ jobs:
         run: pip install --disable-pip-version-check -r anki/requirements.txt
 
       - name: Export deck
+        id: export
         env:
           # Stored under Settings -> Secrets and variables -> Actions.
           ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
@@ -121,11 +122,16 @@ jobs:
             echo "which is a great deal easier to get at from a phone."
             echo ""
             echo "[Open the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)"
-            echo "— it is five minutes, all of it on a phone, and the steps are in"
+            echo "— it is a few minutes, all of it on a phone, and the steps are in"
             echo "[anki/README.md](../blob/main/anki/README.md#getting-the-export-into-google-drive)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Even when Drive failed. The comment above promises the export is still
+      # somewhere, and by default a failed step skips every step after it - so
+      # a bad day at Drive would have taken the artifact down with it, on the
+      # one run where that matters most: the first one anybody tries.
       - name: Upload the export
+        if: ${{ !cancelled() && steps.export.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: anki-export

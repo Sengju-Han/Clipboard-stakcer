@@ -1,0 +1,71 @@
+name: Check Google Drive
+
+# Thirty seconds to find out whether Drive is connected.
+#
+# Without this the only way to know is to run the export, which signs in to
+# AnkiWeb, pulls the whole collection and takes minutes - and then tells you
+# that a secret is missing. Setting this up has several steps in it and the one
+# that is easiest to get wrong produces nothing to look at, so there should be
+# something that just says yes or no.
+#
+# It puts one small file called connected.txt in the same folder the exports
+# go to. Nothing is installed: to_drive.py is standard library only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_folder:
+        description: 'Folder in your Google Drive. Made if it is not there.'
+        required: false
+        default: 'Anki exports'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Put one file in Drive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # At job level so the steps below can ask whether Drive is connected.
+    # A secret cannot be tested directly in an `if`.
+    env:
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
+    steps:
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Say which part is missing
+        if: ${{ env.GOOGLE_REFRESH_TOKEN == '' }}
+        run: |
+          {
+            echo "### Not connected yet"
+            echo ""
+            echo "\`GOOGLE_REFRESH_TOKEN\` is not set, so there is nothing to check."
+            echo ""
+            echo "[Open the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)"
+            echo "— all of it on a phone. The steps are written out in"
+            echo "[anki/README.md](../blob/main/anki/README.md#getting-the-export-into-google-drive)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Not connected::GOOGLE_REFRESH_TOKEN is not set. The summary above says where to get one."
+          exit 1
+
+      - name: Put one file in Drive
+        if: ${{ env.GOOGLE_REFRESH_TOKEN != '' }}
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          # Passed as an environment variable, never interpolated into the shell.
+          FOLDER: ${{ inputs.drive_folder || 'Anki exports' }}
+        run: |
+          python anki/to_drive.py \
+            --check \
+            --folder "$FOLDER" \
+            --summary "$GITHUB_STEP_SUMMARY"

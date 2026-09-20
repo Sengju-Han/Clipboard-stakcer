@@ -36,6 +36,7 @@
            color: var(--accent-ink); border: 1px solid transparent; }
   button:disabled { opacity: .55; cursor: default; }
   button.done { background: var(--ok); }
+  button.small { width: auto; padding: 8px 14px; margin-top: 2px; font-size: 13px; }
   .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
           word-break: break-all; background: var(--bg); border: 1px solid var(--line);
           border-radius: 8px; padding: 12px; margin: 10px 0; }
@@ -86,6 +87,12 @@
            placeholder="GOCSPX-…">
     <button id="swapgo" type="button">Get the refresh token</button>
     <p class="note" id="swap-say"></p>
+    <!-- Every failure here ends in "start again", and starting again means
+         getting rid of the code on the end of the address. Without this that
+         is done by editing the address bar, on a phone, which is the single
+         most awkward thing this page could ask for. -->
+    <p class="note" id="restart" hidden><a href="#" id="restart-go">Start again from the
+      beginning</a> <span id="restart-why"></span></p>
   </section>
 
   <!-- Step three: the thing to paste into the repository. -->
@@ -98,6 +105,11 @@
     <p class="note">Settings → Secrets and variables → Actions → New repository
       secret. Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>
       there too, if you have not already.</p>
+    <p class="note" id="then">Then run
+      <a href="https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml"
+         target="_blank" rel="noopener"><b>Check Google Drive</b></a> once. It puts one
+      small file in the folder and says whether that worked — half a minute, and it is
+      the only way to be sure without waiting for a whole export.</p>
     <div class="warn">This is a key to the files this app makes in your Drive. Treat it
       the way you would a password: paste it into the secret, then close this tab.
       If it ever gets out, revoke it at
@@ -117,6 +129,10 @@
       <li><b>Credentials</b> → Create credentials → <b>OAuth client ID</b> → type
         <b>Web application</b>. Under <i>Authorised redirect URIs</i> add exactly:
         <div class="code" id="redir"></div>
+        <button id="copy-redir" class="small" type="button">Copy that</button>
+        <p class="note">One character out and Google answers
+          <i>redirect_uri_mismatch</i> and never sends you back here, so it is worth
+          copying rather than typing.</p>
       </li>
     </ol>
   </section>
@@ -156,8 +172,11 @@ function say(id, text, bad = false) {
 
 // The client id is not a secret — it travels in the address bar of the consent
 // page — so remembering it saves retyping thirty characters on a phone.
-let saved = "";
-try { saved = localStorage.getItem(REMEMBER) || ""; } catch { /* private window */ }
+function remembered() {
+  try { return localStorage.getItem(REMEMBER) || ""; } catch { return ""; }
+}
+
+let saved = remembered();
 
 if (code) {
   show("swap");
@@ -201,11 +220,28 @@ $("go").addEventListener("click", () => {
   });
 });
 
+// Every dead end here has the same way out, and it is only a dead end because
+// the used code is still on the address.
+function stuck(text) {
+  say("swap-say", text, true);
+  // Which of the two it is matters: with the client id still in hand this is a
+  // one-tap retry, and without it there is something to go and fetch first.
+  $("restart-why").textContent = remembered()
+    ? "— the client ID is remembered, so this only forgets the used code."
+    : "— you will need the client ID from the Google console again.";
+  $("restart").hidden = false;
+}
+
+$("restart-go").addEventListener("click", (event) => {
+  event.preventDefault();
+  location.href = REDIRECT;
+});
+
 $("swapgo").addEventListener("click", async () => {
   const secret = $("sec").value.trim();
-  const id = (() => { try { return localStorage.getItem(REMEMBER) || ""; } catch { return ""; } })();
-  if (!id) return say("swap-say", "This browser has forgotten the client ID. "
-    + "Open this page with no code on the end of the address and start again.", true);
+  const id = remembered();
+  if (!id) return stuck("This browser has forgotten the client ID, so there is "
+    + "nothing to swap the code with.");
   if (!secret) return say("swap-say", "Put the client secret in first.", true);
 
   $("swapgo").disabled = true;
@@ -228,31 +264,42 @@ $("swapgo").addEventListener("click", async () => {
         + "has already been used — they work once — so start again from the top.");
     }
     $("sec").value = "";                       // used, and gone
+    // The code is spent now. Left on the address, a reload - or Android
+    // restoring this tab tomorrow - would land back on the swap step holding a
+    // code that cannot work a second time.
+    try { history.replaceState(null, "", REDIRECT); } catch { /* fine */ }
     $("rt").textContent = out.refresh_token;
     $("swap").hidden = true;
     show("done");
   } catch (err) {
-    say("swap-say", String(err.message || err), true);
+    stuck(String(err.message || err));
     $("swapgo").disabled = false;
   }
 });
 
-$("copy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText($("rt").textContent);
-    $("copy").textContent = "Copied";
-    $("copy").classList.add("done");
-  } catch {
-    // Clipboard access is refused in plenty of ordinary situations, and
-    // "nothing happened" would be the worst possible answer here.
-    $("copy").textContent = "Select it above and copy by hand";
-    const range = document.createRange();
-    range.selectNodeContents($("rt"));
-    const sel = getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-});
+// Clipboard access is refused in plenty of ordinary situations, and "nothing
+// happened" would be the worst possible answer on a string that has to be
+// exact - so a refusal selects the text instead and says to copy it by hand.
+function copies(buttonId, fromId) {
+  $(buttonId).addEventListener("click", async () => {
+    const button = $(buttonId);
+    try {
+      await navigator.clipboard.writeText($(fromId).textContent);
+      button.textContent = "Copied";
+      button.classList.add("done");
+    } catch {
+      button.textContent = "Select it above and copy by hand";
+      const range = document.createRange();
+      range.selectNodeContents($(fromId));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+}
+
+copies("copy", "rt");
+copies("copy-redir", "redir");
 </script>
 
 </body>

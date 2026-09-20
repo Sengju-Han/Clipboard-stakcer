@@ -98,6 +98,7 @@ jobs:
             tts-audio-${{ inputs.voice }}-${{ inputs.field }}-
 
       - name: Build
+        id: build
         env:
           ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
           ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
@@ -158,8 +159,12 @@ jobs:
             echo "[anki/README.md](../blob/main/anki/README.md#getting-the-export-into-google-drive)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Even when Drive failed - see the note in anki-export.yml. The package
+      # is the expensive part of this job: it is minutes of audio that were
+      # paid for and generated, and losing it to a failed upload would mean
+      # making it again.
       - name: Upload the package
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: anki-tts-package

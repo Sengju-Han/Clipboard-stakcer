@@ -220,7 +220,42 @@ secrets:
 | `GOOGLE_CLIENT_SECRET` | the client secret from step 3 |
 | `GOOGLE_REFRESH_TOKEN` | what the page gave you in step 4 |
 
+**6. Run [Check Google Drive](https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml) once.** It puts one small file in the
+folder and says whether that worked. Thirty seconds, nothing installed, and no
+sign-in to AnkiWeb — so the answer to "did I get that right" does not cost a
+full export.
+
 That is all. The next export goes to Drive.
+
+### If it does not work
+
+Two failures account for nearly all of it, and each one names itself.
+
+**`Error 400: redirect_uri_mismatch`** — on Google's own page, before you ever
+get back here. The redirect URI in step 3 is not character-for-character the one
+the page uses. The connect page prints the exact string with a **Copy that**
+button beside it; copy it rather than typing it, and mind that
+`Clipboard-stakcer` is spelled the way it is spelled.
+
+**`Google Drive API has not been used in project … before or it is disabled`** —
+in the export's log, where the run stops. Step 1 was skipped. Switching the API
+on and connecting to it are two different things in the Google console, and this
+is the one that is easy to walk past. The failure message in the run says this
+too.
+
+And the slow one: it all works, and then a week later the export quietly stops
+arriving in Drive. That is step 2 — the consent screen is still on *Testing*, so
+Google expired the refresh token after seven days. Publish the app, connect
+again, and replace `GOOGLE_REFRESH_TOKEN`.
+
+And if the folder simply stops filling up: it has probably been **renamed**.
+Moving it is fine — it is found wherever it ends up in your Drive — but a new
+name is a new folder as far as this is concerned, and it quietly makes itself a
+fresh one. Put the new name in the workflow's *drive_folder* box, or rename it
+back.
+
+Whatever goes wrong, the export itself is still in the run's artifacts: a failed
+upload does not take it with it.
 
 The scope is `drive.file`: the files this creates, and nothing else in your
 Drive. It cannot read what was already there. If you ever want it gone, revoke
