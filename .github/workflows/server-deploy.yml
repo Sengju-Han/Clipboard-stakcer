@@ -70,19 +70,32 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
 
-      - name: Say where it is
+      # The app has no box for the address any more - there is one server and
+      # asking which one every time was a question with a single answer. So
+      # this checks the address it just deployed to against the one the app is
+      # built with, and says something useful either way.
+      - name: Say where it is, and whether the app agrees
         if: steps.ready.outputs.ready == 'yes'
         working-directory: server
         run: |
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          built=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' ../docs/app/where.js | head -1)
           {
             echo "### The server is up"
             echo ""
-            if [ -n "$url" ]; then
-              echo "Address: \`$url\`"
-              echo ""
-              echo "Put that into the app under Settings → Account."
-            else
+            if [ -z "$url" ]; then
               echo "Deployed. The address is in the log above."
+            elif [ "$url" = "$built" ]; then
+              echo "Address: \`$url\` — which is the one the app is built with."
+              echo ""
+              echo "Nothing to do."
+            else
+              echo "::warning::The app points at a different server."
+              echo "Deployed to: \`$url\`"
+              echo ""
+              echo "The app is built to talk to \`${built:-nothing}\`, so it is not"
+              echo "talking to what was just deployed. Change \`DEFAULT\` in"
+              echo "[docs/app/where.js](../blob/main/docs/app/where.js) to the address"
+              echo "above. There is no box for it in the app on purpose."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

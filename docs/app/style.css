@@ -89,6 +89,22 @@ button { font: inherit; cursor: pointer; border-radius: var(--radius); }
   padding: 11px 14px;
 }
 .ghost.danger { color: var(--again); border-color: var(--again); }
+
+/* Above everything, because the thing it reports is the screen not changing:
+   a message that needs scrolling to reach cannot explain why nothing moved. */
+.write-note {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 12px max(16px, env(safe-area-inset-left)) 12px max(16px, env(safe-area-inset-right));
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--again);
+  color: #14151a;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 45%);
+}
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* home ------------------------------------------------------------------- */

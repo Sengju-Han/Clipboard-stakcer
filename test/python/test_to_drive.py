@@ -129,6 +129,14 @@ def _run(tmp_path, monkeypatch, folder="Anki exports"):
     return to_drive.main()
 
 
+def _run_files(monkeypatch, *paths, folder="Anki audio"):
+    argv = ["to_drive.py", "--folder", folder]
+    for path in paths:
+        argv += ["--file", str(path)]
+    monkeypatch.setattr(sys, "argv", argv)
+    return to_drive.main()
+
+
 def test_the_export_arrives(tmp_path, drive, monkeypatch):
     _export(tmp_path, **{"deck.csv": "word,due\navow,2026-09-20\n", "deck.json": "{}"})
     assert _run(tmp_path, monkeypatch) == 0
@@ -197,3 +205,56 @@ def test_the_query_escaping_itself():
     assert to_drive.quote_for_query("Dad's") == "Dad\\'s"
     assert to_drive.quote_for_query("a\\b") == "a\\\\b"
     assert to_drive.quote_for_query("plain") == "plain"
+
+
+def test_named_files_go_up_and_their_neighbours_do_not(tmp_path, drive, monkeypatch):
+    # The audio build directory is a package worth 27MB and a cache of some
+    # thousands of mp3 files. Uploading the folder would put the cache in
+    # somebody's Drive, which is the whole reason --file exists.
+    build = tmp_path / "tts-build"
+    (build / "audio").mkdir(parents=True)
+    (build / "tts-update.apkg").write_bytes(b"a package")
+    (build / "manifest.jsonl").write_text("{}\n", encoding="utf-8")
+    for i in range(5):
+        (build / "audio" / f"lexis-{i}.mp3").write_bytes(b"noise")
+
+    assert _run_files(monkeypatch, build / "tts-update.apkg", build / "manifest.jsonl") == 0
+
+    landed = sorted(f["name"] for f in drive.files.values() if not f["name"] == "Anki audio")
+    assert landed == ["manifest.jsonl", "tts-update.apkg"]
+    assert not any(f["name"].endswith(".mp3") for f in drive.files.values())
+
+
+def test_a_named_file_that_is_missing_stops_everything(tmp_path, drive, monkeypatch):
+    # A step that did not run looks exactly like this, and half an upload is
+    # worse than none: yesterday's package would sit there looking like today's.
+    here = tmp_path / "tts-build"
+    here.mkdir()
+    (here / "manifest.jsonl").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _run_files(monkeypatch, here / "manifest.jsonl", here / "tts-update.apkg")
+    assert not [f for f in drive.files.values() if f["name"] == "manifest.jsonl"]
+
+
+def test_the_same_file_named_twice_is_uploaded_once(tmp_path, drive, monkeypatch):
+    folder = _export(tmp_path, **{"deck.csv": "x"})
+    monkeypatch.setattr(sys, "argv", [
+        "to_drive.py", "--from-dir", str(folder), "--file", str(folder / "deck.csv"),
+        "--folder", "Anki exports"])
+    assert to_drive.main() == 0
+    assert len([f for f in drive.files.values() if f["name"] == "deck.csv"]) == 1
+
+
+def test_asking_for_nothing_at_all_is_refused(tmp_path, drive, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["to_drive.py", "--folder", "Anki exports"])
+    with pytest.raises(SystemExit):
+        to_drive.main()
+
+
+def test_a_big_upload_is_given_longer_than_a_small_one():
+    # 120 seconds flat means a 27MB package must move at a quarter of a megabyte
+    # a second from first byte to last, and a slow run fails as though the
+    # connection had been refused.
+    assert to_drive.timeout_for(b"") == 120
+    assert to_drive.timeout_for(b"x" * (27 * 1024 * 1024)) > 20 * 60
+    assert to_drive.timeout_for(None) == 120

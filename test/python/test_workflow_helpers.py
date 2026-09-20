@@ -304,3 +304,114 @@ def test_an_inflection_still_counts_as_the_word():
     assert proofread.keeps_the_word("he deposits it", "He deposits it.", "deposited")
     assert proofread.keeps_the_word("the glistening ice", "The glistening ice.", "glisten")
     assert proofread.keeps_the_word("she caressed him", "She caressed him.", "caress")
+
+
+# --------------------------------------------------------------------------
+# recordings that go missing
+#
+# Every job here checks its own notes and none of them looks any further, which
+# is the blind spot a thousand [sound:] tags disappeared through between the
+# evening of one day and the afternoon of the next. Nothing reported it: the
+# files stayed in the media folder, the scheduling was untouched, and the cards
+# simply stopped having a play button.
+# --------------------------------------------------------------------------
+
+def _with_audio(tmp_path, sentences):
+    """A collection where every note's Example ends in a recording."""
+    return _collection(tmp_path, [f"{s} [sound:ttsex-{i}.mp3]" for i, s in enumerate(sentences)])
+
+
+def test_every_recording_in_the_collection_is_counted(tmp_path):
+    col = _with_audio(tmp_path, ["One.", "Two."])
+    # And one note carrying two, which is what re-voicing looks like mid-flight.
+    note = col.get_note(list(col.find_notes(""))[0])
+    note["Front"] = note["Front"] + " [sound:extra.mp3]"
+    col.update_note(note)
+
+    found = add_card.recordings(col)
+    assert sorted(name for names in found.values() for name in names) == \
+        ["extra.mp3", "ttsex-0.mp3", "ttsex-1.mp3"]
+    col.close()
+
+
+def test_a_note_with_no_audio_is_simply_absent(tmp_path):
+    col = _collection(tmp_path, ["No audio here.", "Nor here."])
+    assert add_card.recordings(col) == {}
+    col.close()
+
+
+def test_losing_a_recording_stops_the_sync(tmp_path):
+    col = _with_audio(tmp_path, ["One.", "Two.", "Three."])
+    before = add_card.recordings(col)
+
+    note = col.get_note(list(col.find_notes(""))[1])
+    note["Example"] = "Two."          # the tag, quietly gone
+    col.update_note(note)
+
+    with pytest.raises(SystemExit):
+        add_card.check_recordings_kept(before, add_card.recordings(col))
+    col.close()
+
+
+def test_a_loss_that_was_asked_for_is_allowed(tmp_path):
+    # The audit drops the recording on every sentence it corrects, because the
+    # recording says the old wording. That many, and not one more.
+    col = _with_audio(tmp_path, ["One.", "Two.", "Three."])
+    before = add_card.recordings(col)
+
+    ids = list(col.find_notes(""))
+    for note_id in ids[:2]:
+        note = col.get_note(note_id)
+        note["Example"] = note["Example"].split(" [sound:")[0]
+        col.update_note(note)
+
+    after = add_card.recordings(col)
+    add_card.check_recordings_kept(before, after, expected=2)     # fine
+    with pytest.raises(SystemExit):
+        add_card.check_recordings_kept(before, after, expected=1)  # one too many
+    col.close()
+
+
+def test_a_recording_swapped_for_another_counts_as_lost(tmp_path):
+    # Re-voicing replaces the tag, and the new file must actually be there. A
+    # note pointing at a recording nobody made is a play button that does
+    # nothing, which is worse than one that is absent.
+    col = _with_audio(tmp_path, ["One."])
+    before = add_card.recordings(col)
+
+    note = col.get_note(list(col.find_notes(""))[0])
+    note["Example"] = "One. [sound:ttsex-somewhere-else.mp3]"
+    col.update_note(note)
+
+    with pytest.raises(SystemExit):
+        add_card.check_recordings_kept(before, add_card.recordings(col))
+    # Unless that is what the run was for, and it says so.
+    add_card.check_recordings_kept(before, add_card.recordings(col), expected=1)
+    col.close()
+
+
+def test_a_whole_collection_going_quiet_is_caught(tmp_path):
+    # The shape of the thing that actually happened, at the scale it happened.
+    col = _with_audio(tmp_path, [f"Sentence {i}." for i in range(50)])
+    before = add_card.recordings(col)
+    col.db.execute("update notes set flds = replace(flds, ' [sound:', ' [was:')")
+
+    with pytest.raises(SystemExit):
+        add_card.check_recordings_kept(before, add_card.recordings(col), expected=3)
+    col.close()
+
+
+def test_the_notes_a_run_never_touches_are_in_the_snapshot(tmp_path):
+    # snapshot() records the planned notes' fields and everybody else's audio.
+    # The second half is what makes "no note outside this run lost a recording"
+    # possible at all.
+    col = _with_audio(tmp_path, ["One.", "Two.", "Three."])
+    ids = list(col.find_notes(""))
+    snap = tts.snapshot(col, ids[:1])
+
+    assert set(snap["fields"]) == {ids[0]}
+    assert set(snap["elsewhere"]) == set(ids[1:])
+    assert snap["elsewhere"][ids[1]] == ["ttsex-1.mp3"]
+    # And the planned note is not counted twice, in both halves.
+    assert ids[0] not in snap["elsewhere"]
+    col.close()

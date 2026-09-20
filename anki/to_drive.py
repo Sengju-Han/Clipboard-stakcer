@@ -61,6 +61,17 @@ def quote_for_query(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
+def timeout_for(payload: bytes | None) -> int:
+    """Long enough for what is actually being sent.
+
+    One number cannot suit both a kilobyte of CSV and a 27MB audio package: at
+    120 seconds the package needs a quarter of a megabyte a second throughout,
+    and a run that is merely slow fails as though the connection were refused.
+    Two minutes, plus a minute for every megabyte.
+    """
+    return 120 + len(payload or b"") // (1024 * 1024) * 60
+
+
 def request(url: str, *, token: str = "", method: str = "GET",
             data: bytes | None = None, headers: dict | None = None) -> dict:
     head = {"Accept": "application/json", **(headers or {})}
@@ -68,7 +79,7 @@ def request(url: str, *, token: str = "", method: str = "GET",
         head["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, data=data, headers=head, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=timeout_for(data)) as response:
             body = response.read().decode("utf-8")
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as err:
@@ -164,9 +175,41 @@ def files_in(folder: Path) -> list[Path]:
     return sorted(p for p in folder.rglob("*") if p.is_file())
 
 
+def wanted_files(from_dir: str, named: list[str]) -> list[Path]:
+    """What to upload: a whole folder, particular files, or both.
+
+    Named files matter because a build directory is not always all wanted. The
+    audio build holds a cache of thousands of mp3 files beside the one package
+    that is the point of it, and uploading the folder would put every one of
+    them in somebody's Drive.
+    """
+    found = []
+    if from_dir:
+        found.extend(files_in(Path(from_dir)))
+    for name in named:
+        path = Path(name)
+        if not path.is_file():
+            fail(f"{path} is not there.",
+                 "Nothing was uploaded. A named file that is missing is more likely a "
+                 "step that did not run than a file worth skipping.")
+        found.append(path)
+    # One name twice - named and inside the folder - would otherwise upload the
+    # same bytes twice and be replaced by itself.
+    seen, tidy = set(), []
+    for path in found:
+        key = path.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        tidy.append(path)
+    return tidy
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload a folder to Google Drive.")
-    parser.add_argument("--from-dir", required=True)
+    parser.add_argument("--from-dir", default="", help="Upload everything in this folder.")
+    parser.add_argument("--file", action="append", default=[],
+                        help="Upload this one file. May be given more than once.")
     parser.add_argument("--folder", default="Anki exports",
                         help="Folder in your Drive. Made if it is not there.")
     parser.add_argument("--summary", default="", help="Write a report here (the job summary).")
@@ -180,10 +223,11 @@ def main() -> int:
              "Run the 'Connect Google Drive' workflow once. Until then the export is "
              "still downloadable from the artifacts below.")
 
-    source = Path(args.from_dir)
-    wanted = files_in(source)
+    if not args.from_dir and not args.file:
+        fail("Nothing to upload.", "Give --from-dir, or --file, or both.")
+    wanted = wanted_files(args.from_dir, args.file)
     if not wanted:
-        fail(f"There is nothing in {source} to upload.")
+        fail(f"There is nothing in {args.from_dir} to upload.")
 
     try:
         token = access_token(client_id, client_secret, refresh)

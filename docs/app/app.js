@@ -311,8 +311,15 @@ async function undo() {
   offerUndo();
   if (!step) return;
 
-  await store.unrecord(step.log.at);
-  await store.saveCard(step.before);
+  if (!await writing(async () => {
+    await store.unrecord(step.log.at);
+    await store.saveCard(step.before);
+  })) {
+    // Back on the stack: the undo did not happen, so it is still owed.
+    undoable.push(step);
+    offerUndo();
+    return;
+  }
 
   const i = cache.findIndex((c) => c.id === step.before.id);
   if (i >= 0) cache[i] = step.before;
@@ -335,6 +342,60 @@ async function undo() {
   reveal();
 }
 
+// A write that fails must not look like a tap that did nothing.
+//
+// Answering writes the log row and then the card, and either can fail - a phone
+// with no room left refuses with QuotaExceededError. The button handler does
+// not await grade(), so the rejection goes nowhere: no message, no console line
+// anybody will read, and a Good that does not advance. Then another that does
+// not either.
+function outOfRoom(err) {
+  const name = String(err?.name || "");
+  return /quota/i.test(name) || /quota|storage/i.test(String(err?.message || ""));
+}
+
+function sayWrite(text) {
+  const line = $("write-note");
+  if (!line) return;
+  line.textContent = text;
+  line.hidden = !text;
+}
+
+function whyItDidNotSave(err) {
+  if (outOfRoom(err)) {
+    return "There is no room left in this browser, so that answer was not saved. "
+      + "Captured audio clips are what fill it — Settings says how many you have "
+      + "and can clear them.";
+  }
+  return `That answer was not saved (${err?.name || "something went wrong"}). `
+    + "Nothing was changed, so answering again is safe.";
+}
+
+// Anything that rejects with nobody watching. Only storage trouble reaches the
+// screen, because that is the one a person can act on; the rest goes to the
+// console, which is still better than a screen that silently does not change.
+addEventListener("unhandledrejection", (event) => {
+  console.error("unhandled rejection", event.reason);
+  if (outOfRoom(event.reason)) sayWrite(whyItDidNotSave(event.reason));
+});
+
+
+// Every write goes through here, so no path can quietly grow back the silence.
+// Returns whether it worked, and callers stop when it did not: nothing after a
+// failed write is true any more.
+async function writing(doIt) {
+  try {
+    await doIt();
+    sayWrite("");
+    return true;
+  } catch (err) {
+    console.error("write failed", err);
+    sayWrite(whyItDidNotSave(err));
+    return false;
+  }
+}
+
+
 async function grade(rating) {
   if (!current) return;
   const wasNew = current.fsrs.state === State.New;
@@ -344,8 +405,13 @@ async function grade(rating) {
 
   // The log first: an answer that was given and not scheduled can be replayed,
   // a schedule with no answer behind it cannot be explained.
-  await store.record(log);
-  await store.saveCard(card);
+  // Nothing below this runs if it fails, so the card is still up and the
+  // session still owes it - rather than advancing past an answer that was
+  // never written down.
+  if (!await writing(async () => {
+    await store.record(log);
+    await store.saveCard(card);
+  })) return;
   if (wasNew) noteIntroduced();
 
   const i = cache.findIndex((c) => c.id === card.id);
@@ -552,7 +618,7 @@ $("leech-fix").addEventListener("click", () => current && openEdit(current.id, "
 $("leech-rest").addEventListener("click", async () => {
   if (!current) return;
   const updated = { ...current, restUntil: new Date(Date.now() + 14 * 86400000).toISOString() };
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   // The Again put a copy back at the end of the session; a card being rested
@@ -685,7 +751,17 @@ async function openWatchScreen() {
       cards: () => cache,
       apiKey: () => prefs.read().anthropic,
       add: (prefill) => openAdd(prefill),
-      saveAudio: (name, blob) => store.putMedia(name, blob),
+      // Clips are the one thing here big enough to fill a phone, so this is
+      // the write most likely to fail - and it reports onto a button, which
+      // is the smallest place in the app and no use for explaining what to do
+      // about it. The banner carries the why; the button says the what, and
+      // throwing abandons the capture so no card is added claiming audio that
+      // was never stored.
+      saveAudio: async (name, blob) => {
+        if (!await writing(() => store.putMedia(name, blob))) {
+          throw new Error("The clip was not saved.");
+        }
+      },
     });
     watchMounted = true;
   }
@@ -1102,7 +1178,7 @@ $("edit-rest").addEventListener("click", async () => {
   if (!editing) return;
   const wake = resting(editing) ? "" : new Date(Date.now() + 14 * 86400000).toISOString();
   const updated = { ...editing, restUntil: wake };
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   editing = updated;
@@ -1130,7 +1206,7 @@ $("edit-form").addEventListener("submit", async (event) => {
     deck: $("e-deck").value.trim() || editing.deck,
   };
 
-  await store.saveCard(updated);
+  if (!await writing(() => store.saveCard(updated))) return;
   const i = cache.findIndex((c) => c.id === updated.id);
   if (i >= 0) cache[i] = updated;
   editing = updated;
@@ -1140,7 +1216,7 @@ $("edit-form").addEventListener("submit", async (event) => {
 $("edit-delete").addEventListener("click", async () => {
   if (!editing) return;
   if (!confirm(`Delete "${editing.word}"? Its review history goes with it, and that cannot be undone.`)) return;
-  await store.deleteCard(editing.id);
+  if (!await writing(() => store.deleteCard(editing.id))) return;
   cache = cache.filter((c) => c.id !== editing.id);
   editing = null;
   openBrowse();
@@ -1219,7 +1295,7 @@ $("add-form").addEventListener("submit", async (event) => {
     reviewedHere: 0,
   };
 
-  await store.saveCard(card);
+  if (!await writing(() => store.saveCard(card))) return;
   cache.push(card);
 
   // Mined from a transcript: go straight back to it, and to a line where that

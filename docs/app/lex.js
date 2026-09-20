@@ -12,7 +12,13 @@
 // "avow", which is the entire job. Where it fails it fails towards "unknown",
 // which shows you a word you already had rather than hiding one you did not.
 
-const WORD = /[\p{L}\p{M}'’-]+/gu;
+// A hyphen ends a word here, and that is not a detail: the deck's own index
+// splits on hyphens, so "tie-dye" is stored as the two-part phrase tie + dye.
+// A tokeniser that kept the hyphen handed it back as one token, which matched
+// neither the phrase nor any single word - and twelve of the thirteen
+// hyphenated words in this deck read as "not in your deck" while watching,
+// inviting a second card for a word already held. Both sides split now.
+const WORD = /[\p{L}\p{M}'’]+/gu;
 
 // Irregular forms, because no amount of suffix stripping turns "went" into
 // "go". Only the ones that actually turn up in speech are here.
@@ -90,6 +96,12 @@ function stripSuffix(word) {
 export function normalise(raw) {
   return String(raw || "").toLowerCase()
     .replace(/[’]/g, "'")
+    // An accent is a spelling, not a different word. A subtitle writes
+    // "séance" and a speech recogniser writes "seance", and a card for one
+    // should be found by the other. Decompose, drop the combining marks,
+    // recompose - the last step matters, because NFD also takes Hangul apart
+    // and every Korean clue in this deck would come back as loose jamo.
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC")
     .replace(/^['-]+|['-]+$/g, "");
 }
 
@@ -154,7 +166,11 @@ export function index(cards, known = []) {
   const rank = { known: 4, young: 3, learning: 2, fresh: 1 };
 
   for (const card of cards) {
-    const text = normalise(card.word).replace(/[^a-z' -]/g, " ").trim();
+    // Letters, not ASCII. The tokeniser above reads a line with \p{L}, so a
+    // transcript hands back "séance" whole - while this threw the é away and
+    // indexed the card as the two-part phrase "s" + "ance", which nothing can
+    // ever match. Any word with an accent in it was invisible to the deck.
+    const text = normalise(card.word).replace(/[^\p{L}\p{M}' -]/gu, " ").trim();
     if (!text) continue;
     const parts = text.split(/[\s-]+/).filter(Boolean);
     if (parts.length > 1) {
@@ -262,12 +278,18 @@ export function read(line, idx) {
     const token = tokens[wordAt[i]];
     if (claimed.has(i)) return;
     const shapes = forms(word);
-    // "I'll" is a function word wearing a contraction.
-    if (word.length < 2 || shapes.some((f) => FUNCTION_WORDS.has(f))) { token.state = "common"; return; }
+    // The deck first, because a card is this person saying "I am learning
+    // this" and no frequency list outranks that. It used to be the other way
+    // round, and a stem that happens to collide with an everyday word took
+    // the card with it: `shed` strips to `she`, `wither` to `with`, and both
+    // were greyed out as words nobody needs to mine while sitting in the deck
+    // being learned.
     for (const form of shapes) {
       const hit = idx.words.get(form);
       if (hit) { token.state = hit.state; token.card = hit.card; return; }
     }
+    // "I'll" is a function word wearing a contraction.
+    if (word.length < 2 || shapes.some((f) => FUNCTION_WORDS.has(f))) { token.state = "common"; return; }
     if (shapes.some((f) => idx.known?.has(f))) { token.state = "common"; return; }
     if (shapes.some((f) => idx.familiar?.has(f))) { token.state = "familiar"; return; }
     token.state = "new";

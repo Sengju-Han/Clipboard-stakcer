@@ -12,6 +12,12 @@
 </head>
 <body>
 
+<!-- A write that failed, said where every screen can show it. It was in the
+     review footer at first, which is the one place a card is answered - and
+     the wrong place for the add screen, the editor and the sync, which write
+     too and would have reported into a hidden element. -->
+<p class="write-note" id="write-note" role="status" hidden></p>
+
 <main id="app">
 
   <!-- Boot: the only screen that can appear before the deck is known. -->

@@ -313,6 +313,29 @@ check("a browser asking to PUT the vault is told it may", put.status, 204);
 check("and told so for its own origin",
   put.headers.get("access-control-allow-origin"), "https://example.test");
 
+console.log("\n— what a 500 is allowed to say —");
+// The flag that used to decide this put the reason in front of anybody who
+// asked, and it was left on for a week because turning it off meant going back
+// to "something went wrong" - useless to somebody holding a phone with no log
+// to read. So it is not a flag any more: the reason goes to the person whose
+// account the error is about, and to nobody else.
+//
+// Forced by taking a table away, which is a fault no handler catches - the
+// nearest thing to the real ones, which are all of that shape.
+const broken = await call("POST", "/api/register",
+  { body: { email: "five@example.test", secret: await secretFor("five@example.test", "a long enough password") } });
+await db.exec("DROP TABLE vault;");
+r = await call("GET", "/api/vault", { token: broken.payload.token });
+check("the account holder is told what went wrong", r.status, 500);
+check("in so many words", /no such table/i.test(r.payload.error || ""), true);
+note("said", r.payload.error);
+
+await db.exec("DROP TABLE pairings;");
+r = await call("POST", "/api/pair/claim", { body: { code: "ABCD" } });
+check("a stranger gets the same failure", r.status, 500);
+check("and is told nothing about the inside of it",
+  r.payload.error, "Something went wrong here. Nothing was changed.");
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 await mf.dispose();
 process.exit(failed ? 1 : 0);

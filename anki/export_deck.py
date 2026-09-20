@@ -171,6 +171,35 @@ def sync_down(col: Collection, username: str, password: str, endpoint: str | Non
 # extraction
 # --------------------------------------------------------------------------
 
+def field_names(col: Collection, note_ids: list[int], sample: int = 200) -> set[str]:
+    """Every field name in play, for saying what is there when a name is wrong."""
+    names = set()
+    for note_id in note_ids[:sample]:
+        names.update(name for name, _ in col.get_note(note_id).items())
+    return names
+
+
+def insist_on_fields(col: Collection, note_ids: list[int], *wanted: str) -> None:
+    """Stop if a field name matches nothing, rather than reporting an empty deck.
+
+    Getting the name wrong is the likeliest way to run one of these jobs for
+    nothing: every note is skipped, every count comes out zero, and the report
+    reads as a collection with nothing wrong in it. An answer of zero that
+    means "not looked at" and reads as "looked at, and fine" is the worse of
+    the two wrong answers, because nobody investigates good news.
+    """
+    have = field_names(col, note_ids)
+    astray = [name for name in wanted if name and name not in have]
+    if not astray:
+        return
+    fail(
+        f"No note has a field called {', '.join(repr(n) for n in astray)}.",
+        "Nothing was checked. Field names are case-sensitive and this would "
+        "otherwise have reported a collection with nothing wrong in it.\n"
+        "The fields your notes actually have: " + ", ".join(sorted(have)),
+    )
+
+
 def deck_inventory(col: Collection) -> list[dict]:
     decks = []
     for entry in col.decks.all_names_and_ids():

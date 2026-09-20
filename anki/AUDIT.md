@@ -34,12 +34,83 @@ Skipped outright:
 
 - a **`.colpkg` backup** is taken and kept as an artifact for 14 days
 - afterwards it checks that **no note disappeared**, that **only the notes it
-  meant to change** changed, and that **no card's scheduling moved** — and
-  refuses to sync if any of that is wrong
+  meant to change** changed, that **no card's scheduling moved**, and that
+  **no recording went missing anywhere in the collection** that it did not
+  mean to remove — and refuses to sync if any of that is wrong
 
 If a corrected sentence already had a recording, that recording says the old
-wording. The `[sound:]` tag is removed and you are told how many, so the
-**Anki TTS package** workflow can record the corrected sentence.
+wording. The `[sound:]` tag is removed and the summary says how many, so the
+**Anki TTS package** workflow can record the corrected sentence — it looks for
+notes with no audio, which is exactly what those are afterwards.
+
+> It did not say how many until 19 September 2026, and the reason is worth
+> knowing if you ran it before then. The correction is written back by a
+> function that keeps the sentence and your own note after it and nothing else,
+> so a `[sound:]` tag on the sentence line was already gone by the time
+> anything counted it. It counted what was left, found none, and reported none.
+> Every correction applied before that date took the card's recording with it
+> in silence. Re-running **Anki TTS package** records them again.
+
+## The word itself
+
+The audit above never touches the word a card exists for. That is deliberate —
+a correction that replaces it makes a better sentence and a worthless card —
+but it means nothing has ever looked at the word, and a card whose *word* is
+misspelled teaches the misspelling every time it comes up.
+
+**Actions → Anki check words → Run workflow**, with *apply* off.
+
+It asks one question per card: does the word turn up in its own example
+sentence? Almost always yes, because the sentence was written separately and
+has the word spelled properly in it. When the answer is no, that is either a
+misspelling —
+
+| on the card | the sentence has |
+| --- | --- |
+| `entiments` | sentiments |
+| `hidious` | hideous |
+| `achipelago` | archipelago |
+| `bone marrorw` | bone marrow |
+| `sraggly` | scraggly |
+
+— or an ordinary thing: `avow` against *he avowed it*, `come full circle`
+against *came full circle*. Both are a letter or two from the word on the card,
+so no rule tells them apart; the ones that are missing get sent to Claude to be
+judged, and nothing else does. On a thousand-card collection that is about
+seven requests.
+
+**A correction is only ever a respelling.** The word on the card is what the
+card is: `entiments` → `sentiments` is a repair, `beatnik` → `hipster` is a
+card with a year of scheduling on it that is now about something else. Anything
+that is not close enough to the original spelling is refused and reported for
+you to decide, whatever the model says. A word carrying formatting is left
+alone for the same reason the audit leaves a formatted sentence alone.
+
+Only the word changes. The sentence is untouched, no recording moves, and the
+same checks run before anything is synced: no note gone, nothing else changed,
+no card's scheduling moved.
+
+The same run also names three things a rule can see on its own, and **changes
+none of them** — each is a decision only you can make:
+
+- **the same word on two cards**, which means answering it twice for the rest
+  of your life, on two separate schedules
+- **cards with no example sentence** — the hardest kind to keep, and the audio
+  workflow has nothing to record for them either
+- **cards whose example is just the word again** — `ensconce`, whose sentence
+  reads *ensconce*. Nothing to remember it by, and nothing for the audio
+  workflow to read out but the word
+- **one sentence used by two cards**, which happens when two words are mined
+  from the same line. Reviewing either one shows the answer to the other, so
+  both are easier than they look
+- **cards whose clue contains the answer**, like a card for *ditch* whose front
+  says `ditch`. It is answered by reading it and still takes a review every
+  time.
+
+Those need no key. Without `ANTHROPIC_API_KEY` the run still reports them, and
+lists the words missing from their own sentence without judging them; only
+*apply* requires one, because telling `hidious` from `avow` is the entire
+difference between a repair and a ruined card.
 
 ## Resuming
 

@@ -260,3 +260,32 @@ def run(t):
     t.page.locator("#anthropic").dispatch_event("change")
     t.page.wait_for_timeout(2000)
     t.truthy("and a key changed here is sent back", state["seen"][-1] != blob)
+
+    _an_empty_submit_says_so(t)
+
+
+def _an_empty_submit_says_so(t):
+    """A tap that does nothing reads as a page that is broken.
+
+    Submitting with no field filled in returned early and silently. On the page
+    that holds the GitHub token and the Anthropic key — the one that took three
+    goes to get right — "I tapped Add card and nothing happened" is
+    indistinguishable from the account being broken again.
+    """
+    t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(600)
+
+    # The deck and note type are required, so the browser itself objects when
+    # they are empty - that case was never silent. The silent one is both of
+    # them filled and every field left blank, which is what a mis-tap looks
+    # like.
+    t.page.locator("#deck").fill("Steve Jobs")
+    for box in t.page.locator("#fields textarea").all():
+        box.fill("")
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(700)
+
+    said = t.page.locator("#feed").inner_text()
+    t.truthy("an empty card says what is missing", "fill in at least one field" in said.lower())
+    t.note("it said", said.strip().replace("\n", " ")[:110])
