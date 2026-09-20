@@ -9,12 +9,17 @@ name: Test the app
 #
 # server/** is in there because one suite now drives the page against the real
 # Worker rather than a stub, so a change to the server can break the app.
+#
+# .github/workflows/** is in there because test_workflows.py reads every one of
+# them - for permissions GitHub does not have, for an `if` that reads a step's
+# own env, for an artifact that a failed upload would take with it. Editing a
+# workflow was the one change that ran none of the tests written to check it.
 on:
   pull_request:
-    paths: ["docs/**", "anki/**", "test/**", "server/**", ".github/workflows/app-test.yml"]
+    paths: ["docs/**", "anki/**", "test/**", "server/**", ".github/workflows/**"]
   push:
     branches: [main]
-    paths: ["docs/**", "anki/**", "test/**", "server/**"]
+    paths: ["docs/**", "anki/**", "test/**", "server/**", ".github/workflows/**"]
   workflow_dispatch:
 
 jobs:

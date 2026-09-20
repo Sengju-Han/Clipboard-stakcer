@@ -182,36 +182,105 @@ python anki/export_deck.py --local-collection ~/.local/share/Anki2/User\ 1/colle
 An artifact is a zip behind a login with a seven-day fuse. Drive is easier to
 reach from a phone, and the export goes there instead once this is connected.
 
-Once, and then never again:
+Once, and then never again. All of it works on a phone.
 
-1. **Google Cloud console** → *APIs & Services* → enable the **Google Drive API**.
-2. *Credentials* → **Create credentials → OAuth client ID** → type **Web
-   application**. Under *Authorised redirect URIs* add exactly:
+**1. Google Cloud console → APIs & Services → enable the Google Drive API.**
 
-       https://sengju-han.github.io/Clipboard-stakcer/connected.html
+**2. OAuth consent screen** → *External* → put in a name and your own email →
+save → and then **Publish app**.
 
-3. Put the client ID and client secret into this repository under
-   **Settings → Secrets and variables → Actions**, as `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`.
-   Add a third, `REPO_ADMIN_TOKEN`: a fine-grained personal access token with
-   **Secrets: Read and write** on this repository. The connect workflow needs
-   it to store the result, because the token a workflow is given cannot write
-   secrets — there is no permission that grants that. It is used for this and
-   nothing else, and can be deleted once Drive is connected.
-4. **Actions → Connect Google Drive → Run workflow**, with the code box empty.
-   It prints a link.
-5. Open the link, approve, and the page you land on shows a code with a copy
-   button.
-6. Run **Connect Google Drive** again, pasting that code into **code**.
+> Publishing is not optional. While the consent screen says *Testing*, Google
+> expires the connection after **seven days** and the export goes quiet again
+> with nothing to say why. The one permission this asks for — files it creates
+> itself — needs no review, so publishing is a single tap.
 
-That second run swaps the code for a lasting connection and writes it into the
-repository's secrets itself. The connection is never printed — not in the log,
-not in the summary — because a public repository's logs are public. The code
-you copied is single-use and worth nothing once spent, which is why that one is
-safe to read off a screen.
+**3. Credentials → Create credentials → OAuth client ID → Web application.**
+Under *Authorised redirect URIs* add exactly:
 
-The scope asked for is `drive.file`: the files this creates, and nothing else
-in your Drive. It cannot read what was already there.
+    https://sengju-han.github.io/Clipboard-stakcer/connected.html
+
+Copy the **client ID** and **client secret** it gives you.
+
+**4. Open [the connect page](https://sengju-han.github.io/Clipboard-stakcer/connected.html)
+on your phone.** Paste the client ID, tap approve, say yes to Google. It sends
+you back to the same page; paste the client secret and it hands you a refresh
+token.
+
+That swap happens in your browser and nowhere else. The secret goes straight to
+Google over HTTPS and is never stored, never logged, and never reaches this
+repository — which matters, because this repository is public and so are its
+logs.
+
+**5. Settings → Secrets and variables → Actions**, three new repository
+secrets:
+
+| name | what to paste |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | the client ID from step 3 |
+| `GOOGLE_CLIENT_SECRET` | the client secret from step 3 |
+| `GOOGLE_REFRESH_TOKEN` | what the page gave you in step 4 |
+
+**6. Run [Check Google Drive][check] once.** It puts one small file in the
+folder and says whether that worked. Thirty seconds, nothing installed, and no
+sign-in to AnkiWeb — so the answer to "did I get that right" does not cost a
+full export.
+
+[check]: https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml
+
+That is all. The next export goes to Drive, laid out the way it is built:
+`cards.csv`, `reviews.csv` and the spreadsheet at the top, with `by-deck` and
+`notetypes` as folders rather than thirty files in a heap.
+
+### If it does not work
+
+Each of these names itself, in the run's log or on Google's own page.
+
+**`Error 400: redirect_uri_mismatch`** — on Google's own page, before you ever
+get back here. The redirect URI in step 3 is not character-for-character the one
+the page uses. The connect page prints the exact string with a **Copy that**
+button beside it; copy it rather than typing it, and mind that
+`Clipboard-stakcer` is spelled the way it is spelled.
+
+> If you added a redirect URI before, from the older workflow, it may be written
+> `https://Sengju-Han.github.io/...` with capitals — the browser sends the host
+> in lower case. Add the one the page shows as a second entry rather than
+> replacing the first; a client is allowed several, and it costs nothing to have
+> both.
+
+**`Google Drive API has not been used in project … before or it is disabled`** —
+in the export's log, where the run stops. Step 1 was skipped. Switching the API
+on and connecting to it are two different things in the Google console, and this
+is the one that is easy to walk past. The failure message in the run says this
+too.
+
+**`Google Drive is half connected: GOOGLE_CLIENT_SECRET is not set`** — one of
+the three secrets did not save, or saved under a slightly different name. This
+has nothing to do with Google and the connecting itself worked; fix the secret
+in step 5 and run it again.
+
+And the slow one: it all works, and then a week later the export quietly stops
+arriving in Drive. That is step 2 — the consent screen is still on *Testing*, so
+Google expired the refresh token after seven days. Publish the app, connect
+again, and replace `GOOGLE_REFRESH_TOKEN`.
+
+And if the folder simply stops filling up: it has probably been **renamed**.
+Moving it is fine — it is found wherever it ends up in your Drive — but a new
+name is a new folder as far as this is concerned, and it quietly makes itself a
+fresh one. Put the new name in the workflow's *drive_folder* box, or rename it
+back.
+
+And if the link to the folder says you need access: the browser you tapped it
+in is signed in to a different Google account from the one you approved with.
+Phones usually have two. Switch account, or connect again as the account you
+want the files in.
+
+Whatever goes wrong, the export itself is still in the run's artifacts: a failed
+upload does not take it with it.
+
+The scope is `drive.file`: the files this creates, and nothing else in your
+Drive. It cannot read what was already there. If you ever want it gone, revoke
+it at [myaccount.google.com/permissions](https://myaccount.google.com/permissions)
+and delete the three secrets.
 
 Nothing is required. With none of it set the export still appears in the
 artifacts, exactly as before, and the run says so.

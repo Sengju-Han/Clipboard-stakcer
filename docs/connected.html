@@ -3,109 +3,312 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Connecting Drive</title>
+<title>Connect Google Drive</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%93%81%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f2f3f5; --panel: #ffffff; --ink: #1f2328; --muted: #61686f;
     --line: #d8dce0; --accent: #2d6cdf; --accent-ink: #ffffff;
-    --ok: #1a7f45; --ok-bg: #e7f5ec; --bad: #b3261e; --radius: 10px;
+    --ok: #1a7f45; --ok-bg: #e7f5ec; --bad: #b3261e; --warn-bg: #fdf3e2;
+    --radius: 10px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #16181c; --panel: #1f2227; --ink: #e6e8ea; --muted: #9aa3ab;
       --line: #343a41; --accent: #4d8bf0; --accent-ink: #0b1220;
-      --ok: #6fd096; --ok-bg: #14301f; --bad: #f2a49e;
+      --ok: #6fd096; --ok-bg: #14301f; --bad: #f2a49e; --warn-bg: #2b2418;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 16px; }
   header h1 { margin: 0; font-size: 17px; font-weight: 600; }
   main { max-width: 640px; margin: 0 auto; padding: 16px; }
   .panel { background: var(--panel); border: 1px solid var(--line);
            border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 4px; }
+  input { width: 100%; font: inherit; padding: 11px 12px; border-radius: 8px;
+          border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  button { font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
+           width: 100%; padding: 13px; margin-top: 12px; background: var(--accent);
+           color: var(--accent-ink); border: 1px solid transparent; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.done { background: var(--ok); }
+  button.small { width: auto; padding: 8px 14px; margin-top: 2px; font-size: 13px; }
   .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
           word-break: break-all; background: var(--bg); border: 1px solid var(--line);
           border-radius: 8px; padding: 12px; margin: 10px 0; }
-  button { font: inherit; font-weight: 600; border-radius: 8px; cursor: pointer;
-           width: 100%; padding: 12px; background: var(--accent); color: var(--accent-ink);
-           border: 1px solid transparent; }
-  button.done { background: var(--ok); }
-  ol { padding-left: 20px; }
-  li { margin-bottom: 6px; }
   .note { color: var(--muted); font-size: 13px; }
+  /* Without this a link keeps the browser's default #0000EE, which on the
+     dark panel is navy on charcoal - and one of them is the way back out
+     of a failed swap. */
+  a { color: var(--accent); }
   .bad { color: var(--bad); }
+  .warn { background: var(--warn-bg); border-radius: 8px; padding: 12px; font-size: 13px; }
+  ol { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 8px; }
+  /* break-all here would split GOOGLE_REFRESH_TOKEN as "GOOG / LE_REFRESH…",
+     which reads as two different names. Only break when it genuinely must. */
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px;
+         font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+         overflow-wrap: break-word; }
 </style>
 </head>
 <body>
 
-<header><h1>Connecting Google Drive</h1></header>
+<header><h1>Connect Google Drive</h1></header>
 
 <main>
-  <div class="panel" id="panel">
-    <p id="lede">Reading what Google sent back…</p>
-    <div class="code" id="code" hidden></div>
-    <button id="copy" hidden>Copy the code</button>
-    <ol id="next" hidden>
-      <li>Go to <b>Actions → Connect Google Drive → Run workflow</b>.</li>
-      <li>Paste the code into <b>code</b>.</li>
-      <li>Run it. It swaps the code for a lasting connection and stores it as a
-        secret — the code itself is used once and is no good to anyone after that.</li>
+
+  <!-- Step one: send them to Google. Shown when there is no code in the address. -->
+  <section class="panel" id="start" hidden>
+    <h2>Approve it</h2>
+    <p class="note">This asks Google for one thing only: the files this makes in your
+      Drive. It cannot see anything that was already there.</p>
+    <label for="cid">Client ID</label>
+    <input id="cid" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+           placeholder="1234-abc.apps.googleusercontent.com">
+    <p class="note">From the Google Cloud console, under Credentials. It is not a
+      secret — it appears in the address bar of the next page.</p>
+    <button id="go" type="button">Approve with Google</button>
+    <p class="note" id="start-say"></p>
+  </section>
+
+  <!-- Step two: swap the code for a refresh token, here, in this browser. -->
+  <section class="panel" id="swap" hidden>
+    <h2>Now swap it for a lasting connection</h2>
+    <p class="note">Google sent you back with a one-time code. The client secret below
+      turns it into a refresh token, which is the part that lasts.</p>
+    <div class="warn">
+      This happens in this browser and nowhere else — the secret you paste is sent
+      straight to Google over HTTPS and is never stored, never logged, and never
+      leaves this tab. Nothing about it reaches the repository.
+    </div>
+    <label for="sec">Client secret</label>
+    <input id="sec" type="password" autocomplete="off" spellcheck="false"
+           placeholder="GOCSPX-…">
+    <button id="swapgo" type="button">Get the refresh token</button>
+    <p class="note" id="swap-say"></p>
+    <!-- Every failure here ends in "start again", and starting again means
+         getting rid of the code on the end of the address. Without this that
+         is done by editing the address bar, on a phone, which is the single
+         most awkward thing this page could ask for. -->
+    <p class="note" id="restart" hidden><a href="#" id="restart-go">Start again from the
+      beginning</a> <span id="restart-why"></span></p>
+  </section>
+
+  <!-- Step three: the thing to paste into the repository. -->
+  <section class="panel" id="done" hidden>
+    <h2>Done — one thing left</h2>
+    <p>Put this in the repository as a secret called
+      <code>GOOGLE_REFRESH_TOKEN</code>:</p>
+    <div class="code" id="rt"></div>
+    <button id="copy" type="button">Copy it</button>
+    <p class="note">Settings → Secrets and variables → Actions → New repository
+      secret. Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>
+      there too, if you have not already.</p>
+    <p class="note" id="then">Then run
+      <a href="https://github.com/Sengju-Han/Clipboard-stakcer/actions/workflows/google-check.yml"
+         target="_blank" rel="noopener"><b>Check Google Drive</b></a> once. It puts one
+      small file in the folder and says whether that worked — half a minute, and it is
+      the only way to be sure without waiting for a whole export.</p>
+    <div class="warn">This is a key to the files this app makes in your Drive. Treat it
+      the way you would a password: paste it into the secret, then close this tab.
+      If it ever gets out, revoke it at
+      <a href="https://myaccount.google.com/permissions" target="_blank"
+         rel="noopener">myaccount.google.com/permissions</a>.</div>
+  </section>
+
+  <section class="panel" id="explain">
+    <h2>What you need first</h2>
+    <ol>
+      <li><b>Google Cloud console</b> → APIs &amp; Services → <b>enable the Google
+        Drive API</b>.</li>
+      <li><b>OAuth consent screen</b> → External → fill in the name and your email →
+        and then <b>Publish app</b>. Publishing matters: while it says "Testing", a
+        refresh token stops working after seven days and the export would go quiet
+        again. This scope needs no review, so publishing is one tap.</li>
+      <li><b>Credentials</b> → Create credentials → <b>OAuth client ID</b> → type
+        <b>Web application</b>. Under <i>Authorised redirect URIs</i> add exactly:
+        <div class="code" id="redir"></div>
+        <button id="copy-redir" class="small" type="button">Copy that</button>
+        <p class="note">One character out and Google answers
+          <i>redirect_uri_mismatch</i> and never sends you back here, so it is worth
+          copying rather than typing.</p>
+      </li>
     </ol>
-    <p class="note" id="why" hidden>This page is only ever handed a one-time code. It
-      has no access to your Drive and sends nothing anywhere: the code sits in the
-      address bar, and copying it is the whole job.</p>
-  </div>
+  </section>
+
 </main>
 
 <script>
-// Google puts either ?code=... or ?error=... on the end of the address when it
-// sends somebody back here. On a phone the alternative is reading it out of the
-// address bar by hand, which is how this normally goes wrong.
+// Connecting Drive, entirely in this browser.
+//
+// This used to be two runs of a workflow: the first printed a link, the second
+// swapped the code for a refresh token and wrote it into the repository's
+// secrets. Writing a secret needs a fine-grained personal access token, which
+// is the single most awkward thing to make on a phone — and the reason the
+// whole feature sat unused.
+//
+// Google's token endpoint allows cross-origin requests from this page's own
+// origin, so the swap can happen here instead. Nothing is printed into a log,
+// which matters because this repository is public; the secret is typed in,
+// used once, and forgotten when the tab closes.
+const $ = (id) => document.getElementById(id);
+const REDIRECT = location.origin + location.pathname;
+const SCOPE = "https://www.googleapis.com/auth/drive.file";
+const REMEMBER = "connect.client-id";
+
+$("redir").textContent = REDIRECT;
+
 const params = new URLSearchParams(location.search);
 const code = params.get("code");
-const error = params.get("error");
-const lede = document.getElementById("lede");
+const failed = params.get("error");
+
+function show(id) { $(id).hidden = false; }
+function say(id, text, bad = false) {
+  const line = $(id);
+  line.textContent = text;
+  line.className = bad ? "note bad" : "note";
+}
+
+// The client id is not a secret — it travels in the address bar of the consent
+// page — so remembering it saves retyping thirty characters on a phone.
+function remembered() {
+  try { return localStorage.getItem(REMEMBER) || ""; } catch { return ""; }
+}
+
+let saved = remembered();
 
 if (code) {
-  lede.textContent = "Google said yes. Here is the code:";
-  const box = document.getElementById("code");
-  box.textContent = code;
-  box.hidden = false;
-  document.getElementById("next").hidden = false;
-  document.getElementById("why").hidden = false;
+  show("swap");
+  $("explain").hidden = true;
+} else if (failed) {
+  show("start");
+  say("start-say", failed === "access_denied"
+    ? "Google says the consent screen was dismissed. Nothing was changed — try again."
+    : `Google says: ${failed}`, true);
+  if (saved) $("cid").value = saved;
+} else {
+  show("start");
+  if (saved) $("cid").value = saved;
+}
 
-  const button = document.getElementById("copy");
-  button.hidden = false;
-  button.addEventListener("click", async () => {
+// On a first visit the setup steps belong above the field, because the field
+// asks for a client ID that does not exist yet — landing on an input you
+// cannot fill is how somebody decides a page is broken. Once the ID has been
+// used once it is remembered, and then the button is what you came back for.
+if (!saved && !code && $("explain") && !$("explain").hidden) {
+  $("explain").parentNode.insertBefore($("explain"), $("start"));
+  $("explain").querySelector("h2").textContent = "First, in the Google Cloud console";
+}
+
+$("go").addEventListener("click", () => {
+  const id = $("cid").value.trim();
+  if (!id) return say("start-say", "Put the client ID in first.", true);
+  try { localStorage.setItem(REMEMBER, id); } catch { /* fine */ }
+  // access_type=offline is what asks for a refresh token at all, and
+  // prompt=consent forces a new one even for an account that has approved
+  // before — without it a second attempt returns no refresh token and there
+  // is nothing to store.
+  //
+  // select_account as well, because a phone usually has two Google accounts
+  // and the files go to whichever one is signed in. Without the chooser that
+  // is a decision nobody is asked to make, and the way it shows up later is a
+  // link to the folder saying you need access.
+  location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+    client_id: id,
+    redirect_uri: REDIRECT,
+    response_type: "code",
+    scope: SCOPE,
+    access_type: "offline",
+    prompt: "consent select_account",
+    include_granted_scopes: "true",
+  });
+});
+
+// Every dead end here has the same way out, and it is only a dead end because
+// the used code is still on the address.
+function stuck(text) {
+  say("swap-say", text, true);
+  // Which of the two it is matters: with the client id still in hand this is a
+  // one-tap retry, and without it there is something to go and fetch first.
+  $("restart-why").textContent = remembered()
+    ? "— the client ID is remembered, so this only forgets the used code."
+    : "— you will need the client ID from the Google console again.";
+  $("restart").hidden = false;
+}
+
+$("restart-go").addEventListener("click", (event) => {
+  event.preventDefault();
+  location.href = REDIRECT;
+});
+
+$("swapgo").addEventListener("click", async () => {
+  const secret = $("sec").value.trim();
+  const id = remembered();
+  if (!id) return stuck("This browser has forgotten the client ID, so there is "
+    + "nothing to swap the code with.");
+  if (!secret) return say("swap-say", "Put the client secret in first.", true);
+
+  $("swapgo").disabled = true;
+  say("swap-say", "Asking Google…");
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: id, client_secret: secret, code,
+        redirect_uri: REDIRECT, grant_type: "authorization_code",
+      }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(out.error_description || out.error || `Google said ${res.status}.`);
+    }
+    if (!out.refresh_token) {
+      throw new Error("Google returned no refresh token. That happens when the code "
+        + "has already been used — they work once — so start again from the top.");
+    }
+    $("sec").value = "";                       // used, and gone
+    // The code is spent now. Left on the address, a reload - or Android
+    // restoring this tab tomorrow - would land back on the swap step holding a
+    // code that cannot work a second time.
+    try { history.replaceState(null, "", REDIRECT); } catch { /* fine */ }
+    $("rt").textContent = out.refresh_token;
+    $("swap").hidden = true;
+    show("done");
+  } catch (err) {
+    stuck(String(err.message || err));
+    $("swapgo").disabled = false;
+  }
+});
+
+// Clipboard access is refused in plenty of ordinary situations, and "nothing
+// happened" would be the worst possible answer on a string that has to be
+// exact - so a refusal selects the text instead and says to copy it by hand.
+function copies(buttonId, fromId) {
+  $(buttonId).addEventListener("click", async () => {
+    const button = $(buttonId);
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText($(fromId).textContent);
       button.textContent = "Copied";
       button.classList.add("done");
     } catch {
-      // Clipboard access is refused in plenty of ordinary situations, and
-      // "nothing happened" would be the worst possible answer here.
       button.textContent = "Select it above and copy by hand";
       const range = document.createRange();
-      range.selectNodeContents(box);
-      const selection = getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
+      range.selectNodeContents($(fromId));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
     }
   });
-} else if (error) {
-  lede.innerHTML = `Google said <b class="bad">${error.replace(/[<>&]/g, "")}</b>.`;
-  lede.insertAdjacentHTML("afterend",
-    "<p class='note'>If that was access_denied, the consent screen was dismissed — "
-    + "run <b>Connect Google Drive</b> again and approve it. Nothing was changed.</p>");
-} else {
-  lede.textContent = "There is nothing here on its own.";
-  lede.insertAdjacentHTML("afterend",
-    "<p class='note'>This page is where Google sends you after you approve the "
-    + "connection. Start from <b>Actions → Connect Google Drive</b>.</p>");
 }
+
+copies("copy", "rt");
+copies("copy-redir", "redir");
 </script>
 
 </body>
