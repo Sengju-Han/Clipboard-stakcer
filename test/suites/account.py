@@ -262,6 +262,7 @@ def run(t):
     t.truthy("and a key changed here is sent back", state["seen"][-1] != blob)
 
     _an_empty_submit_says_so(t)
+    _the_sentence_is_read_as_you_write_it(t)
 
 
 def _an_empty_submit_says_so(t):
@@ -289,3 +290,147 @@ def _an_empty_submit_says_so(t):
     said = t.page.locator("#feed").inner_text()
     t.truthy("an empty card says what is missing", "fill in at least one field" in said.lower())
     t.note("it said", said.strip().replace("\n", " ")[:110])
+
+
+# ---- the example sentence -------------------------------------------------
+
+NATURAL = {"verdict": "natural", "natural": "", "why": "", "words": [], "slang": []}
+
+FIXED = {
+    "verdict": "understandable",
+    "natural": "I recommend the restaurant I went to yesterday.",
+    "why": "it already happened, so it takes -ed",
+    "words": [{
+        "typed": "reccomend", "meant": "recommend",
+        "meaning": "to say something is good and worth choosing",
+        "korean": "추천하다",
+    }],
+    "slang": [{
+        "phrase": "hit the spot", "meaning": "was exactly what you wanted",
+        "register": "casual",
+    }],
+}
+
+
+def _the_sentence_is_read_as_you_write_it(t):
+    """The example field is where the learner writes English of their own, and
+    until now it was the one field nothing read.
+
+    What is checked here is not that a sentence gets corrected - it is that a
+    correction never arrives alone. A verdict on its own is worthless to
+    somebody who does not yet know what right looks like, so the natural
+    version, the meaning of every word they got wrong, and any slang all have
+    to come with it. And that nothing is ever replaced without being asked.
+
+    Every sentence below is different on purpose. Two guards make a repeat
+    free - the cache, and a check that the text actually changed - and reusing
+    a sentence means testing those instead of the thing in hand.
+    """
+    asked = []
+
+    def claude(route):
+        body = json.loads(route.request.post_data)
+        asked.append(body)
+        said = body["messages"][0]["content"]
+        out = FIXED if "reccomend" in said else NATURAL
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(out)}]}))
+
+    t.page.route("https://api.anthropic.com/**", claude)
+    t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
+    t.page.wait_for_selector("#settings", timeout=30000)
+    # A fresh device. Without this the key from earlier in this suite is still
+    # in storage, and the no-key case below silently tests the opposite.
+    t.page.evaluate("""() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    }""")
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(800)
+
+    box = t.page.locator("#f-Example")
+    panel = t.page.locator("#said")
+    t.check("the example field has somewhere to be read", panel.count(), 1)
+
+    # ---- no key: it says so once, and asks Claude nothing -----------------
+    asked.clear()
+    box.fill("She go to the market every mornings.")
+    t.page.wait_for_timeout(2400)
+    t.truthy("with no key it says where to put one",
+             "Anthropic key" in panel.inner_text())
+    t.check("and spends nothing finding that out", len(asked), 0)
+
+    _panels(t)
+    _fill(t, "anthropic", KEY)
+
+    # ---- a fragment is not a sentence -------------------------------------
+    asked.clear()
+    box.fill("the cat")
+    t.page.wait_for_timeout(2400)
+    t.check("a fragment is left alone", len(asked), 0)
+    t.check("and says nothing about it", panel.inner_text().strip(), "")
+
+    # ---- a sentence that needs work ---------------------------------------
+    box.fill("I reccomend the restaurant I go yesterday.")
+    t.page.wait_for_timeout(2800)
+    t.check("a real sentence is read once", len(asked), 1)
+    t.truthy("and the sentence is what was sent",
+             "reccomend" in asked[0]["messages"][0]["content"])
+
+    said = panel.inner_text()
+    t.truthy("it offers the natural version",
+             "I recommend the restaurant I went to yesterday." in said)
+    t.truthy("and says what changed in plain words", "already happened" in said)
+    # The whole point of the exercise: a word you got wrong is a word you do
+    # not know yet, so it comes back with what it means.
+    t.truthy("a word typed wrong comes back with what it means",
+             "to say something is good and worth choosing" in said)
+    t.truthy("and its Korean", "\uCD94\uCC9C\uD558\uB2E4" in said)
+    t.truthy("slang is explained rather than removed",
+             "was exactly what you wanted" in said)
+    t.truthy("with how casual it is", "casual" in said)
+
+    # ---- and nothing is taken without being asked -------------------------
+    t.check("the field is still exactly what they typed",
+            box.input_value(), "I reccomend the restaurant I go yesterday.")
+    t.check("both ways out are offered",
+            [t.page.locator("#said button.take").count(),
+             t.page.locator("#said button.keep").count()], [1, 1])
+
+    t.page.locator("#said button.keep").click()
+    t.page.wait_for_timeout(500)
+    t.check("keeping yours leaves the sentence alone",
+            box.input_value(), "I reccomend the restaurant I go yesterday.")
+    t.check("and puts the panel away", panel.inner_text().strip(), "")
+
+    # ---- taking the suggestion --------------------------------------------
+    asked.clear()
+    box.fill("I reccomend this place to everybody I meet.")
+    t.page.wait_for_timeout(2800)
+    t.check("a different sentence is read", len(asked), 1)
+    t.page.locator("#said button.take").click()
+    t.page.wait_for_timeout(600)
+    t.check("taking it puts it in the field",
+            box.input_value(), "I recommend the restaurant I went to yesterday.")
+    t.check("and does not then ask about its own suggestion", len(asked), 1)
+
+    # ---- a sentence that is already fine ----------------------------------
+    asked.clear()
+    box.fill("The train was jam-packed this morning.")
+    t.page.wait_for_timeout(2800)
+    t.check("a natural sentence is read", len(asked), 1)
+    t.truthy("and told so", "reads naturally" in panel.inner_text())
+    t.check("and is offered no rewrite", t.page.locator("#said button.take").count(), 0)
+
+    # ---- the same sentence twice is free ----------------------------------
+    box.fill("Something else entirely, just for a moment here.")
+    t.page.wait_for_timeout(2800)
+    spent = len(asked)
+    box.fill("The train was jam-packed this morning.")
+    t.page.wait_for_timeout(2800)
+    t.check("a sentence already read is not paid for twice", len(asked), spent)
+    t.truthy("and comes straight back", "reads naturally" in panel.inner_text())
+
+    t.page.unroute("https://api.anthropic.com/**")
+

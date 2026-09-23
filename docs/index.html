@@ -107,6 +107,31 @@
   .brain .ko { margin-left: 7px; }
   .brain .route { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line);
     color: var(--muted); font-size: 11px; }
+
+  /* The sentence check under Example. The only panel on this page that asks a
+     question rather than answering one, so the two choices sit at the bottom
+     where a thumb finds them - and neither is pre-chosen. */
+  .said { margin-top: 7px; border: 1px solid var(--line); border-radius: 8px;
+          padding: 10px 12px; font-size: 14px; line-height: 1.5; }
+  .said:empty { display: none; }
+  .said.fine { border-color: var(--ok); color: var(--ok); }
+  .said .mine { color: var(--muted); text-decoration: line-through; }
+  .said .better { font-weight: 650; margin: 5px 0 2px; }
+  .said .why { color: var(--muted); font-size: 13px; }
+  .said h5 { margin: 10px 0 3px; font-size: 10.5px; text-transform: uppercase;
+             letter-spacing: 0.09em; color: var(--muted); font-weight: 650; }
+  .said ul { margin: 0; padding-left: 16px; }
+  .said li { margin-bottom: 5px; }
+  .said .typed { color: var(--muted); text-decoration: line-through; }
+  .said .meant { font-weight: 700; }
+  .said .ko { color: var(--muted); margin-left: 6px; }
+  .said .reg { color: var(--muted); font-style: italic; font-size: 12px; margin-left: 6px; }
+  .said .choose { margin-top: 11px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .said button { background: none; border: 1px solid var(--line); color: inherit;
+                 border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px;
+                 cursor: pointer; }
+  .said button.take { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+  .said .waiting, .said .quiet { color: var(--muted); font-size: 13px; }
   .brain .nuance { margin: 6px 0 0; }
   .brain h4 { margin: 9px 0 3px; font-size: 11.5px; text-transform: uppercase;
               letter-spacing: .04em; color: var(--muted); font-weight: 700; }
@@ -267,7 +292,7 @@ import { serverUrl } from "./app/where.js";
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-16.1";
+const VERSION = "2026-09-23.0";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -527,13 +552,15 @@ function renderFields() {
     const target = name === "Back";
     wrap.innerHTML =
       `<label for="f-${name}">${name}` +
-      (spoken ? ` <span class="hint">— audio is generated from this</span>` : "") +
+      (spoken ? ` <span class="hint">— audio is generated from this, and it is read as you type</span>` : "") +
       (target ? ` <span class="hint">— explained as you type</span>` : "") +
       `</label><textarea id="f-${name}" data-field="${name}"></textarea>` +
-      (target ? `<div class="look" id="look"></div><div class="brain" id="brain"></div>` : "");
+      (target ? `<div class="look" id="look"></div><div class="brain" id="brain"></div>` : "") +
+      (spoken ? `<div class="said" id="said"></div>` : "");
     box.appendChild(wrap);
   }
   if (chosen.fields.includes("Back")) { watchTarget(); wireBrain(); }
+  if (chosen.fields.includes("Example")) watchExample();
   const speaks = chosen.fields.includes("Example");
   $("speaks").textContent = speaks
     ? "Audio is generated for Example. Sending never blocks you — keep typing."
@@ -1087,6 +1114,208 @@ function wireBrain() {
     if (put) {
       const field = document.getElementById(put.dataset.into);
       if (field) { field.value = put.dataset.text; field.focus(); }
+    }
+  });
+}
+
+// ---- the example sentence -------------------------------------------------
+//
+// The word field has been explained as you type for a while. The sentence field
+// was only ever read for audio, so the one place a learner writes English of
+// their own got no reading at all - and the checking that did exist ran later,
+// in the audit, on sentences already sitting on cards.
+//
+// Later is the wrong time. By then the sentence has been read a hundred times
+// in its wrong form, and a correction arriving afterwards is a card changing
+// under you. This reads it while it is still a draft, and then does the one
+// thing that matters: it offers, and you choose. Nothing is replaced unless you
+// press the button.
+//
+// The rule the contract is written around is that a verdict on its own is
+// worthless. "That is wrong" tells somebody who does not yet know what right
+// looks like precisely nothing. So every answer carries the natural version,
+// and every word that went wrong comes back with what it means - because a word
+// typed wrong is a word not yet known, and that is the moment to learn it, not
+// a moment to be marked down.
+
+const SENTENCE_PAUSE = 1200;   // a sentence is still being written at 600ms
+const SENTENCE_MIN = 12;       // shorter than this is a fragment, not a sentence
+const SENTENCE_CACHE = "said:";
+
+let sentenceContractPromise = null;
+function sentenceContract() {
+  if (!sentenceContractPromise) {
+    sentenceContractPromise = fetch("sentence-contract.json", { cache: "no-cache" })
+      .then((res) => { if (!res.ok) throw new Error("contract " + res.status); return res.json(); });
+  }
+  return sentenceContractPromise;
+}
+
+// Reading the same sentence twice should cost nothing. Backspacing a character
+// and putting it back is the commonest thing a person does while writing, and
+// it should not be a second request.
+function rememberSaid(text, info) {
+  try { localStorage.setItem(SENTENCE_CACHE + text, JSON.stringify(info)); } catch { /* full */ }
+}
+function cachedSaid(text) {
+  try {
+    const raw = localStorage.getItem(SENTENCE_CACHE + text);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function askAboutSentence(text) {
+  const { system, schema, max_tokens } = await sentenceContract();
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": $("anthropic").value.trim(),
+      "anthropic-version": ANTHROPIC_VERSION,
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: EXPLAIN_MODEL,
+      max_tokens,
+      system,
+      messages: [{ role: "user", content: text }],
+      output_config: { format: { type: "json_schema", schema } },
+    }),
+  });
+
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const said = payload?.error?.message || `${res.status}`;
+    throw new Error(
+      res.status === 401 ? `Claude rejected the key in Settings: ${keyShape()}`
+      : res.status === 429 ? "Claude is rate limiting; it will work again shortly."
+      : /credit balance/i.test(said) ? "The Anthropic account is out of credit."
+      : said);
+  }
+  if (payload.stop_reason === "refusal") throw new Error("Claude declined to read that one.");
+  const text_out = (payload.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  if (!text_out) throw new Error("Claude sent nothing back.");
+  return JSON.parse(text_out);
+}
+
+function saidHtml(mine, info) {
+  const words = (info.words || []).filter((w) => String(w.meant || "").trim());
+  const slang = (info.slang || []).filter((s) => String(s.phrase || "").trim());
+  const better = String(info.natural || "").trim();
+
+  let html = "";
+  if (!better) {
+    html += `<div class="verdict">✓ reads naturally</div>`;
+  } else {
+    html += `<div class="mine">${escape(mine)}</div>`;
+    html += `<div class="better">${escape(better)}</div>`;
+    if (String(info.why || "").trim()) html += `<div class="why">${escape(info.why)}</div>`;
+  }
+
+  // The part that was asked for and was missing: a word you got wrong comes
+  // back with what it means, not just with a red line through it.
+  if (words.length) {
+    html += `<h5>words</h5><ul>` + words.map((w) =>
+      `<li><span class="typed">${escape(w.typed)}</span> → <span class="meant">${escape(w.meant)}</span>`
+      + `<span class="ko">${escape(w.korean)}</span>`
+      + `<br><span class="why">${escape(w.meaning)}</span></li>`).join("") + `</ul>`;
+  }
+  if (slang.length) {
+    html += `<h5>slang &amp; idiom</h5><ul>` + slang.map((s) =>
+      `<li><span class="meant">${escape(s.phrase)}</span><span class="reg">${escape(s.register)}</span>`
+      + `<br><span class="why">${escape(s.meaning)}</span></li>`).join("") + `</ul>`;
+  }
+
+  // Offered, never applied. Which one is right is a judgement about what they
+  // meant to say, and only they hold that.
+  if (better) {
+    html += `<div class="choose">`
+      + `<button type="button" class="take" data-take="${escape(better)}">Use this</button>`
+      + `<button type="button" class="keep">Keep mine</button></div>`;
+  }
+  return html;
+}
+
+function showSaid(mine, info) {
+  const panel = $("said");
+  if (!panel) return;
+  panel.className = String(info.natural || "").trim() ? "said" : "said fine";
+  panel.innerHTML = saidHtml(mine, info);
+}
+
+let sentenceTimer = null;
+let sentenceRead = "";        // the last sentence actually sent
+let sentenceRun = 0;          // so a slow answer never lands on a newer sentence
+let sentenceQuiet = false;    // set once there is no key, so it says it once
+
+async function readSentence(text) {
+  const panel = $("said");
+  if (!panel) return;
+  const mine = sentenceRun += 1;
+
+  const known = cachedSaid(text);
+  if (known) return void showSaid(text, known);
+
+  if (!$("anthropic").value.trim()) {
+    if (sentenceQuiet) return;
+    sentenceQuiet = true;
+    panel.className = "said";
+    panel.innerHTML = `<div class="quiet">Add an Anthropic key under Settings and your sentences get read as you write them.</div>`;
+    return;
+  }
+
+  panel.className = "said";
+  panel.innerHTML = `<div class="waiting">reading…</div>`;
+  try {
+    const info = await askAboutSentence(text);
+    if (mine !== sentenceRun) return;          // they kept typing; this is stale
+    rememberSaid(text, info);
+    showSaid(text, info);
+  } catch (err) {
+    if (mine !== sentenceRun) return;
+    panel.className = "said";
+    panel.innerHTML = `<div class="quiet">${escape(err.message || String(err))}</div>`;
+  }
+}
+
+function watchExample() {
+  const box = document.getElementById("f-Example");
+  const panel = $("said");
+  if (!box || !panel) return;
+  sentenceRead = "";
+
+  box.addEventListener("input", () => {
+    clearTimeout(sentenceTimer);
+    const text = box.value.trim().replace(/\s+/g, " ");
+    if (text.length < SENTENCE_MIN) {
+      panel.innerHTML = "";
+      sentenceRead = "";
+      sentenceRun += 1;                        // cancel anything in flight
+      return;
+    }
+    if (text === sentenceRead) return;
+    sentenceTimer = setTimeout(() => {
+      sentenceRead = text;
+      readSentence(text);
+    }, SENTENCE_PAUSE);
+  });
+
+  panel.addEventListener("click", (event) => {
+    const take = event.target.closest("button.take");
+    if (take) {
+      box.value = take.dataset.take;
+      box.focus();
+      // What they now have is the sentence Claude just called natural, so there
+      // is nothing left to ask about it.
+      sentenceRead = box.value.trim().replace(/\s+/g, " ");
+      sentenceRun += 1;
+      panel.className = "said fine";
+      panel.innerHTML = `<div class="verdict">✓ using the suggestion</div>`;
+      return;
+    }
+    if (event.target.closest("button.keep")) {
+      panel.innerHTML = "";
+      sentenceRun += 1;
     }
   });
 }

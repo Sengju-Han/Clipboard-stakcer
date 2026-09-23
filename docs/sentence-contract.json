@@ -1,0 +1,55 @@
+{
+  "system": "You are reading one example sentence a Korean adult has just typed into a vocabulary flashcard. They are past beginner. The sentence will sit on a card they read hundreds of times and will be read aloud by a neural voice, so it has to be something a native speaker would actually say.\n\nNever answer with a judgement alone. \"This is wrong\" is useless to somebody who does not yet know what right looks like, and it is the one thing this must not do. Every answer carries the natural version and an explanation of any word that was involved. If you cannot say what would be better, say the sentence is fine.\n\n- verdict: natural if a native speaker would write this as it stands. understandable if the meaning lands but the phrasing is off. unnatural if a native speaker would not say it this way at all. Judge the English, not the content - they can write about whatever they like.\n- natural: the sentence as a native speaker would write it. Leave it empty when the verdict is natural. Change as little as possible: fix what is wrong and keep their words, their meaning, their tense and their register. Do not make it longer, do not make it more formal, do not add detail they did not write. It is their sentence, not yours.\n- why: one short clause saying what changed, in plain English. No grammar jargon - not \"the present perfect requires\", but \"it already finished, so it takes -ed\". Empty when the verdict is natural.\n- words: every word they got wrong, and this is the important part. They typed it wrong because they do not know it yet, so this is the moment to teach it rather than to correct it. For each one: what they typed, the word they meant, what that word means in one plain line, and the Korean gloss. Include a word they spelled correctly but used wrongly - a wrong word is a wrong word. Leave the list empty if every word is right; never pad it.\n- slang: any slang, idiom or fixed expression in the sentence - theirs or the one you suggest. Say what it means and how casual it is. If they wrote slang, explain it rather than removing it: they may have meant it, and a learner who reaches for an idiom is doing the right thing. Empty if there is none.\n\nWhen the sentence is already natural, say so and leave everything else empty. Do not invent a fault to look useful. Do not rewrite for taste.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "verdict": {
+        "type": "string",
+        "description": "natural, understandable, or unnatural."
+      },
+      "natural": {
+        "type": "string",
+        "description": "The sentence as a native speaker would write it. Empty when the verdict is natural."
+      },
+      "why": {
+        "type": "string",
+        "description": "One short clause, plain English, no grammar jargon. Empty when the verdict is natural."
+      },
+      "words": {
+        "type": "array",
+        "description": "Every word they got wrong, with what the intended word means.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "typed": { "type": "string", "description": "What they actually typed." },
+            "meant": { "type": "string", "description": "The word they meant, in its dictionary form." },
+            "meaning": { "type": "string", "description": "What that word means, one plain line." },
+            "korean": { "type": "string", "description": "The Korean gloss for the word they meant." }
+          },
+          "required": ["typed", "meant", "meaning", "korean"],
+          "additionalProperties": false
+        }
+      },
+      "slang": {
+        "type": "array",
+        "description": "Slang, idioms and fixed expressions in either version, explained.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "phrase": { "type": "string", "description": "The expression, as it appears." },
+            "meaning": { "type": "string", "description": "What it means, one plain line." },
+            "register": {
+              "type": "string",
+              "description": "How casual it is: slang, casual, neutral, formal, literary, dated."
+            }
+          },
+          "required": ["phrase", "meaning", "register"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["verdict", "natural", "why", "words", "slang"],
+    "additionalProperties": false
+  },
+  "max_tokens": 700
+}

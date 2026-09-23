@@ -159,6 +159,43 @@ the moment where you try to remember the word yourself, which is most of what
 makes it stick. Everything below the headword is behind the same tap, because
 an example sentence gives the meaning away as surely as the definition does.
 
+## The sentence, read as you write it
+
+Type into **Example** and the sentence is read back to you while you are still
+on the page — about a second after you stop typing, in the panel under the box.
+Nothing is changed. It offers, and you decide.
+
+This is separate from the check below, which happens on the runner after the
+card is sent. That one is a safety net you read afterwards in a run summary.
+This one is in front of you while you can still think about it, which is the
+only moment any of it is worth anything.
+
+**A verdict on its own is useless**, and that is the whole design of it. Being
+told a sentence is wrong teaches nothing to somebody who does not yet know what
+right looks like. So an answer never arrives alone:
+
+- **the natural version**, changing as little as possible — your words, your
+  meaning, your tense, your register. It is your sentence, not its.
+- **what changed**, in one clause of plain English. Not *"the present perfect
+  requires"* but *"it already finished, so it takes -ed"*.
+- **every word you got wrong, and what the word you meant means** — the
+  definition and the Korean. You spelled it wrong because you do not know it
+  yet, so this is the moment to learn it rather than to be corrected. A word
+  spelled correctly and used wrongly counts too.
+- **any slang or idiom**, explained rather than removed, with how casual it is.
+  If you reached for an idiom you were doing the right thing; it says what it
+  means and leaves it in.
+
+Two buttons: **Use this** replaces what you typed, **Keep mine** puts the panel
+away and leaves the field alone. Until you press one, the field is exactly what
+you typed.
+
+It waits for a real pause and ignores anything too short to be a sentence, so
+half-typed lines are never sent. The same sentence is never paid for twice.
+
+Without an `ANTHROPIC_API_KEY` in Settings the panel says so, once, and asks
+nothing. The check below still runs, and still costs nothing.
+
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled
