@@ -217,15 +217,34 @@ def cached(cache_dir: Path, word: str) -> dict | None:
     return None if info.get("recognised") is False else info
 
 
+def sorts_on(note, field: str) -> bool:
+    """Whether this note type sorts on the field the fold would go in.
+
+    Anki rebuilds a note's sort value from one field every time the note is
+    saved, and shows it as the Sort Field column in the browser. Folding into
+    that field would put several hundred words of definition in that column on
+    every row, which is not damage but is a browser nobody can use. Their note
+    types sort on Front, so this never fires - it is here for the day somebody
+    points --field at whichever one does.
+    """
+    notetype = note.note_type() or {}
+    names = [f["name"] for f in notetype.get("flds", [])]
+    index = notetype.get("sortf", 0)
+    return bool(names) and index < len(names) and names[index] == field
+
+
 def plan(col: Collection, note_ids: list[int], field: str, cache_dir: Path) -> tuple[list, dict]:
     """Every card that could take a fold, and why the rest cannot."""
     items: list[dict] = []
     skipped = {"a note type without that field": 0, "no word to look up": 0,
-               "already folded": 0}
+               "already folded": 0, "the note type sorts on that field": 0}
     for note_id in note_ids:
         note = col.get_note(note_id)
         if field not in note:
             skipped["a note type without that field"] += 1
+            continue
+        if sorts_on(note, field):
+            skipped["the note type sorts on that field"] += 1
             continue
         raw = note[field]
         if DETAIL_BLOCK.search(raw):

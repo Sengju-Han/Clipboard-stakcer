@@ -517,3 +517,31 @@ def test_an_explanation_with_nothing_in_it_is_counted(tmp_path, monkeypatch, cap
                 "--cache-dir", str(where), "--out-dir", str(tmp_path / "out")) == 0
     said = capsys.readouterr().out
     assert "an explanation with nothing in it" in said
+
+
+def test_a_note_type_that_sorts_on_the_field_is_left_alone(tmp_path):
+    """Anki shows the sort field as a column in the browser, and rebuilds it
+    every time a note is saved. Folding into it puts several hundred words of
+    definition on every row."""
+    from anki.collection import Collection
+
+    col = Collection(str(tmp_path / "collection.anki2"))
+    notetype = col.models.new("Sorted on Back")
+    for name in ("Front", "Back"):
+        col.models.add_field(notetype, col.models.new_field(name))
+    template = col.models.new_template("Card 1")
+    template["qfmt"], template["afmt"] = "{{Front}}", "{{Back}}"
+    col.models.add_template(notetype, template)
+    notetype["sortf"] = 1
+    col.models.add(notetype)
+    note = col.new_note(col.models.by_name("Sorted on Back"))
+    note["Front"], note["Back"] = "clue", "chagrin"
+    col.add_note(note, col.decks.id("Default"))
+
+    items, skipped = fold.plan(col, list(col.find_notes("")), "Back", _cache(tmp_path, "chagrin"))
+    assert items == []
+    assert skipped["the note type sorts on that field"] == 1
+    # And a field that is not the sort field is not flagged: this one sorts on
+    # Back, so Front is the ordinary case and reads as one.
+    assert fold.sorts_on(col.get_note(list(col.find_notes(""))[0]), "Front") is False
+    col.close()
