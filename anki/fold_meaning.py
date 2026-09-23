@@ -573,12 +573,19 @@ def main() -> int:
 
     blocks: dict[int, str] = {}
     for item in items:
+        item["folded"] = False
         if not item["have"]:
             continue
         html = block(cached(cache_dir, item["word"]) or {})
-        if html:
-            blocks[item["note_id"]] = html
-            item["folded"] = True
+        if not html:
+            # An answer with nothing in any of its fields. Counted rather than
+            # passed over, so the report cannot say a card was ready and then
+            # quietly not fold it with nothing on screen about the difference.
+            skipped["an explanation with nothing in it"] = \
+                skipped.get("an explanation with nothing in it", 0) + 1
+            continue
+        blocks[item["note_id"]] = html
+        item["folded"] = True
 
     (out_dir / "fold.jsonl").write_text(
         "\n".join(json.dumps(i, ensure_ascii=False) for i in items) + "\n", encoding="utf-8")

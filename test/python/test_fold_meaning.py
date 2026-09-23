@@ -500,3 +500,20 @@ def test_a_short_list_says_nothing_about_leaving_anything_out(tmp_path, monkeypa
     said = capsys.readouterr().out
     assert "more, in" not in said
     assert "`chagrin`" in said
+
+
+def test_an_explanation_with_nothing_in_it_is_counted(tmp_path, monkeypatch, capsys):
+    """Ready and then not folded, with nothing on screen about the difference,
+    is the one thing the report must not do."""
+    col = _collection(tmp_path, ["chagrin"])
+    col.close()
+    where = tmp_path / "lookups"
+    where.mkdir()
+    (where / "chagrin.json").write_text(json.dumps({"recognised": True, "word": "chagrin"}),
+                                        encoding="utf-8")
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    assert _run(monkeypatch, tmp_path,
+                "--local-collection", str(tmp_path / "collection.anki2"),
+                "--cache-dir", str(where), "--out-dir", str(tmp_path / "out")) == 0
+    said = capsys.readouterr().out
+    assert "an explanation with nothing in it" in said
