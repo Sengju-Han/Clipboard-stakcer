@@ -1435,6 +1435,11 @@ $("export-csv-btn").addEventListener("click", async () => {
       field(c.word),
       c.hook ? `<i>${field(c.hook)}</i>` : "",
       c.example ? `<br>${field(c.example)}` : "",
+      // Not run through field(): the folded meaning is markup, and escaping it
+      // would put the tags on the card as text. It came off an Anki card and
+      // it is going onto one. The header above declares #html:true, so Anki
+      // reads it as markup rather than as a very long word.
+      c.detail || "",
     ].filter(Boolean).join("<br>");
     lines.push([field(c.clue), back, (c.tags || []).join(" "), c.deck].map(cell).join(","));
   }

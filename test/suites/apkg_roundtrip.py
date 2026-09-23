@@ -101,8 +101,35 @@ def run(t):
     t.note("why", "Anki identifies a note by its guid, so this updates rather than duplicates")
     t.truthy("and the scheduling goes with them", reviewed > 0)
 
+    _the_csv_keeps_it_too(t)
     _modern(t)
     _clip_from_the_other_phone(t)
+
+
+def _the_csv_keeps_it_too(t):
+    """The lossy way out is still not a way to lose this.
+
+    The CSV cannot carry scheduling and says so. It can carry the fold, and a
+    field() call that escaped it would put the tags on the card as text - which
+    reads as the export being broken rather than as one field being escaped
+    twice.
+    """
+    import csv
+    import io
+
+    with t.page.expect_download(timeout=120000) as dl:
+        t.page.locator("#export-csv-btn").click()
+    text = open(dl.value.path(), encoding="utf8").read()
+    rows = list(csv.reader(io.StringIO("\n".join(
+        line for line in text.splitlines() if not line.startswith("#")))))
+    # Found by the fold and not by the word: this deck has a `chime in` of its
+    # own, and matching on the word finds two rows and the wrong one first.
+    folded = [r for r in rows if "lexis-detail" in r[1]]
+    t.check("exactly one row in the CSV carries a fold", len(folded), 1)
+    t.truthy("and it is the card that had one", folded[0][1].startswith(FOLDED_WORD))
+    t.truthy("carried as markup rather than as text", FOLD in folded[0][1])
+    t.truthy("with nothing escaped into tags you would have to read",
+             "&lt;details" not in folded[0][1])
 
 
 def _modern(t):
