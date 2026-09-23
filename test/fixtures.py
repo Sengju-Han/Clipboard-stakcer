@@ -100,7 +100,7 @@ SAMPLE = [
 # never lose: it has to stay out of the text that becomes the memory hook, and
 # it has to be on the note that goes back out. The same block the other tests
 # are pinned to, so all of them move together or none of them do.
-FOLD = json.loads((Path(__file__).resolve().parent / "fixtures" / "folded-meaning.json")
+FOLD = json.loads((Path(__file__).resolve().parent / "folded-meaning.json")
                   .read_text(encoding="utf-8"))["html"]
 FOLDED_WORD = "chime in"
 

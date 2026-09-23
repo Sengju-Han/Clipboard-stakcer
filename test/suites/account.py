@@ -447,7 +447,7 @@ def _the_sentence_is_read_as_you_write_it(t):
 # card as one folded by the workflow. This is the half of that pin that runs
 # the real page.
 FOLDED = json.loads(
-    (Path(__file__).resolve().parents[1] / "fixtures" / "folded-meaning.json")
+    (Path(__file__).resolve().parents[1] / "folded-meaning.json")
     .read_text(encoding="utf-8"))
 EXPLAINED = FOLDED["info"]
 

@@ -1,4 +1,8 @@
-"""The generated meaning, folded onto the back of the card.
+"""Reading a field that has the meaning folded into it.
+
+The companion to test_fold_meaning.py, which is about the script that writes
+the fold. This one is about everything that has to keep reading such a field
+correctly afterwards, which is most of this directory.
 
 The Add to Anki page knows what a word means - it asks while you are typing it,
 and writes the answer into this repository. Until now that was all it did with

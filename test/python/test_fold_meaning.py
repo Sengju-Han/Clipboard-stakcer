@@ -31,7 +31,7 @@ pytest.importorskip("anki.collection",
 import fold_meaning as fold                                      # noqa: E402
 import proofread                                                 # noqa: E402
 
-FIXTURE = json.loads((ROOT / "test" / "fixtures" / "folded-meaning.json")
+FIXTURE = json.loads((ROOT / "test" / "folded-meaning.json")
                      .read_text(encoding="utf-8"))
 
 
