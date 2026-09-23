@@ -426,6 +426,24 @@ def _the_sentence_is_read_as_you_write_it(t):
     t.truthy("and told so", "reads naturally" in panel.inner_text())
     t.check("and is offered no rewrite", t.page.locator("#said button.take").count(), 0)
 
+    # ---- half a sentence is not a sentence --------------------------------
+    # A pause is a poor signal on a phone: thinking about the next word looks
+    # exactly like having finished. Paid for, and the answer is about a
+    # sentence nobody was trying to write.
+    asked.clear()
+    box.fill("I was walking home when I saw")
+    t.page.wait_for_timeout(2200)
+    t.check("a sentence with no ending is left alone for longer", len(asked), 0)
+    t.page.wait_for_timeout(2600)
+    t.check("and then read anyway, rather than never", len(asked), 1)
+
+    asked.clear()
+    box.fill("Leaving the field is finishing too")
+    t.page.wait_for_timeout(400)
+    box.blur()
+    t.page.wait_for_timeout(1200)
+    t.check("moving on says it is finished without waiting", len(asked), 1)
+
     # ---- the same sentence twice is free ----------------------------------
     box.fill("Something else entirely, just for a moment here.")
     t.page.wait_for_timeout(2800)
@@ -469,12 +487,15 @@ def _the_meaning_goes_onto_the_card(t):
     everything downstream, so it does not.
     """
     sent = []
+    read = []
 
     def claude(route):
         body = json.loads(route.request.post_data)
         # One URL, two contracts. The sentence checker names itself in its
         # system prompt; anything else is the word lookup.
         sentence = "example sentence" in (body.get("system") or "")
+        if sentence:
+            read.append(body["messages"][0]["content"])
         out = NATURAL if sentence else EXPLAINED
         route.fulfill(status=200, content_type="application/json", body=json.dumps(
             {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(out)}]}))
@@ -523,11 +544,19 @@ def _the_meaning_goes_onto_the_card(t):
              "embarrassment" in t.page.locator("#brain").inner_text())
 
     t.page.locator("#f-Front").fill("분함")
+    # Typed and sent immediately, with the field still focused. Tapping Add
+    # card blurs it on the way, and reading the sentence then is a request for
+    # a card that has already gone - and a panel growing underneath the button
+    # at the moment it is being tapped, which is how a tap lands on the wrong
+    # thing.
+    read.clear()
     t.page.locator("#f-Example").fill("Much to my chagrin, I had left it at home.")
     t.page.locator("#go").click()
     t.page.wait_for_timeout(1500)
 
     t.check("the card was sent", len(sent), 1)
+    t.check("and sending it did not pay to read the sentence on the way out",
+            len(read), 0)
     fields = json.loads(sent[0]["inputs"]["fields"])
     back = fields["Back"]
 

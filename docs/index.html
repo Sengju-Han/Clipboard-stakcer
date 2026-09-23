@@ -1150,8 +1150,21 @@ function wireBrain() {
 // typed wrong is a word not yet known, and that is the moment to learn it, not
 // a moment to be marked down.
 
-const SENTENCE_PAUSE = 1200;   // a sentence is still being written at 600ms
-const SENTENCE_MIN = 12;       // shorter than this is a fragment, not a sentence
+// When a sentence is finished, rather than when typing stopped.
+//
+// A pause is a poor signal on a phone: thinking about the next word looks
+// exactly like having written the last one. Reading a half-written sentence is
+// wrong twice over - it is a request paid for, and the answer is about a
+// sentence nobody was trying to write, so it complains about an ending that
+// has not been typed yet.
+//
+// A full stop is the signal that costs nothing to read. With one, a short
+// pause is enough. Without one, it waits considerably longer, and leaving the
+// field is taken as finishing too.
+const SENTENCE_PAUSE = 1200;    // ...with something on the end that ends a sentence
+const SENTENCE_SETTLED = 3500;  // ...without
+const SENTENCE_ENDS = /[.!?\u2026)\]"'\u201d\u2019]\s*$/;
+const SENTENCE_MIN = 12;        // shorter than this is a fragment, not a sentence
 const SENTENCE_CACHE = "said:";
 
 let sentenceContractPromise = null;
@@ -1330,6 +1343,14 @@ function watchExample() {
   if (!box || !panel) return;
   sentenceRead = "";
 
+  const now = () => {
+    clearTimeout(sentenceTimer);
+    const text = box.value.trim().replace(/\s+/g, " ");
+    if (text.length < SENTENCE_MIN || text === sentenceRead) return;
+    sentenceRead = text;
+    readSentence(text);
+  };
+
   box.addEventListener("input", () => {
     clearTimeout(sentenceTimer);
     const text = box.value.trim().replace(/\s+/g, " ");
@@ -1340,10 +1361,22 @@ function watchExample() {
       return;
     }
     if (text === sentenceRead) return;
-    sentenceTimer = setTimeout(() => {
-      sentenceRead = text;
-      readSentence(text);
-    }, SENTENCE_PAUSE);
+    sentenceTimer = setTimeout(now,
+      SENTENCE_ENDS.test(text) ? SENTENCE_PAUSE : SENTENCE_SETTLED);
+  });
+
+  // Moving on is the clearest statement there is that a sentence is finished,
+  // and it is the one a person makes without having to type anything.
+  //
+  // A moment behind it, though, and on the same timer that typing uses. What
+  // you move on *to* is usually Add card, and that blurs the field on the way
+  // to sending it: reading the sentence then is a request for a card that has
+  // already gone, and a panel growing underneath the button at the moment it
+  // is being tapped. Clearing the fields cancels this - by the time it runs
+  // there is nothing in the box to read.
+  box.addEventListener("blur", () => {
+    clearTimeout(sentenceTimer);
+    sentenceTimer = setTimeout(now, 200);
   });
 
   panel.addEventListener("click", (event) => {
