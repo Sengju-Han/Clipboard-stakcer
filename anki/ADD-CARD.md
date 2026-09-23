@@ -269,8 +269,12 @@ Two buttons: **Use this** replaces what you typed, **Keep mine** puts the panel
 away and leaves the field alone. Until you press one, the field is exactly what
 you typed.
 
-It waits for a real pause and ignores anything too short to be a sentence, so
-half-typed lines are never sent. The same sentence is never paid for twice.
+It waits until the sentence looks *finished*, not until you stopped typing —
+those are not the same thing on a phone, where thinking about the next word
+looks exactly like having written the last one. A full stop (or a `?`, a `!`, a
+closing quote) means a short pause is enough; without one it waits a good deal
+longer; and moving on to another field counts as finishing. Anything too short
+to be a sentence is ignored, and the same sentence is never paid for twice.
 
 Without an `ANTHROPIC_API_KEY` in Settings the panel says so, once, and asks
 nothing. The check below still runs, and still costs nothing.
