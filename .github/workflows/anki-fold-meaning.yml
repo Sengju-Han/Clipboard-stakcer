@@ -98,22 +98,41 @@ jobs:
 
       # Answers bought above are worth more than this one run: committed, the
       # page serves them instantly on both devices and no later run pays again.
+      #
+      # `always()` because a run that died after buying forty words has still
+      # paid for forty words, and they are on disk. Retried because losing the
+      # push is losing money, not just a commit - another workflow landing on
+      # the same branch while this one was thinking is the ordinary way that
+      # happens, and it is the one a second attempt fixes.
       - name: Cache the answers it bought
         if: always()
         run: |
-          if [ -n "$(git status --porcelain docs/lookups)" ]; then
-            COUNT=$(git status --porcelain docs/lookups | wc -l | tr -d ' ')
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add docs/lookups
-            git commit -m "Explain ${COUNT} words looked up while folding"
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push
-          else
+          if [ -z "$(git status --porcelain docs/lookups)" ]; then
             echo "No new answers to cache."
+            exit 0
           fi
+          COUNT=$(git status --porcelain docs/lookups | wc -l | tr -d ' ')
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/lookups
+          git commit -m "Explain ${COUNT} words looked up while folding"
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            if git push; then
+              echo "Cached ${COUNT} answers."
+              exit 0
+            fi
+            echo "::warning::Push attempt ${attempt} failed; trying again."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push ${COUNT} bought answers. They are in the" \
+               "fold artifact under docs/lookups/ - commit them by hand, or the" \
+               "next run pays for those words all over again."
+          exit 1
 
-      - name: Upload the plan and the backup
+      # docs/lookups goes in as well, so a push that could not land is money
+      # recoverable by hand rather than money spent twice.
+      - name: Upload the plan, the backup and the answers
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -121,5 +140,6 @@ jobs:
           path: |
             fold/fold.jsonl
             fold/before-fold.colpkg
+            docs/lookups/
           if-no-files-found: ignore
           retention-days: 14
