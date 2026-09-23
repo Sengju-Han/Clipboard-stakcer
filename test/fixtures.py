@@ -95,6 +95,15 @@ SAMPLE = [
     ("quokka", "", "쿼카", "A quokka photobombed a bewildered tourist.", 0, 0, 0, 0),
 ]
 
+# One of them carries the folded meaning the Add to Anki page and the fold
+# workflow write under the word. It is markup this app never renders and must
+# never lose: it has to stay out of the text that becomes the memory hook, and
+# it has to be on the note that goes back out. The same block the other tests
+# are pinned to, so all of them move together or none of them do.
+FOLD = json.loads((Path(__file__).resolve().parent / "fixtures" / "folded-meaning.json")
+                  .read_text(encoding="utf-8"))["html"]
+FOLDED_WORD = "chime in"
+
 
 def small_apkg(path: Path):
     """Three notes at schema 11: one settled, one lapsing, one never seen."""
@@ -157,6 +166,8 @@ def small_apkg(path: Path):
         if word == "avow":
             back += " " + SAY
             example += " " + READ
+        if word == FOLDED_WORD:
+            back += FOLD
         flds = "\x1f".join([clue, back, example])
         con.execute("INSERT INTO notes VALUES (?,?,?,?,-1,'',?,?,?,0,'')",
                     (nid, f"guid{i:04d}", mid, now, flds, clue, 0))

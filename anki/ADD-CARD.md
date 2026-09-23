@@ -188,6 +188,11 @@ on a white card and in Anki's night mode. It has to: the note type is yours,
 and editing it is the schema change that would make AnkiWeb demand a full
 upload — which this project refuses everywhere, for the same reason.
 
+A deck taken into Lexis and exported back out keeps it. Lexis does not show it
+— it has its own panel built from the same answers — but it carries the block
+untouched and writes it back onto the card, the same way it carries the
+`[sound:]` names of recordings it cannot play.
+
 #### The cards you already have
 
 All of that only helps cards made from now on, and the collection this was

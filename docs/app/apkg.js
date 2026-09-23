@@ -51,10 +51,16 @@ const BREAK = /<\s*(?:div|br|p|li|tr|details|summary)\b[^>]*>/gi;
 // and example sentences, and it would land in the memory hook - the one line
 // of italics under the word on this app's cards.
 //
-// So it is dropped on the way in rather than reformatted. Nothing is lost by
-// doing that: Anki still has it, and this app has its own explanation panel
-// built from the same source, which is where it belongs here.
+// So it is kept out of the text and kept on the card. plain() drops it, and
+// the raw block is carried on the side, exactly as it was written, so a deck
+// that goes out through apkgout.js arrives back in Anki with it still there.
+//
+// The same decision as the [sound:] names further down, for the same reason:
+// this app does not use it, and losing it on the way in would lose it on the
+// way back out, silently, with the card looking perfectly healthy. It is never
+// rendered here - it goes from one Anki collection to another.
 const DETAIL_BLOCK = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/gi;
+const ONE_DETAIL = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/i;
 
 // Which field holds the word being learned. Name first, because a deck that
 // says "Back" or "Word" has told you; shape second, because across a whole
@@ -311,8 +317,10 @@ function extract(db, source, onProgress) {
     const roles = rolesByType.get(row.mid) || { word: 0, example: -1 };
     const names = fields.get(row.mid) || [];
 
-    const word = plain(parts[roles.word] || "");
+    const wordRaw = String(parts[roles.word] || "");
+    const word = plain(wordRaw);
     if (!word) { skipped += 1; continue; }
+    const detail = (ONE_DETAIL.exec(wordRaw) || [""])[0];
 
     // One card per note: this app reviews a word, not each of Anki's templates.
     // A reversed-card notetype would otherwise import the same word twice.
@@ -355,6 +363,7 @@ function extract(db, source, onProgress) {
       deck: decks.get(row.odid || row.did) || decks.get(row.did) || "Default",
       word: head.trim(),
       hook: rest.join(" ").trim(),
+      ...(detail ? { detail } : {}),
       clue,
       example: plain(exampleRaw),
       audio: audio[0] || "",

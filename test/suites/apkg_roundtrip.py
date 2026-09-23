@@ -8,6 +8,8 @@ round trip through one set of assumptions.
 import sqlite3
 import zipfile
 
+from fixtures import FOLD, FOLDED_WORD
+
 
 def run(t):
     t.open_app()
@@ -43,6 +45,19 @@ def run(t):
     t.check("a new card arrives new", cards.get("quokka", {}).get("fsrs", {}).get("state"), 0)
     t.check("and lapses travel", cards.get("chime in", {}).get("fsrs", {}).get("lapses"), 4)
 
+    # One of the three carries the folded meaning under its word. This app has
+    # no use for it and never shows it, which is exactly why it is worth a
+    # check: the easy thing to do with markup you do not use is let it become
+    # text, and it would have become the memory hook - a line of italics under
+    # the word, now several hundred words of definition long.
+    folded = cards.get(FOLDED_WORD, {})
+    t.check("a folded card still reads as its word", folded.get("word"), FOLDED_WORD)
+    t.check("and the definition did not become its memory hook", folded.get("hook"), "")
+    t.truthy("nor leak into anything else on it",
+             not any("lexis-detail" in str(folded.get(k, "")) for k in ("word", "hook", "clue", "example")))
+    t.check("the fold is kept on the side, exactly as it arrived",
+            folded.get("detail"), FOLD)
+
     # Now write one, and read it with SQLite rather than with this app.
     with t.page.expect_download(timeout=180000) as dl:
         t.page.locator("#export-apkg-btn").click()
@@ -62,12 +77,23 @@ def run(t):
     wrote_sounds = []
     for (flds,) in con.execute("select flds from notes where flds like '%avow%'"):
         wrote_sounds += re.findall(r"\[sound:[^\]]*\]", flds)
+    wrote_folds = [flds for (flds,) in con.execute("select flds from notes")
+                   if "lexis-detail" in flds]
     reviewed = con.execute("select count() from cards where type = 2").fetchone()[0]
     con.close()
 
     t.check("what comes out is a schema 11 collection", version, 11)
     t.check("both of the recordings are written back", sorted(wrote_sounds), sorted([
         "[sound:say-avow.mp3]", "[sound:ttsex-avow.mp3]"]))
+    # Out the other side, on the same one note, byte for byte. Dropping it here
+    # would quietly undo the fold workflow's whole job on any card that had been
+    # through this app, and the card would look perfectly healthy afterwards.
+    t.check("the fold is written back out, on one note", len(wrote_folds), 1)
+    t.truthy("and is the block that came in", FOLD in (wrote_folds[0] if wrote_folds else ""))
+    t.truthy("still under the word rather than in front of it",
+             (wrote_folds[0] if wrote_folds else "").index(FOLDED_WORD)
+             < (wrote_folds[0] if wrote_folds else " ").index("lexis-detail"))
+
     t.check("one note per card", notes, cardrows)
     t.check("and every card is in it", notes, len(t.cards()))
     t.truthy("the note ids from the file that was read travel back out",
