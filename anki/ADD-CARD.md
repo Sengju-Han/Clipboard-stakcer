@@ -159,6 +159,35 @@ the moment where you try to remember the word yourself, which is most of what
 makes it stick. Everything below the headword is behind the same tap, because
 an example sentence gives the meaning away as surely as the definition does.
 
+### And it goes onto the card
+
+Tick **Fold the meaning onto the back** — it is on by default — and the
+explanation is appended to the **Back** field, underneath the word, inside a
+`<details>`. In Anki it shows as a small **in detail** you can tap, and nothing
+until you do.
+
+Folded, not printed. The back of a card is where you check what you just tried
+to remember, and a definition sitting open next to the word turns that check
+into reading. One tap opens it, and the tap is the point: you take it when you
+were wrong, or curious, and not otherwise. The Korean sits last inside the
+fold, so your eye reaches it after the English rather than before.
+
+It costs nothing and waits for nothing — this is the answer that already
+arrived while you were typing the word, on its way to `docs/lookups/` anyway.
+A word you never looked up gets no fold, and unticking the box stops it for
+every card after that. Cards already made keep theirs.
+
+**It is appended, never prepended.** Everything in this project that asks
+"which word is this card for?" answers it by reading the answer field up to the
+first block tag: the proofreader, the word check, the voice, the exporter, and
+Lexis's own importer. The word stays the first thing in the field and every one
+of them still sees it alone.
+
+The block styles itself inline and names no colour at all, so it reads the same
+on a white card and in Anki's night mode. It has to: the note type is yours,
+and editing it is the schema change that would make AnkiWeb demand a full
+upload — which this project refuses everywhere, for the same reason.
+
 ## The sentence, read as you write it
 
 Type into **Example** and the sentence is read back to you while you are still

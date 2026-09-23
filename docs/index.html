@@ -47,7 +47,7 @@
   .primary { width: 100%; padding: 12px; background: var(--accent); color: var(--accent-ink);
              border: 1px solid transparent; }
   .primary[disabled] { opacity: .55; cursor: progress; }
-  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
   .check input { width: auto; }
   details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   details[open] summary { margin-bottom: 12px; }
@@ -190,6 +190,8 @@
 
     <label class="check row"><input type="checkbox" id="proof" checked> Check my English and fix typos</label>
     <label class="check row"><input type="checkbox" id="dupe"> Add even if the first field already exists</label>
+    <label class="check row"><input type="checkbox" id="detail" checked> Fold the meaning onto the back
+      <span class="hint">— behind a tap, for a word that has been looked up</span></label>
 
     <button class="primary" type="submit" id="go">Add card</button>
     <p class="note" id="speaks"></p>
@@ -292,7 +294,7 @@ import { serverUrl } from "./app/where.js";
 // Bump this with every change to the page. A phone holds on to a page it has
 // been given, so "it still does not work" is unanswerable without knowing which
 // version is actually on screen.
-const VERSION = "2026-09-23.0";
+const VERSION = "2026-09-23.1";
 
 const WORKFLOW = "anki-add-card.yml";
 const API = "https://api.github.com";
@@ -331,6 +333,16 @@ if (!$("owner").value || !$("repo").value) {
   if (!$("repo").value) $("repo").value = repo || "";
 }
 for (const key of SETTINGS) $(key).addEventListener("change", () => store.set(key, $(key).value.trim()));
+
+// Not one of those: a checkbox has no .value, and this one is a standing
+// preference rather than a per-card decision, so it survives a reload the way
+// the deck and the note type do. On by default - it is what was asked for -
+// and turning it off is the whole of the way back out, since the block is only
+// ever written to cards made after it.
+const DETAIL_PREF = "detail";
+$(DETAIL_PREF).checked = store.get(DETAIL_PREF, "yes") === "yes";
+$(DETAIL_PREF).addEventListener("change",
+  () => store.set(DETAIL_PREF, $(DETAIL_PREF).checked ? "yes" : "no"));
 
 // ---- the account ---------------------------------------------------------
 //
@@ -1320,6 +1332,127 @@ function watchExample() {
   });
 }
 
+// ---- the meaning, folded onto the card -----------------------------------
+// Everything the page works out about a word used to stop at the page. You
+// read it once while making the card and then met the card a hundred times
+// with nothing on it but the word, the sentence and whatever you had thought
+// to type yourself - and the answer was sitting in a file in this repository
+// the whole time.
+//
+// So it goes onto the back of the card, underneath the word, inside a
+// <details>. Folded, because an answer that is simply there is an answer you
+// read instead of remembering: the back of a card is where you check what you
+// just tried to recall, and a definition sitting open next to the word turns
+// that check into reading. One tap opens it, and the tap is the point - you
+// take it when you were wrong, or curious, and not otherwise.
+//
+// Nothing is asked of the model here. This is the answer that was already
+// fetched while you typed, already in this browser, already about to be
+// written to the repository by saveExplanation() - it costs one string
+// concatenation.
+const DETAIL_MARK = "lexis-detail";
+const DETAIL_BLOCK = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/i;
+
+// A field is not a document. These caps are not about tokens - the answer is
+// already paid for - but about what is readable on a phone at review time and
+// what is reasonable to put in a collection meant to last.
+const DETAIL_MAX = 4000;     // the whole block; past this, nothing is added
+const DETAIL_LINE = 240;     // any one sentence in it
+const DETAIL_LIST = 3;       // examples, confusables
+const DETAIL_WITH = 6;       // collocations
+
+// Anki cards are styled by the note type, and the note type is the user's -
+// changing it is a schema change, and a schema change is the full upload this
+// project refuses. So everything here styles itself, inline, and it does it
+// without naming a single colour: Anki's night mode swaps the background out
+// from under the card, and a grey that reads well on white disappears on
+// black. Opacity and currentColor follow whatever theme the card is drawn in.
+const D_WRAP = "margin-top:.7em;text-align:left;font-size:.82em;line-height:1.55";
+const D_SUM = "cursor:pointer;opacity:.55;font-weight:normal";
+const D_BODY = "margin-top:.45em;padding-left:.7em;border-left:2px solid currentColor;opacity:.85";
+const D_HEAD = "opacity:.55;margin:.55em 0 .1em";
+const D_ROW = "margin:.2em 0";
+const D_DIM = "opacity:.7;margin:.15em 0";
+
+const shorten = (text) => {
+  const said = String(text || "").replace(/\s+/g, " ").trim();
+  return said.length > DETAIL_LINE ? said.slice(0, DETAIL_LINE - 1).trimEnd() + "…" : said;
+};
+const detailRow = (style, html) => html ? `<div style="${style}">${html}</div>` : "";
+
+/**
+ * The block that goes under the word, or "" when there is nothing to fold.
+ *
+ * The word itself is left out on purpose: it is the line above this. So is
+ * anything the card already shows - repeating the Example field here would
+ * push the part worth reading off the screen, which is the same reason the
+ * panel on this page leaves the meaning out of its headings.
+ */
+function detailHtml(info) {
+  if (!info || info.recognised === false) return "";
+  const esc = (t) => escape(shorten(t));
+
+  let body = "";
+  body += detailRow(D_ROW, esc(info.meaning));
+
+  // The pronunciation and how formal it is are one short line: two facts that
+  // are each half a line long and neither of which deserves its own.
+  const aside = [info.pronunciation, info.tone].filter(Boolean).map(esc).join(" · ");
+  body += detailRow(D_DIM, aside);
+
+  body += detailRow(D_ROW, esc(info.nuance));
+
+  const withs = (info.collocations || []).slice(0, DETAIL_WITH).filter(Boolean);
+  if (withs.length) {
+    body += detailRow(D_HEAD, "goes with") + detailRow(D_ROW, withs.map(esc).join(" · "));
+  }
+
+  const nots = (info.confusables || []).slice(0, DETAIL_LIST).filter((c) => c && c.word);
+  if (nots.length) {
+    body += detailRow(D_HEAD, "not to be confused with") +
+      nots.map((c) => detailRow(D_ROW, `<b>${esc(c.word)}</b> — ${esc(c.difference)}`)).join("");
+  }
+
+  const shown = (info.examples || []).slice(0, DETAIL_LIST).filter(Boolean);
+  if (shown.length) {
+    body += detailRow(D_HEAD, "elsewhere") +
+      shown.map((e) => detailRow(D_ROW, `“${esc(e)}”`)).join("");
+  }
+
+  if (info.memory_hook) {
+    body += `<div style="${D_ROW};font-style:italic;margin-top:.5em">${esc(info.memory_hook)}</div>`;
+  }
+
+  // Last, and deliberately. Everything above makes you think in English about
+  // an English word; the Korean is the line that lets you stop, so it sits
+  // where your eye reaches it after the rest and not before - the same order
+  // the panel on this page uses, for the same reason.
+  if (info.korean) body += detailRow(`${D_ROW};margin-top:.5em`, `한국어 · ${esc(info.korean)}`);
+
+  if (!body.trim()) return "";
+  const html =
+    `<details class="${DETAIL_MARK}" style="${D_WRAP}">` +
+    `<summary style="${D_SUM}">in detail</summary>` +
+    `<div style="${D_BODY}">${body}</div>` +
+    `</details>`;
+  // A runaway answer is not worth a field nobody can edit on a phone. The
+  // per-item caps above make this all but unreachable; if it is reached, the
+  // card is added exactly as it would have been before any of this existed.
+  return html.length > DETAIL_MAX ? "" : html;
+}
+
+/**
+ * The answer field with the block folded in, added at most once.
+ *
+ * Everything downstream reads the word as the text before the first block tag
+ * - anki/proofread.py, the audio, this project's own importer - so the block
+ * has to come after whatever is already there and never in front of it.
+ */
+function withDetail(back, info) {
+  if (DETAIL_BLOCK.test(back)) return back;
+  return back + detailHtml(info);
+}
+
 // ---- dispatch ------------------------------------------------------------
 // A card is sent and forgotten: the fields clear at once and you carry on
 // typing. Each send becomes a row that follows its own run, so several can be
@@ -1503,19 +1636,29 @@ $("card").addEventListener("submit", (event) => {
     return;
   }
 
+  // Read before anything is folded into the fields: this is what the row in
+  // the feed is called, and a row labelled with a <details> tag would be a
+  // strange thing to have to read back.
+  const label = (Object.values(fields)[0] || "").slice(0, 60);
+
   // This word is being kept, so its explanation is worth sharing to the other
   // device. It is already in this browser; this only promotes it.
   const kept = slug(lookupTerm(fields.Back || ""));
   if (kept) {
     const known = localExplanation(kept);
-    if (known) saveExplanation(kept, known);
+    if (known) {
+      saveExplanation(kept, known);
+      // And onto the card itself, folded under the word. No model call and no
+      // wait: this is the answer that arrived while the word was being typed.
+      if ($(DETAIL_PREF).checked) fields.Back = withDetail(fields.Back, known);
+    }
   }
 
   const item = {
     id: ++counter,
     at: Date.now(),
     state: "sending",
-    label: (Object.values(fields)[0] || "").slice(0, 60),
+    label,
     payload: {
       deck: $("deck").value.trim(),
       notetype: $("notetype").value,

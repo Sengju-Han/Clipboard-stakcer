@@ -43,7 +43,18 @@ const DIFFICULTY_MID = 5.0;
 
 const SOUND_TAG = /\[sound:([^\]]*)\]/g;
 const MARKUP = /<[^>]+>/g;
-const BREAK = /<\s*(?:div|br|p|li|tr)\b[^>]*>/gi;
+const BREAK = /<\s*(?:div|br|p|li|tr|details|summary)\b[^>]*>/gi;
+
+// The Add to Anki page folds the word's generated meaning into a <details>
+// block underneath it, where on the card it costs one tap and nothing until
+// then. Run through plain() it is several hundred words of definition, Korean
+// and example sentences, and it would land in the memory hook - the one line
+// of italics under the word on this app's cards.
+//
+// So it is dropped on the way in rather than reformatted. Nothing is lost by
+// doing that: Anki still has it, and this app has its own explanation panel
+// built from the same source, which is where it belongs here.
+const DETAIL_BLOCK = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/gi;
 
 // Which field holds the word being learned. Name first, because a deck that
 // says "Back" or "Word" has told you; shape second, because across a whole
@@ -73,6 +84,7 @@ export function loadSql() {
 
 function plain(text) {
   return String(text || "")
+    .replace(DETAIL_BLOCK, "")
     .replace(SOUND_TAG, "")
     .replace(BREAK, "\n")
     .replace(MARKUP, "")

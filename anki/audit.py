@@ -45,6 +45,7 @@ from proofread import (  # noqa: E402
     client,
     check_with_languagetool,
     has_markup,
+    headword,
     keeps_the_word,
     proofread,
     split_annotation,
@@ -81,7 +82,7 @@ def collect(col: Collection, note_ids: list[int], field: str) -> tuple[list[dict
             "note_id": note_id,
             "guid": note.guid,
             "deck": col.decks.name(col.get_card(note.card_ids()[0]).did),
-            "target": note["Back"] if "Back" in note else "",
+            "target": headword(note["Back"]) if "Back" in note else "",
             "text": head.strip(),
         })
     return items, skipped
@@ -317,7 +318,7 @@ def apply_all(col: Collection, changed: list[dict], field: str) -> dict:
         # Read from the note rather than the row: a ledger written before this
         # check existed has no target in it, and those corrections are exactly
         # the ones nobody has looked at.
-        target = note["Back"] if "Back" in note else row.get("target", "")
+        target = headword(note["Back"]) if "Back" in note else row.get("target", "")
         if not keeps_the_word(row["was"], row["now"], target):
             dropped.append((target, row["was"], row["now"]))
             continue

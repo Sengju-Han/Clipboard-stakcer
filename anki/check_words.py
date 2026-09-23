@@ -53,7 +53,7 @@ from export_deck import (  # noqa: E402
     sync_down,
     write_summary,
 )
-from proofread import BLOCK_BOUNDARY, MARKUP, client  # noqa: E402
+from proofread import BLOCK_BOUNDARY, MARKUP, client, headword  # noqa: E402
 
 from pydantic import BaseModel  # noqa: E402
 
@@ -130,12 +130,6 @@ def tidy(text: str) -> str:
     text = MARKUP.sub(" ", str(text or ""))
     text = re.sub(r"\[sound:[^\]]*\]", " ", text)
     return re.sub(r"\s+", " ", re.sub(r"[^a-z' ]+", " ", fold(text.lower()))).strip()
-
-
-def headword(raw: str) -> str:
-    """The word itself, without the memory hook written underneath it."""
-    head = BLOCK_BOUNDARY.split(str(raw or ""))[0]
-    return MARKUP.sub("", head).strip()
 
 
 def likeness(one: str, other: str) -> float:

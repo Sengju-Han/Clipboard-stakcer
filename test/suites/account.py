@@ -9,6 +9,7 @@ bytes that actually went over the wire.
 """
 
 import json
+import re
 
 TOKEN = "github_pat_11ABCDEFG0123456789_secretpartnobodyshouldsee"
 KEY = "sk-ant-api03-thisisnottherealkeyobviously"
@@ -263,6 +264,7 @@ def run(t):
 
     _an_empty_submit_says_so(t)
     _the_sentence_is_read_as_you_write_it(t)
+    _the_meaning_goes_onto_the_card(t)
 
 
 def _an_empty_submit_says_so(t):
@@ -434,3 +436,156 @@ def _the_sentence_is_read_as_you_write_it(t):
 
     t.page.unroute("https://api.anthropic.com/**")
 
+
+# ---- the meaning, onto the card -------------------------------------------
+
+EXPLAINED = {
+    "recognised": True,
+    "word": "chagrin",
+    "meaning": "a feeling of embarrassment at having failed at something",
+    "pronunciation": "/ʃəˈɡrɪn/",
+    "korean": "분함",
+    "tone": "formal",
+    "nuance": "Usually about your own failure, and usually mild.",
+    "collocations": ["much to my chagrin"],
+    "confusables": [{"word": "chagrined", "difference": "the adjective"}],
+    "examples": ["Much to her chagrin, the train left without her."],
+    "memory_hook": "sha-GRIN: the grin you hold while quietly mortified.",
+}
+
+# The first block tag in a field is where every reader in this project stops
+# looking for the word: anki/proofread.py, the voice, this app's own importer.
+# Written out here rather than imported so the test fails if the page starts
+# writing the block somewhere the rest of the project will not skip.
+BLOCK_TAG = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6]|details|summary)\b[^>]*>", re.I)
+
+
+def _the_meaning_goes_onto_the_card(t):
+    """Everything the page works out about a word used to stop at the page.
+
+    You read the meaning once, while making the card, and then met that card a
+    hundred times with nothing on it but the word and your own sentence - while
+    the answer sat in a file in this repository the whole time. So it goes onto
+    the back of the card, folded, and this checks the two halves of that: that
+    it arrives, and that folding it in front of the word would have broken
+    everything downstream, so it does not.
+    """
+    sent = []
+
+    def claude(route):
+        body = json.loads(route.request.post_data)
+        # One URL, two contracts. The sentence checker names itself in its
+        # system prompt; anything else is the word lookup.
+        sentence = "example sentence" in (body.get("system") or "")
+        out = NATURAL if sentence else EXPLAINED
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(out)}]}))
+
+    def github(route):
+        request = route.request
+        if request.method == "POST" and "/dispatches" in request.url:
+            sent.append(json.loads(request.post_data or "{}"))
+            return route.fulfill(status=204, body="")
+        # Everything else - the explanation this page writes back to the
+        # repository, the run list it polls - answers politely and says
+        # nothing, so the page falls through to the API for the lookup.
+        if request.method == "GET" and "/runs" in request.url:
+            return route.fulfill(status=200, content_type="application/json",
+                                 body=json.dumps({"workflow_runs": []}))
+        return route.fulfill(status=404, content_type="application/json",
+                             body=json.dumps({"message": "not here"}))
+
+    t.page.route("https://api.anthropic.com/**", claude)
+    t.page.route("https://api.github.com/**", github)
+
+    t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.evaluate("""() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    }""")
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(800)
+
+    _panels(t)
+    _fill(t, "token", TOKEN)
+    _fill(t, "anthropic", KEY)
+    _fill(t, "owner", "Sengju-Han")
+    _fill(t, "repo", "Clipboard-stakcer")
+    t.page.locator("#deck").fill("Steve Jobs")
+
+    t.check("the choice is offered", t.page.locator("#detail").count(), 1)
+    t.check("and taken by default", t.page.locator("#detail").is_checked(), True)
+
+    # ---- a word that has been looked up ----------------------------------
+    t.page.locator("#f-Back").fill("chagrin")
+    t.page.wait_for_timeout(3200)
+    t.truthy("the word is explained while it is typed",
+             "embarrassment" in t.page.locator("#brain").inner_text())
+
+    t.page.locator("#f-Front").fill("분함")
+    t.page.locator("#f-Example").fill("Much to my chagrin, I had left it at home.")
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("the card was sent", len(sent), 1)
+    fields = json.loads(sent[0]["inputs"]["fields"])
+    back = fields["Back"]
+
+    t.truthy("the meaning rides along on the back of the card",
+             "embarrassment at having failed" in back)
+    t.truthy("and is folded rather than sitting there open", "<details" in back)
+    t.truthy("with something to tap", "<summary" in back and "in detail" in back)
+
+    # The whole reason it is a <details> and not more text. A definition that is
+    # simply there is a definition you read instead of remembering.
+    t.check("the word is still the first thing on the card",
+            BLOCK_TAG.split(back)[0].strip(), "chagrin")
+
+    # It is on the line above. Restating it inside costs a phone screen.
+    inside = re.sub(r"<[^>]+>", "", back.split("</summary>", 1)[1]).strip()
+    t.truthy("and the fold opens on the meaning rather than on the word again",
+             inside.startswith("a feeling of embarrassment"))
+
+    t.truthy("the Korean comes with it", "분함" in back)
+    t.truthy("and the nuance", "your own failure" in back)
+    t.truthy("and what it goes with", "much to my chagrin" in back)
+    t.truthy("and what it is not", "chagrined" in back)
+    t.truthy("and the hook", "sha-GRIN" in back)
+    t.note("what went on the card", f"{len(back)} characters, {back.count('<div')} lines")
+
+    # The note type is the user's, and changing it is the schema change this
+    # project refuses, so the fold styles itself. Which means it has to
+    # survive Anki's night mode: a grey that reads well on a white card is
+    # invisible on a black one, so it names no colour at all.
+    t.check("and nothing in it assumes a light card",
+            re.findall(r"(?<!current)color:\s*[^;\"]+", back), [])
+
+    # ---- the way back out -------------------------------------------------
+    sent.clear()
+    t.page.locator("#detail").uncheck()
+    t.page.locator("#f-Back").fill("halcyon")
+    t.page.wait_for_timeout(3200)
+    t.page.locator("#f-Example").fill("She talks about her halcyon days at school.")
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("a second card was sent", len(sent), 1)
+    t.check("unticked, the back is exactly what was typed",
+            json.loads(sent[0]["inputs"]["fields"])["Back"], "halcyon")
+
+    # ---- a word nobody looked up -----------------------------------------
+    sent.clear()
+    t.page.locator("#detail").check()
+    t.page.locator("#f-Back").fill("zzzz")     # too unlike a word to be asked about
+    t.page.locator("#f-Example").fill("Nothing was ever looked up for this one.")
+    t.page.wait_for_timeout(3200)
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("a word with no explanation gets no fold",
+            json.loads(sent[0]["inputs"]["fields"])["Back"], "zzzz")
+
+    t.page.unroute("https://api.anthropic.com/**")
+    t.page.unroute("https://api.github.com/**")
