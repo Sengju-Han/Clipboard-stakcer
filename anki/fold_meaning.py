@@ -263,13 +263,21 @@ def plan(col: Collection, note_ids: list[int], field: str, cache_dir: Path) -> t
 
 # ---- asking for the ones nobody has looked up ----------------------------
 
-# Haiku 4.5, at $1 per million tokens in and $5 per million out. An explanation
-# is a few hundred tokens each way, so it comes to about a third of a cent a
-# word - and once, ever, because the answer is committed.
+# Haiku 4.5, at $1 per million tokens in and $5 per million out.
+#
+# In: the system prompt in docs/explain-contract.json is around 645 tokens and
+# the schema it carries another 295, and the word itself is a rounding error.
+# Out: a committed answer in docs/lookups/ is about 260 tokens of text, call it
+# 400 with the JSON around it. So a third of a cent a word, and once ever,
+# because the answer is written back to the cache.
+#
+# An estimate, and deliberately not a tight one: the number is printed before
+# anything is spent, and a report that guesses low is worse than one that
+# guesses high.
 COST_IN = 1.0 / 1_000_000
 COST_OUT = 5.0 / 1_000_000
-TOKENS_IN = 400
-TOKENS_OUT = 500
+TOKENS_IN = 1000
+TOKENS_OUT = 400
 
 
 def estimate(count: int) -> str:
