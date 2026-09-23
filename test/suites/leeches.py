@@ -11,7 +11,15 @@ def run(t):
         const g = db.transaction('cards').objectStore('cards').getAll(); g.onsuccess = () => r(g.result); });
       const c = all[0];
       c.fsrs.lapses = 9; c.fsrs.state = 2; c.fsrs.stability = 2;
-      c.fsrs.due = new Date(Date.now() - 864000000).toISOString(); c.mod = Date.now();
+      // Older than anything else that is owed, because the session below has to
+      // land on this card and queue() hands out the most overdue one first.
+      // Ten days used to be enough and quietly stopped being: the deck in
+      // docs/ moved on, other cards went further past their due date, and the
+      // session opened on one of those instead. The leech panel was then
+      // correctly not shown, and the test read as the panel being broken.
+      const owed = all.map((x) => new Date(x.fsrs.due).getTime()).filter((n) => n);
+      c.fsrs.due = new Date(Math.min(Date.now(), ...owed) - 864000000).toISOString();
+      c.mod = Date.now();
       await new Promise(r => {
         const p = db.transaction('cards', 'readwrite').objectStore('cards').put(c); p.onsuccess = () => r(); });
       return c.word;
@@ -44,6 +52,10 @@ def run(t):
     t.page.locator("#reveal-btn").click()
     t.page.wait_for_timeout(300)
     on = t.page.locator("#card-word").inner_text()
+    # Said out loud, because the two checks below are about this card and about
+    # nothing else. When the session opened on a different one they failed with
+    # "the panel did not appear", which is true and is not the problem.
+    t.check("the session opens on the leech", on, word)
     t.page.locator(".grade.again").click()
     t.page.wait_for_timeout(1500)
     t.check("answering it Again says so", t.page.locator("#leech").is_hidden(), False)
