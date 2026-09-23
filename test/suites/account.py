@@ -590,5 +590,55 @@ def _the_meaning_goes_onto_the_card(t):
     t.check("a word with no explanation gets no fold",
             json.loads(sent[0]["inputs"]["fields"])["Back"], "zzzz")
 
+    _the_sentence_cache_does_not_grow_forever(t)
+
     t.page.unroute("https://api.anthropic.com/**")
     t.page.unroute("https://api.github.com/**")
+
+
+def _the_sentence_cache_does_not_grow_forever(t):
+    """The explanation cache is keyed by word, so it is capped by how much
+    vocabulary one person has. This one is keyed by the sentence, and there is
+    no end to sentences.
+
+    What a full quota eventually breaks is not the cache - a failed write there
+    loses an answer nobody was waiting for - but everything sharing the origin,
+    which on this page is the settings and the locked GitHub token.
+    """
+    keep = t.page.evaluate("""() => {
+      const found = document.documentElement.innerHTML.match(/const SENTENCE_KEEP = (\d+)/);
+      return found ? Number(found[1]) : 0;
+    }""")
+    t.check("there is a limit at all", keep > 0, True)
+
+    # Written straight in rather than typed: a hundred real sentences is forty
+    # minutes of test, and what is being checked is the pruning, not the typing.
+    left = t.page.evaluate("""(keep) => {
+      const KEY = "said:";
+      for (let i = 0; i < keep * 2; i += 1) {
+        localStorage.setItem(KEY + "sentence number " + i,
+          JSON.stringify({ at: Date.now() - (keep * 2 - i) * 1000, info: { verdict: "natural" } }));
+      }
+      // One more through the page's own writer, which is what prunes.
+      const box = document.getElementById("f-Example");
+      box.value = "One more sentence, written last of all.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      return null;
+    }""", keep)
+    t.page.wait_for_timeout(3000)
+
+    after = t.page.evaluate("""() => {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("said:")) keys.push(k);
+      }
+      return keys;
+    }""")
+    t.check("and it holds", len(after) <= keep, True)
+    t.note("how many it kept", f"{len(after)} of {keep * 2 + 1} written, limit {keep}")
+    # The newest survive: the oldest go first, which is the only ordering that
+    # makes a cache worth having.
+    t.truthy("keeping the newest rather than whichever came to hand",
+             "said:One more sentence, written last of all." in after)
+    t.truthy("and dropping the oldest", "said:sentence number 0" not in after)

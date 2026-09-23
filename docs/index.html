@@ -1166,13 +1166,47 @@ function sentenceContract() {
 // Reading the same sentence twice should cost nothing. Backspacing a character
 // and putting it back is the commonest thing a person does while writing, and
 // it should not be a second request.
-function rememberSaid(text, info) {
-  try { localStorage.setItem(SENTENCE_CACHE + text, JSON.stringify(info)); } catch { /* full */ }
+//
+// Bounded, unlike the explanation cache next to it. That one is keyed by word,
+// so it is capped by how much vocabulary one person has. This one is keyed by
+// the sentence, and there is no end to sentences: left alone it grows by every
+// sentence ever written here, for as long as the browser keeps anything. What
+// that eventually breaks is not this - a failed write here loses a cached
+// answer and nothing else - but everything sharing the quota, which on this
+// page is the settings and the locked GitHub token. So it keeps the most
+// recent few and drops the rest.
+const SENTENCE_KEEP = 60;
+
+function saidKeys() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(SENTENCE_CACHE)) keys.push(key);
+  }
+  return keys;
 }
+
+function rememberSaid(text, info) {
+  try {
+    localStorage.setItem(SENTENCE_CACHE + text, JSON.stringify({ at: Date.now(), info }));
+    const keys = saidKeys();
+    if (keys.length <= SENTENCE_KEEP) return;
+    const age = (key) => {
+      try { return JSON.parse(localStorage.getItem(key) || "{}").at || 0; } catch { return 0; }
+    };
+    keys.sort((a, b) => age(a) - age(b))
+      .slice(0, keys.length - SENTENCE_KEEP)
+      .forEach((key) => { try { localStorage.removeItem(key); } catch { /* gone */ } });
+  } catch { /* full, or blocked: the answer is on screen either way */ }
+}
+
 function cachedSaid(text) {
   try {
     const raw = localStorage.getItem(SENTENCE_CACHE + text);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const held = JSON.parse(raw);
+    // An entry written before this was wrapped is the answer itself.
+    return held && held.info ? held.info : held;
   } catch { return null; }
 }
 
