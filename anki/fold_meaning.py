@@ -197,6 +197,13 @@ def word_of(raw: str) -> str:
 
 
 def cached(cache_dir: Path, word: str) -> dict | None:
+    """The committed answer for a word, or None when there is nothing usable.
+
+    None rather than the file's contents for an answer that says "this is not
+    a word": nothing can be folded from it, and counting it as an explanation
+    the card has would put it in the "ready" column of the report and then
+    quietly not fold it, with nothing on screen saying why.
+    """
     key = slug(word)
     if not key:
         return None
@@ -204,16 +211,17 @@ def cached(cache_dir: Path, word: str) -> dict | None:
     if not target.exists():
         return None
     try:
-        return json.loads(target.read_text(encoding="utf-8"))
+        info = json.loads(target.read_text(encoding="utf-8"))
     except Exception:
         return None
+    return None if info.get("recognised") is False else info
 
 
 def plan(col: Collection, note_ids: list[int], field: str, cache_dir: Path) -> tuple[list, dict]:
     """Every card that could take a fold, and why the rest cannot."""
     items: list[dict] = []
     skipped = {"a note type without that field": 0, "no word to look up": 0,
-               "already folded": 0, "the word carries formatting": 0}
+               "already folded": 0}
     for note_id in note_ids:
         note = col.get_note(note_id)
         if field not in note:
@@ -237,8 +245,8 @@ def plan(col: Collection, note_ids: list[int], field: str, cache_dir: Path) -> t
 # ---- asking for the ones nobody has looked up ----------------------------
 
 # Haiku 4.5, at $1 per million tokens in and $5 per million out. An explanation
-# is a few hundred tokens each way, so this is about a fifth of a cent a word -
-# and once, ever, because the answer is committed.
+# is a few hundred tokens each way, so it comes to about a third of a cent a
+# word - and once, ever, because the answer is committed.
 COST_IN = 1.0 / 1_000_000
 COST_OUT = 5.0 / 1_000_000
 TOKENS_IN = 400

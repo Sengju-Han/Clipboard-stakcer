@@ -460,3 +460,21 @@ def test_one_bad_word_in_the_middle_does_not_stop_the_rest(tmp_path, monkeypatch
                                  tmp_path / "lookups")
     assert count == 4
     assert len(failed) == 1
+
+
+def test_an_answer_that_says_it_is_not_a_word_is_not_an_answer(tmp_path):
+    """explain.py never writes one of these, and the report would be unreadable
+    if it did: the card counted as ready and then silently not folded."""
+    where = tmp_path / "lookups"
+    where.mkdir()
+    (where / "zzzz.json").write_text(json.dumps(
+        {"recognised": False, "word": "zzzz", "meaning": "not an English word"}),
+        encoding="utf-8")
+    assert fold.cached(where, "zzzz") is None
+
+
+def test_an_unreadable_cache_file_is_treated_as_missing(tmp_path):
+    where = tmp_path / "lookups"
+    where.mkdir()
+    (where / "chagrin.json").write_text("{ this is not json", encoding="utf-8")
+    assert fold.cached(where, "chagrin") is None
