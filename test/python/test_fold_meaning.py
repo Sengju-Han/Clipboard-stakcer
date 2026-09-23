@@ -478,3 +478,25 @@ def test_an_unreadable_cache_file_is_treated_as_missing(tmp_path):
     where.mkdir()
     (where / "chagrin.json").write_text("{ this is not json", encoding="utf-8")
     assert fold.cached(where, "chagrin") is None
+
+
+def test_a_long_list_of_words_says_how_many_it_left_out(tmp_path, monkeypatch, capsys):
+    """A list that stops at four hundred of nine hundred reads as a list of four
+    hundred, and the five hundred nobody is told about are the ones nobody looks
+    at."""
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    waiting = [{"note_id": n, "guid": f"g{n}", "word": f"word{n:04d}",
+                "key": f"word{n:04d}", "have": False} for n in range(fold.SHOWN + 37)]
+    fold.write_report(waiting, {}, len(waiting), 0, 0, [], False, "Back", tmp_path)
+    said = capsys.readouterr().out
+    assert "…and 37 more" in said
+    assert "fold.jsonl" in said
+
+
+def test_a_short_list_says_nothing_about_leaving_anything_out(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    waiting = [{"note_id": 1, "guid": "g", "word": "chagrin", "key": "chagrin", "have": False}]
+    fold.write_report(waiting, {}, 1, 0, 0, [], False, "Back", tmp_path)
+    said = capsys.readouterr().out
+    assert "more, in" not in said
+    assert "`chagrin`" in said

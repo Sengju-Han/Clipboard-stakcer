@@ -406,6 +406,11 @@ def report_undo(carrying: int, undid: int, wrote: bool, synced: bool = False) ->
     write_summary(lines)
 
 
+# As many words as a job summary can carry without becoming a wall. The rest
+# are named in the artifact, and the report says how many they are.
+SHOWN = 400
+
+
 def write_report(items: list[dict], skipped: dict, looked_at: int, folded: int,
                  asked: int, failed: list[str], wrote: bool,
                  field: str, cache_dir: Path, synced: bool = False) -> None:
@@ -449,11 +454,15 @@ def write_report(items: list[dict], skipped: dict, looked_at: int, folded: int,
             "",
             "<details><summary>the words</summary>",
             "",
-            ", ".join(f"`{w}`" for w in words[:400]),
-            "",
-            "</details>",
+            ", ".join(f"`{w}`" for w in words[:SHOWN]),
             "",
         ]
+        # A list that stops at four hundred of nine hundred reads as a list of
+        # four hundred, and the five hundred nobody is told about are exactly
+        # the ones nobody will ever look at. `fold.jsonl` has all of them.
+        if len(words) > SHOWN:
+            lines += [f"_…and {len(words) - SHOWN} more, in `fold.jsonl` under Artifacts._", ""]
+        lines += ["</details>", ""]
 
     counted = {name: n for name, n in skipped.items() if n}
     if counted:
