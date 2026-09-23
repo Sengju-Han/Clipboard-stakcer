@@ -83,6 +83,7 @@ AnkiWeb:
 - **[Add sentence audio](anki/TTS.md)** — neural audio for a field, packaged so it updates notes in place without touching their scheduling.
 - **[Add cards from your phone](anki/ADD-CARD.md)** — a web form that writes the card and its audio.
 - **[Audit your sentences](anki/AUDIT.md)** — finds typos and unnatural phrasing across the collection, and can fix them in place.
+- **Fold the meaning in** — puts the generated explanation onto the back of cards that already have none, behind a tap. See *[And it goes onto the card](anki/ADD-CARD.md#and-it-goes-onto-the-card)*.
 
 ## Building it
 

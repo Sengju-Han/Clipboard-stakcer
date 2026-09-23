@@ -1,0 +1,27 @@
+{
+  "why": "One block of markup with two authors: docs/index.html builds it in the browser when a card is sent, anki/fold_meaning.py builds it in Python for cards that already exist. They read their styles out of the same place, and this is what pins that down - a card folded on the phone and a card folded by the workflow have to be the same card.",
+  "info": {
+    "recognised": true,
+    "word": "chagrin",
+    "meaning": "a feeling of embarrassment or annoyance at having failed",
+    "pronunciation": "/ʃəˈɡrɪn/",
+    "korean": "분함, 원통함",
+    "tone": "formal, literary",
+    "nuance": "Usually about your own failure, and usually mild.",
+    "collocations": [
+      "much to my chagrin",
+      "to his chagrin"
+    ],
+    "confusables": [
+      {
+        "word": "chagrined",
+        "difference": "the adjective, and the more common form"
+      }
+    ],
+    "examples": [
+      "Much to her chagrin, the train left without her."
+    ],
+    "memory_hook": "sha-GRIN: the grin you put on while you are quietly mortified."
+  },
+  "html": "<details class=\"lexis-detail\" style=\"margin-top:.7em;text-align:left;font-size:.82em;line-height:1.55\"><summary style=\"cursor:pointer;opacity:.55;font-weight:normal\">in detail</summary><div style=\"margin-top:.45em;padding-left:.7em;border-left:2px solid currentColor;opacity:.85\"><div style=\"margin:.2em 0\">a feeling of embarrassment or annoyance at having failed</div><div style=\"opacity:.7;margin:.15em 0\">/ʃəˈɡrɪn/ · formal, literary</div><div style=\"margin:.2em 0\">Usually about your own failure, and usually mild.</div><div style=\"opacity:.55;margin:.55em 0 .1em\">goes with</div><div style=\"margin:.2em 0\">much to my chagrin · to his chagrin</div><div style=\"opacity:.55;margin:.55em 0 .1em\">not to be confused with</div><div style=\"margin:.2em 0\"><b>chagrined</b> — the adjective, and the more common form</div><div style=\"opacity:.55;margin:.55em 0 .1em\">elsewhere</div><div style=\"margin:.2em 0\">“Much to her chagrin, the train left without her.”</div><div style=\"margin:.2em 0;font-style:italic;margin-top:.5em\">sha-GRIN: the grin you put on while you are quietly mortified.</div><div style=\"margin:.2em 0;margin-top:.5em\">한국어 · 분함, 원통함</div></div></details>"
+}

@@ -10,6 +10,7 @@ bytes that actually went over the wire.
 
 import json
 import re
+from pathlib import Path
 
 TOKEN = "github_pat_11ABCDEFG0123456789_secretpartnobodyshouldsee"
 KEY = "sk-ant-api03-thisisnottherealkeyobviously"
@@ -439,19 +440,16 @@ def _the_sentence_is_read_as_you_write_it(t):
 
 # ---- the meaning, onto the card -------------------------------------------
 
-EXPLAINED = {
-    "recognised": True,
-    "word": "chagrin",
-    "meaning": "a feeling of embarrassment at having failed at something",
-    "pronunciation": "/ʃəˈɡrɪn/",
-    "korean": "분함",
-    "tone": "formal",
-    "nuance": "Usually about your own failure, and usually mild.",
-    "collocations": ["much to my chagrin"],
-    "confusables": [{"word": "chagrined", "difference": "the adjective"}],
-    "examples": ["Much to her chagrin, the train left without her."],
-    "memory_hook": "sha-GRIN: the grin you hold while quietly mortified.",
-}
+# The same answer, and the same markup, that anki/fold_meaning.py is pinned
+# against. One block of HTML has two authors - this page writes it in the
+# browser when a card is sent, and the workflow writes it in Python for the
+# cards that already exist - and a card folded on the phone has to be the same
+# card as one folded by the workflow. This is the half of that pin that runs
+# the real page.
+FOLDED = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "folded-meaning.json")
+    .read_text(encoding="utf-8"))
+EXPLAINED = FOLDED["info"]
 
 # The first block tag in a field is where every reader in this project stops
 # looking for the word: anki/proofread.py, the voice, this app's own importer.
@@ -534,7 +532,7 @@ def _the_meaning_goes_onto_the_card(t):
     back = fields["Back"]
 
     t.truthy("the meaning rides along on the back of the card",
-             "embarrassment at having failed" in back)
+             "embarrassment or annoyance at having failed" in back)
     t.truthy("and is folded rather than sitting there open", "<details" in back)
     t.truthy("with something to tap", "<summary" in back and "in detail" in back)
 
@@ -547,6 +545,11 @@ def _the_meaning_goes_onto_the_card(t):
     inside = re.sub(r"<[^>]+>", "", back.split("</summary>", 1)[1]).strip()
     t.truthy("and the fold opens on the meaning rather than on the word again",
              inside.startswith("a feeling of embarrassment"))
+
+    # The pin. If this fails, the page and anki/fold_meaning.py have stopped
+    # writing the same block, and cards folded either way no longer match.
+    t.check("and it is the block the workflow writes for older cards",
+            back, "chagrin" + FOLDED["html"])
 
     t.truthy("the Korean comes with it", "분함" in back)
     t.truthy("and the nuance", "your own failure" in back)

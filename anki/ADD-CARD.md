@@ -188,6 +188,51 @@ on a white card and in Anki's night mode. It has to: the note type is yours,
 and editing it is the schema change that would make AnkiWeb demand a full
 upload — which this project refuses everywhere, for the same reason.
 
+#### The cards you already have
+
+All of that only helps cards made from now on, and the collection this was
+written against has around 1,240 made before it — which are the ones actually
+being reviewed. The **Anki fold meaning** workflow puts the same block on those.
+
+| Input | What it does |
+| --- | --- |
+| `deck` | Which decks. `*` is everything. |
+| `field` | The field holding the word. The fold goes under it. |
+| `limit` | Only the first N cards that could take one. |
+| `ask` | **The only thing here that costs money.** How many words nobody has explained yet to look up. |
+| `apply` | Write it and sync. Off, it only tells you what it would do. |
+| `undo` | Take every fold back out. Needs `apply` as well. |
+
+**Start with everything off.** It syncs your collection down, works out what it
+would do, and writes a summary: how many cards could take a fold, how many
+already have an explanation waiting in `docs/lookups/`, and the list of words
+nobody has looked up. Nothing is written.
+
+`ask` is where money happens, and it is capped by you. Each new word is a few
+hundred tokens each way on Haiku — **about a third of a cent** — and the answer
+is committed to `docs/lookups/` as it lands, so the page, the other device and
+every later run get it free. The whole collection is a few dollars once, ever,
+and you can do it a hundred words at a time.
+
+Run it again and nothing happens twice: a card that already carries a fold is
+counted and skipped, which is what makes it safe to keep running as the cache
+fills up.
+
+**Nothing is sent to AnkiWeb unless every check passes**, the same ones the rest
+of these workflows make before a sync:
+
+- no note added or removed
+- no note changed that this run did not mean to change
+- **the word is still the word** — a fold that landed in front of it would take
+  the card away from the proofreader, the word check, the voice and the export
+  all at once, so it is compared before and after and refuses outright
+- no card's scheduling moved
+- no `[sound:]` tag went missing anywhere in the collection
+- a full `.colpkg` backup is written first and kept as an artifact
+
+And `undo` with `apply` takes every fold back out, leaving the word, any memory
+hook you wrote yourself, the sentence and the scheduling exactly as they were.
+
 ## The sentence, read as you write it
 
 Type into **Example** and the sentence is read back to you while you are still
