@@ -428,3 +428,35 @@ def test_a_word_bought_here_is_readable_by_the_page(tmp_path, monkeypatch):
     assert on_disk["word"] == "chagrin"
     assert fold.block(on_disk) == FIXTURE["html"]
     assert (where / "chagrin.json").read_text(encoding="utf-8").endswith("\n")
+
+
+def test_it_gives_up_rather_than_failing_nine_hundred_times(tmp_path, monkeypatch):
+    """A key with no credit is the same answer for every word. Saying so once
+    per word, nine hundred times, is a report nobody can read."""
+    tried = []
+
+    def broken(word, conversation, model=""):
+        tried.append(word)
+        raise RuntimeError("your credit balance is too low")
+
+    monkeypatch.setattr(fold, "ask_about", broken)
+    monkeypatch.setattr(fold, "client", lambda: object())
+    count, failed = fold.ask_for([f"word{n}" for n in range(40)], tmp_path / "lookups")
+
+    assert count == 0
+    assert len(tried) == fold.GIVE_UP_AFTER
+    assert failed[-1] == f"…and {40 - fold.GIVE_UP_AFTER} not attempted"
+
+
+def test_one_bad_word_in_the_middle_does_not_stop_the_rest(tmp_path, monkeypatch):
+    def flaky(word, conversation, model=""):
+        if word == "third":
+            raise RuntimeError("just that one")
+        return _Answer(word)
+
+    monkeypatch.setattr(fold, "ask_about", flaky)
+    monkeypatch.setattr(fold, "client", lambda: object())
+    count, failed = fold.ask_for(["first", "second", "third", "fourth", "fifth"],
+                                 tmp_path / "lookups")
+    assert count == 4
+    assert len(failed) == 1

@@ -250,6 +250,12 @@ def estimate(count: int) -> str:
     return f"about ${money:.2f}"
 
 
+# A key with no credit, a revoked key, an outage: whatever it is, it is the same
+# for every word, and grinding through nine hundred of them to say so nine
+# hundred times helps nobody. Five in a row with nothing in between is enough.
+GIVE_UP_AFTER = 5
+
+
 def ask_for(words: list[str], cache_dir: Path, model: str = "") -> tuple[int, list[str]]:
     """Look up the words nobody has, and commit each answer as it lands.
 
@@ -257,7 +263,7 @@ def ask_for(words: list[str], cache_dir: Path, model: str = "") -> tuple[int, li
     forty words in has still paid for forty words, and they are on disk.
     """
     conversation = client()
-    asked, failed = 0, []
+    asked, failed, in_a_row = 0, [], 0
     for index, word in enumerate(words, 1):
         key = slug(word)
         try:
@@ -265,7 +271,14 @@ def ask_for(words: list[str], cache_dir: Path, model: str = "") -> tuple[int, li
         except Exception as exc:
             failed.append(f"{word} ({type(exc).__name__})")
             log(f"  {index}/{len(words)} {word}: {type(exc).__name__}: {exc}")
+            in_a_row += 1
+            if in_a_row >= GIVE_UP_AFTER:
+                log(f"::warning::{GIVE_UP_AFTER} in a row failed, so the rest were not "
+                    "attempted. Whatever is wrong is not about these particular words.")
+                failed.append(f"…and {len(words) - index} not attempted")
+                break
             continue
+        in_a_row = 0
         info = answer.model_dump()
         if not info.get("recognised", True):
             # Asked and told it is not a word. Not cached: cached, it would
