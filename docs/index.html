@@ -49,6 +49,9 @@
   .primary[disabled] { opacity: .55; cursor: progress; }
   .check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
   .check input { width: auto; }
+  /* A hint too long for the line wraps under the label rather than under
+     the tickbox, which is where a bare flex item would land it. */
+  .check .hint { flex-basis: 100%; margin-left: 21px; }
   details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   details[open] summary { margin-bottom: 12px; }
   .note { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
@@ -191,7 +194,7 @@
     <label class="check row"><input type="checkbox" id="proof" checked> Check my English and fix typos</label>
     <label class="check row"><input type="checkbox" id="dupe"> Add even if the first field already exists</label>
     <label class="check row"><input type="checkbox" id="detail" checked> Fold the meaning onto the back
-      <span class="hint">— behind a tap, for a word that has been looked up</span></label>
+      <span class="hint">— behind a tap, for a word you looked up</span></label>
 
     <button class="primary" type="submit" id="go">Add card</button>
     <p class="note" id="speaks"></p>
