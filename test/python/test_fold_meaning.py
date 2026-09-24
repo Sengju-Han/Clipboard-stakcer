@@ -545,3 +545,50 @@ def test_a_note_type_that_sorts_on_the_field_is_left_alone(tmp_path):
     # Back, so Front is the ordinary case and reads as one.
     assert fold.sorts_on(col.get_note(list(col.find_notes(""))[0]), "Front") is False
     col.close()
+
+
+def test_limit_stops_after_that_many_cards(tmp_path, monkeypatch):
+    """How you do a thousand cards a hundred at a time, and how you try it on
+    five before trusting it with the rest."""
+    col = _collection(tmp_path, ["chagrin", "halcyon", "hideous", "weird"])
+    col.close()
+    where = _cache(tmp_path, "chagrin", "halcyon", "hideous", "weird")
+    out = tmp_path / "out"
+
+    assert _run(monkeypatch, tmp_path,
+                "--local-collection", str(tmp_path / "collection.anki2"),
+                "--cache-dir", str(where), "--out-dir", str(out),
+                "--limit", "2", "--apply") == 0
+
+    from anki.collection import Collection
+    col = Collection(str(tmp_path / "collection.anki2"))
+    folded = [w for w in ("chagrin", "halcyon", "hideous", "weird")
+              if "lexis-detail" in _back(col, w)]
+    assert len(folded) == 2
+    col.close()
+
+    # And the run after it picks up where this one stopped, because the two it
+    # did are counted as already folded rather than looked at again.
+    assert _run(monkeypatch, tmp_path,
+                "--local-collection", str(tmp_path / "collection.anki2"),
+                "--cache-dir", str(where), "--out-dir", str(out), "--apply") == 0
+    col = Collection(str(tmp_path / "collection.anki2"))
+    assert all("lexis-detail" in _back(col, w)
+               for w in ("chagrin", "halcyon", "hideous", "weird"))
+    col.close()
+
+
+def test_a_field_no_note_has_says_which_fields_there_are(tmp_path, monkeypatch, capsys):
+    """Rather than reporting a collection with nothing in it, which is what a
+    mistyped field name used to look like from the outside."""
+    col = _collection(tmp_path, ["chagrin"])
+    col.close()
+    with pytest.raises(SystemExit):
+        _run(monkeypatch, tmp_path,
+             "--local-collection", str(tmp_path / "collection.anki2"),
+             "--cache-dir", str(_cache(tmp_path, "chagrin")),
+             "--out-dir", str(tmp_path / "out"), "--field", "Definition")
+    said = capsys.readouterr().out
+    assert "Definition" in said
+    # And names the ones that do exist, so the fix is on screen.
+    assert "Back" in said and "Example" in said
