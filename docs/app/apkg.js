@@ -60,7 +60,12 @@ const BREAK = /<\s*(?:div|br|p|li|tr|details|summary)\b[^>]*>/gi;
 // way back out, silently, with the card looking perfectly healthy. It is never
 // rendered here - it goes from one Anki collection to another.
 const DETAIL_BLOCK = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/gi;
-const ONE_DETAIL = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/i;
+
+// Twice the page's own cap on the block it writes, and a block past it is not
+// one this project wrote. Kept out rather than carried: every card holds its
+// own copy in this browser's database, and a file that arrived from somewhere
+// else should not decide how much room that takes.
+const DETAIL_MAX = 8000;
 
 // Which field holds the word being learned. Name first, because a deck that
 // says "Back" or "Word" has told you; shape second, because across a whole
@@ -320,7 +325,10 @@ function extract(db, source, onProgress) {
     const wordRaw = String(parts[roles.word] || "");
     const word = plain(wordRaw);
     if (!word) { skipped += 1; continue; }
-    const detail = (ONE_DETAIL.exec(wordRaw) || [""])[0];
+    // .match() with a global pattern resets it first, so there is one regex
+    // here rather than a second one a character different from the first.
+    const found = (wordRaw.match(DETAIL_BLOCK) || [""])[0];
+    const detail = found.length <= DETAIL_MAX ? found : "";
 
     // One card per note: this app reviews a word, not each of Anki's templates.
     // A reversed-card notetype would otherwise import the same word twice.

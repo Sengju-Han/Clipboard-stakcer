@@ -945,6 +945,13 @@ function renderExplanation(info) {
   }
   if (info.memory_hook) body += `<div class="hook">${escape(info.memory_hook)}</div>`;
 
+  // Where this ends up. Without it the fold is invisible until a card has been
+  // made and then reviewed, which is the wrong moment to discover it - and it
+  // is also the line that makes the checkbox below mean something.
+  if ($(DETAIL_PREF)?.checked) {
+    body += `<div class="route">this goes on the back of the card, behind a tap</div>`;
+  }
+
   panel.innerHTML = html + body;
 }
 

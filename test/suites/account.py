@@ -540,8 +540,12 @@ def _the_meaning_goes_onto_the_card(t):
     # ---- a word that has been looked up ----------------------------------
     t.page.locator("#f-Back").fill("chagrin")
     t.page.wait_for_timeout(3200)
-    t.truthy("the word is explained while it is typed",
-             "embarrassment" in t.page.locator("#brain").inner_text())
+    brain = t.page.locator("#brain").inner_text()
+    t.truthy("the word is explained while it is typed", "embarrassment" in brain)
+    # Otherwise the fold is invisible until a card has been made and reviewed,
+    # which is the wrong moment to find out about it.
+    t.truthy("and the panel says where it is about to end up",
+             "on the back of the card" in brain)
 
     t.page.locator("#f-Front").fill("분함")
     # Typed and sent immediately, with the field still focused. Tapping Add
@@ -599,6 +603,8 @@ def _the_meaning_goes_onto_the_card(t):
     t.page.locator("#detail").uncheck()
     t.page.locator("#f-Back").fill("halcyon")
     t.page.wait_for_timeout(3200)
+    t.truthy("unticked, the panel stops claiming it goes on the card",
+             "on the back of the card" not in t.page.locator("#brain").inner_text())
     t.page.locator("#f-Example").fill("She talks about her halcyon days at school.")
     t.page.locator("#go").click()
     t.page.wait_for_timeout(1500)
