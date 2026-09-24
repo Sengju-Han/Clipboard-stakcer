@@ -32,6 +32,7 @@ from proofread import (  # noqa: E402
     apply_correction,
     client,
     check_with_languagetool,
+    headword,
     proofread,
     split_annotation,
 )
@@ -90,7 +91,11 @@ def check_sentence(values: dict[str, str], field: str, checker: str) -> tuple[li
         return [], checker
     log(f"Checking the sentence with {checker}...")
     try:
-        checked = run_checker(checker, head, values.get("Back", ""))
+        # The word, not the whole answer field. The field can carry a memory
+        # hook and a folded block of meaning underneath the word, and naming
+        # all of that as the thing the sentence practises puts a paragraph of
+        # prose into the prompt where one word belongs.
+        checked = run_checker(checker, head, headword(values.get("Back", "")))
     except Exception as exc:
         log(f"::warning::{checker} could not check the sentence ({type(exc).__name__}: {exc}).")
         # A key that exists but cannot be used - no credit, expired, revoked -

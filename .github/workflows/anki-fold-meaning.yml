@@ -1,0 +1,145 @@
+name: Anki fold meaning
+
+# Puts the generated explanation onto the back of cards that already exist.
+#
+# The Add to Anki page does this for new cards, at the moment they are made,
+# from the answer it already has. That leaves every card made before it -
+# which is nearly all of them, and all of the ones actually being reviewed.
+# This is for those: the same block, appended to the same field, folded behind
+# the same tap.
+#
+# Read-only unless 'apply' is ticked, and 'undo' takes it all back out.
+#
+# 'ask' is the only thing here that costs money. At 0 it folds only the words
+# already explained in docs/lookups/, which are free and instant. Set it to a
+# number and it looks up that many new ones, commits each answer to the cache
+# as it lands, and never pays for the same word twice.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deck:
+        description: 'Deck name(s), comma-separated. * = the whole collection.'
+        required: false
+        default: '*'
+      field:
+        description: 'Field holding the word (the fold goes under it)'
+        required: false
+        default: 'Back'
+      limit:
+        description: 'Only the first N cards that could take a fold (0 = all)'
+        required: false
+        default: '0'
+      ask:
+        description: 'Look up at most N words nobody has explained yet. ~$0.003 each, once.'
+        required: false
+        default: '0'
+      apply:
+        description: 'Write the folds back and sync. Leave off to just look.'
+        required: false
+        type: boolean
+        default: false
+      undo:
+        description: 'Take every fold back out instead. Needs apply as well.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Shares the write lock with the other workflows that sync.
+concurrency:
+  group: anki-write
+  cancel-in-progress: false
+
+jobs:
+  fold:
+    name: Fold the meaning in
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: anki/requirements-tts.txt
+
+      - name: Install
+        run: pip install --disable-pip-version-check -r anki/requirements-tts.txt
+
+      - name: Fold
+        env:
+          ANKIWEB_USERNAME: ${{ secrets.ANKIWEB_USERNAME }}
+          ANKIWEB_PASSWORD: ${{ secrets.ANKIWEB_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          # Passed as environment variables, never interpolated into the shell.
+          DECK: ${{ inputs.deck }}
+          FIELD: ${{ inputs.field }}
+          LIMIT: ${{ inputs.limit }}
+          ASK: ${{ inputs.ask }}
+          APPLY: ${{ inputs.apply }}
+          UNDO: ${{ inputs.undo }}
+        run: |
+          FLAGS=""
+          if [ "$APPLY" = "true" ]; then FLAGS="$FLAGS --apply"; fi
+          if [ "$UNDO" = "true" ]; then FLAGS="$FLAGS --undo"; fi
+          python anki/fold_meaning.py \
+            --deck "$DECK" \
+            --field "$FIELD" \
+            --limit "${LIMIT:-0}" \
+            --ask "${ASK:-0}" \
+            --out-dir fold $FLAGS
+
+      # Answers bought above are worth more than this one run: committed, the
+      # page serves them instantly on both devices and no later run pays again.
+      #
+      # `always()` because a run that died after buying forty words has still
+      # paid for forty words, and they are on disk. Retried because losing the
+      # push is losing money, not just a commit - another workflow landing on
+      # the same branch while this one was thinking is the ordinary way that
+      # happens, and it is the one a second attempt fixes.
+      - name: Cache the answers it bought
+        if: always()
+        run: |
+          if [ -z "$(git status --porcelain docs/lookups)" ]; then
+            echo "No new answers to cache."
+            exit 0
+          fi
+          COUNT=$(git status --porcelain docs/lookups | wc -l | tr -d ' ')
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/lookups
+          git commit -m "Explain ${COUNT} words looked up while folding"
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            if git push; then
+              echo "Cached ${COUNT} answers."
+              exit 0
+            fi
+            echo "::warning::Push attempt ${attempt} failed; trying again."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push ${COUNT} bought answers. They are in the" \
+               "fold artifact under docs/lookups/ - commit them by hand, or the" \
+               "next run pays for those words all over again."
+          exit 1
+
+      # docs/lookups goes in as well, so a push that could not land is money
+      # recoverable by hand rather than money spent twice.
+      - name: Upload the plan, the backup and the answers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fold
+          path: |
+            fold/fold.jsonl
+            fold/before-fold.colpkg
+            docs/lookups/
+          if-no-files-found: ignore
+          retention-days: 14

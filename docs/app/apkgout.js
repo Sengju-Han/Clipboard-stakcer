@@ -242,9 +242,17 @@ export async function buildApkg(cards, reviews = [], { now = Date.now(), media =
 
     // The answer field keeps the word and its hook together, because that is
     // where a hook is useful — under the word, on the back, in italics.
+    //
+    // The folded meaning goes back on the end, unescaped and exactly as it
+    // arrived: it is markup this project wrote, it was read off an Anki card,
+    // and it is going onto an Anki card. This app never renders it. Escaping
+    // it would put the tags on the card as text, and dropping it would quietly
+    // undo the work the fold workflow did — the same reason the audio names
+    // below travel even though the files do not.
     const back = [
       `<div class=word>${esc(card.word)}</div>`,
       card.hook ? `<div class=hook>${esc(card.hook)}</div>` : "",
+      card.detail || "",
     ].filter(Boolean).join("");
     // The audio reference travels even though the file does not: these names
     // came out of the person's own collection, so on the other side they

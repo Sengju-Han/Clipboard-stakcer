@@ -24,6 +24,13 @@ with a tone in the first six seconds, and a small `.apkg` written by hand at
 schema 11 — by hand on purpose, so reading it checks the reader against the
 format rather than against this project's own writer.
 
+One file is committed, and deliberately: `folded-meaning.json`. The block of
+markup that folds a word's meaning onto the back of a card is written twice,
+once in JavaScript by the Add to Anki page and once in Python by the fold
+workflow, and two implementations of one piece of markup drift silently. That
+file is the block, and three separate tests assert their side produces exactly
+it — so the day one of them changes, the other has to be looked at.
+
 ## What each one is for
 
 | | |
@@ -38,7 +45,7 @@ format rather than against this project's own writer.
 | `watch` | subtitles read, words marked against the deck, one mined, one dismissed |
 | `explain` | the explanation after an Again, and that an explained word costs nothing |
 | `speak` | a conversation from this week's words, with a scripted partner |
-| `apkg_roundtrip` | somebody else's file read, and one written back |
+| `apkg_roundtrip` | somebody else's file read, and one written back, keeping what this app does not use |
 | `real_server` | the page against the real Worker, with nothing standing between them |
 | `study_ahead` | an evening with nothing due is not a dead end |
 | `timezones` | a card due today is due today, wherever you are |

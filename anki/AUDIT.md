@@ -38,6 +38,18 @@ Skipped outright:
   **no recording went missing anywhere in the collection** that it did not
   mean to remove — and refuses to sync if any of that is wrong
 
+A correction is also refused, per card, if it drops the word the card exists
+for: *"Mary deposited the baby in the crib"* corrected to *"Mary placed the
+baby in the crib"* is the better sentence and a worthless card.
+
+> **Changed 23 September 2026.** That guard used to read the whole answer
+> field, so on a card whose answer carried a memory hook underneath the word —
+> and now, on one carrying the folded meaning — every noun in the hook counted
+> as a word the correction was forbidden to drop. Corrections were refused for
+> losing a word that was only ever in your own note. It now reads the word and
+> nothing else, which is what it was always meant to guard. Nothing that was
+> applied before was wrong; some things that should have applied did not.
+
 If a corrected sentence already had a recording, that recording says the old
 wording. The `[sound:]` tag is removed and the summary says how many, so the
 **Anki TTS package** workflow can record the corrected sentence — it looks for

@@ -43,7 +43,29 @@ const DIFFICULTY_MID = 5.0;
 
 const SOUND_TAG = /\[sound:([^\]]*)\]/g;
 const MARKUP = /<[^>]+>/g;
-const BREAK = /<\s*(?:div|br|p|li|tr)\b[^>]*>/gi;
+const BREAK = /<\s*(?:div|br|p|li|tr|details|summary)\b[^>]*>/gi;
+
+// The Add to Anki page folds the word's generated meaning into a <details>
+// block underneath it, where on the card it costs one tap and nothing until
+// then. Run through plain() it is several hundred words of definition, Korean
+// and example sentences, and it would land in the memory hook - the one line
+// of italics under the word on this app's cards.
+//
+// So it is kept out of the text and kept on the card. plain() drops it, and
+// the raw block is carried on the side, exactly as it was written, so a deck
+// that goes out through apkgout.js arrives back in Anki with it still there.
+//
+// The same decision as the [sound:] names further down, for the same reason:
+// this app does not use it, and losing it on the way in would lose it on the
+// way back out, silently, with the card looking perfectly healthy. It is never
+// rendered here - it goes from one Anki collection to another.
+const DETAIL_BLOCK = /<details\b[^>]*lexis-detail[\s\S]*?<\/details>/gi;
+
+// Twice the page's own cap on the block it writes, and a block past it is not
+// one this project wrote. Kept out rather than carried: every card holds its
+// own copy in this browser's database, and a file that arrived from somewhere
+// else should not decide how much room that takes.
+const DETAIL_MAX = 8000;
 
 // Which field holds the word being learned. Name first, because a deck that
 // says "Back" or "Word" has told you; shape second, because across a whole
@@ -73,6 +95,7 @@ export function loadSql() {
 
 function plain(text) {
   return String(text || "")
+    .replace(DETAIL_BLOCK, "")
     .replace(SOUND_TAG, "")
     .replace(BREAK, "\n")
     .replace(MARKUP, "")
@@ -299,8 +322,13 @@ function extract(db, source, onProgress) {
     const roles = rolesByType.get(row.mid) || { word: 0, example: -1 };
     const names = fields.get(row.mid) || [];
 
-    const word = plain(parts[roles.word] || "");
+    const wordRaw = String(parts[roles.word] || "");
+    const word = plain(wordRaw);
     if (!word) { skipped += 1; continue; }
+    // .match() with a global pattern resets it first, so there is one regex
+    // here rather than a second one a character different from the first.
+    const found = (wordRaw.match(DETAIL_BLOCK) || [""])[0];
+    const detail = found.length <= DETAIL_MAX ? found : "";
 
     // One card per note: this app reviews a word, not each of Anki's templates.
     // A reversed-card notetype would otherwise import the same word twice.
@@ -343,6 +371,7 @@ function extract(db, source, onProgress) {
       deck: decks.get(row.odid || row.did) || decks.get(row.did) || "Default",
       word: head.trim(),
       hook: rest.join(" ").trim(),
+      ...(detail ? { detail } : {}),
       clue,
       example: plain(exampleRaw),
       audio: audio[0] || "",

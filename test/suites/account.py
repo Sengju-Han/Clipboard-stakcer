@@ -9,6 +9,8 @@ bytes that actually went over the wire.
 """
 
 import json
+import re
+from pathlib import Path
 
 TOKEN = "github_pat_11ABCDEFG0123456789_secretpartnobodyshouldsee"
 KEY = "sk-ant-api03-thisisnottherealkeyobviously"
@@ -262,6 +264,8 @@ def run(t):
     t.truthy("and a key changed here is sent back", state["seen"][-1] != blob)
 
     _an_empty_submit_says_so(t)
+    _the_sentence_is_read_as_you_write_it(t)
+    _the_meaning_goes_onto_the_card(t)
 
 
 def _an_empty_submit_says_so(t):
@@ -289,3 +293,387 @@ def _an_empty_submit_says_so(t):
     said = t.page.locator("#feed").inner_text()
     t.truthy("an empty card says what is missing", "fill in at least one field" in said.lower())
     t.note("it said", said.strip().replace("\n", " ")[:110])
+
+
+# ---- the example sentence -------------------------------------------------
+
+NATURAL = {"verdict": "natural", "natural": "", "why": "", "words": [], "slang": []}
+
+FIXED = {
+    "verdict": "understandable",
+    "natural": "I recommend the restaurant I went to yesterday.",
+    "why": "it already happened, so it takes -ed",
+    "words": [{
+        "typed": "reccomend", "meant": "recommend",
+        "meaning": "to say something is good and worth choosing",
+        "korean": "추천하다",
+    }],
+    "slang": [{
+        "phrase": "hit the spot", "meaning": "was exactly what you wanted",
+        "register": "casual",
+    }],
+}
+
+
+def _the_sentence_is_read_as_you_write_it(t):
+    """The example field is where the learner writes English of their own, and
+    until now it was the one field nothing read.
+
+    What is checked here is not that a sentence gets corrected - it is that a
+    correction never arrives alone. A verdict on its own is worthless to
+    somebody who does not yet know what right looks like, so the natural
+    version, the meaning of every word they got wrong, and any slang all have
+    to come with it. And that nothing is ever replaced without being asked.
+
+    Every sentence below is different on purpose. Two guards make a repeat
+    free - the cache, and a check that the text actually changed - and reusing
+    a sentence means testing those instead of the thing in hand.
+    """
+    asked = []
+
+    def claude(route):
+        body = json.loads(route.request.post_data)
+        asked.append(body)
+        said = body["messages"][0]["content"]
+        out = FIXED if "reccomend" in said else NATURAL
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(out)}]}))
+
+    t.page.route("https://api.anthropic.com/**", claude)
+    t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
+    t.page.wait_for_selector("#settings", timeout=30000)
+    # A fresh device. Without this the key from earlier in this suite is still
+    # in storage, and the no-key case below silently tests the opposite.
+    t.page.evaluate("""() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    }""")
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(800)
+
+    box = t.page.locator("#f-Example")
+    panel = t.page.locator("#said")
+    t.check("the example field has somewhere to be read", panel.count(), 1)
+
+    # ---- no key: it says so once, and asks Claude nothing -----------------
+    asked.clear()
+    box.fill("She go to the market every mornings.")
+    t.page.wait_for_timeout(2400)
+    t.truthy("with no key it says where to put one",
+             "Anthropic key" in panel.inner_text())
+    t.check("and spends nothing finding that out", len(asked), 0)
+
+    _panels(t)
+    _fill(t, "anthropic", KEY)
+
+    # ---- a fragment is not a sentence -------------------------------------
+    asked.clear()
+    box.fill("the cat")
+    t.page.wait_for_timeout(2400)
+    t.check("a fragment is left alone", len(asked), 0)
+    t.check("and says nothing about it", panel.inner_text().strip(), "")
+
+    # ---- a sentence that needs work ---------------------------------------
+    box.fill("I reccomend the restaurant I go yesterday.")
+    t.page.wait_for_timeout(2800)
+    t.check("a real sentence is read once", len(asked), 1)
+    t.truthy("and the sentence is what was sent",
+             "reccomend" in asked[0]["messages"][0]["content"])
+
+    said = panel.inner_text()
+    t.truthy("it offers the natural version",
+             "I recommend the restaurant I went to yesterday." in said)
+    t.truthy("and says what changed in plain words", "already happened" in said)
+    # The whole point of the exercise: a word you got wrong is a word you do
+    # not know yet, so it comes back with what it means.
+    t.truthy("a word typed wrong comes back with what it means",
+             "to say something is good and worth choosing" in said)
+    t.truthy("and its Korean", "\uCD94\uCC9C\uD558\uB2E4" in said)
+    t.truthy("slang is explained rather than removed",
+             "was exactly what you wanted" in said)
+    t.truthy("with how casual it is", "casual" in said)
+
+    # ---- and nothing is taken without being asked -------------------------
+    t.check("the field is still exactly what they typed",
+            box.input_value(), "I reccomend the restaurant I go yesterday.")
+    t.check("both ways out are offered",
+            [t.page.locator("#said button.take").count(),
+             t.page.locator("#said button.keep").count()], [1, 1])
+
+    t.page.locator("#said button.keep").click()
+    t.page.wait_for_timeout(500)
+    t.check("keeping yours leaves the sentence alone",
+            box.input_value(), "I reccomend the restaurant I go yesterday.")
+    t.check("and puts the panel away", panel.inner_text().strip(), "")
+
+    # ---- taking the suggestion --------------------------------------------
+    asked.clear()
+    box.fill("I reccomend this place to everybody I meet.")
+    t.page.wait_for_timeout(2800)
+    t.check("a different sentence is read", len(asked), 1)
+    t.page.locator("#said button.take").click()
+    t.page.wait_for_timeout(600)
+    t.check("taking it puts it in the field",
+            box.input_value(), "I recommend the restaurant I went to yesterday.")
+    t.check("and does not then ask about its own suggestion", len(asked), 1)
+
+    # ---- a sentence that is already fine ----------------------------------
+    asked.clear()
+    box.fill("The train was jam-packed this morning.")
+    t.page.wait_for_timeout(2800)
+    t.check("a natural sentence is read", len(asked), 1)
+    t.truthy("and told so", "reads naturally" in panel.inner_text())
+    t.check("and is offered no rewrite", t.page.locator("#said button.take").count(), 0)
+
+    # ---- half a sentence is not a sentence --------------------------------
+    # A pause is a poor signal on a phone: thinking about the next word looks
+    # exactly like having finished. Paid for, and the answer is about a
+    # sentence nobody was trying to write.
+    asked.clear()
+    box.fill("I was walking home when I saw")
+    t.page.wait_for_timeout(2200)
+    t.check("a sentence with no ending is left alone for longer", len(asked), 0)
+    t.page.wait_for_timeout(2600)
+    t.check("and then read anyway, rather than never", len(asked), 1)
+
+    asked.clear()
+    box.fill("Leaving the field is finishing too")
+    t.page.wait_for_timeout(400)
+    box.blur()
+    t.page.wait_for_timeout(1200)
+    t.check("moving on says it is finished without waiting", len(asked), 1)
+
+    # ---- the same sentence twice is free ----------------------------------
+    box.fill("Something else entirely, just for a moment here.")
+    t.page.wait_for_timeout(2800)
+    spent = len(asked)
+    box.fill("The train was jam-packed this morning.")
+    t.page.wait_for_timeout(2800)
+    t.check("a sentence already read is not paid for twice", len(asked), spent)
+    t.truthy("and comes straight back", "reads naturally" in panel.inner_text())
+
+    t.page.unroute("https://api.anthropic.com/**")
+
+
+# ---- the meaning, onto the card -------------------------------------------
+
+# The same answer, and the same markup, that anki/fold_meaning.py is pinned
+# against. One block of HTML has two authors - this page writes it in the
+# browser when a card is sent, and the workflow writes it in Python for the
+# cards that already exist - and a card folded on the phone has to be the same
+# card as one folded by the workflow. This is the half of that pin that runs
+# the real page.
+FOLDED = json.loads(
+    (Path(__file__).resolve().parents[1] / "folded-meaning.json")
+    .read_text(encoding="utf-8"))
+EXPLAINED = FOLDED["info"]
+
+# The first block tag in a field is where every reader in this project stops
+# looking for the word: anki/proofread.py, the voice, this app's own importer.
+# Written out here rather than imported so the test fails if the page starts
+# writing the block somewhere the rest of the project will not skip.
+BLOCK_TAG = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6]|details|summary)\b[^>]*>", re.I)
+
+
+def _the_meaning_goes_onto_the_card(t):
+    """Everything the page works out about a word used to stop at the page.
+
+    You read the meaning once, while making the card, and then met that card a
+    hundred times with nothing on it but the word and your own sentence - while
+    the answer sat in a file in this repository the whole time. So it goes onto
+    the back of the card, folded, and this checks the two halves of that: that
+    it arrives, and that folding it in front of the word would have broken
+    everything downstream, so it does not.
+    """
+    sent = []
+    read = []
+
+    def claude(route):
+        body = json.loads(route.request.post_data)
+        # One URL, two contracts. The sentence checker names itself in its
+        # system prompt; anything else is the word lookup.
+        sentence = "example sentence" in (body.get("system") or "")
+        if sentence:
+            read.append(body["messages"][0]["content"])
+        out = NATURAL if sentence else EXPLAINED
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(out)}]}))
+
+    def github(route):
+        request = route.request
+        if request.method == "POST" and "/dispatches" in request.url:
+            sent.append(json.loads(request.post_data or "{}"))
+            return route.fulfill(status=204, body="")
+        # Everything else - the explanation this page writes back to the
+        # repository, the run list it polls - answers politely and says
+        # nothing, so the page falls through to the API for the lookup.
+        if request.method == "GET" and "/runs" in request.url:
+            return route.fulfill(status=200, content_type="application/json",
+                                 body=json.dumps({"workflow_runs": []}))
+        return route.fulfill(status=404, content_type="application/json",
+                             body=json.dumps({"message": "not here"}))
+
+    t.page.route("https://api.anthropic.com/**", claude)
+    t.page.route("https://api.github.com/**", github)
+
+    t.page.goto(f"http://127.0.0.1:{t.server.port}/index.html")
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.evaluate("""() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    }""")
+    t.page.reload()
+    t.page.wait_for_selector("#settings", timeout=30000)
+    t.page.wait_for_timeout(800)
+
+    _panels(t)
+    _fill(t, "token", TOKEN)
+    _fill(t, "anthropic", KEY)
+    _fill(t, "owner", "Sengju-Han")
+    _fill(t, "repo", "Clipboard-stakcer")
+    t.page.locator("#deck").fill("Steve Jobs")
+
+    t.check("the choice is offered", t.page.locator("#detail").count(), 1)
+    t.check("and taken by default", t.page.locator("#detail").is_checked(), True)
+
+    # ---- a word that has been looked up ----------------------------------
+    t.page.locator("#f-Back").fill("chagrin")
+    t.page.wait_for_timeout(3200)
+    brain = t.page.locator("#brain").inner_text()
+    t.truthy("the word is explained while it is typed", "embarrassment" in brain)
+    # Otherwise the fold is invisible until a card has been made and reviewed,
+    # which is the wrong moment to find out about it.
+    t.truthy("and the panel says where it is about to end up",
+             "on the back of the card" in brain)
+
+    t.page.locator("#f-Front").fill("분함")
+    # Typed and sent immediately, with the field still focused. Tapping Add
+    # card blurs it on the way, and reading the sentence then is a request for
+    # a card that has already gone - and a panel growing underneath the button
+    # at the moment it is being tapped, which is how a tap lands on the wrong
+    # thing.
+    read.clear()
+    t.page.locator("#f-Example").fill("Much to my chagrin, I had left it at home.")
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("the card was sent", len(sent), 1)
+    t.check("and sending it did not pay to read the sentence on the way out",
+            len(read), 0)
+    fields = json.loads(sent[0]["inputs"]["fields"])
+    back = fields["Back"]
+
+    t.truthy("the meaning rides along on the back of the card",
+             "embarrassment or annoyance at having failed" in back)
+    t.truthy("and is folded rather than sitting there open", "<details" in back)
+    t.truthy("with something to tap", "<summary" in back and "in detail" in back)
+
+    # The whole reason it is a <details> and not more text. A definition that is
+    # simply there is a definition you read instead of remembering.
+    t.check("the word is still the first thing on the card",
+            BLOCK_TAG.split(back)[0].strip(), "chagrin")
+
+    # It is on the line above. Restating it inside costs a phone screen.
+    inside = re.sub(r"<[^>]+>", "", back.split("</summary>", 1)[1]).strip()
+    t.truthy("and the fold opens on the meaning rather than on the word again",
+             inside.startswith("a feeling of embarrassment"))
+
+    # The pin. If this fails, the page and anki/fold_meaning.py have stopped
+    # writing the same block, and cards folded either way no longer match.
+    t.check("and it is the block the workflow writes for older cards",
+            back, "chagrin" + FOLDED["html"])
+
+    t.truthy("the Korean comes with it", "분함" in back)
+    t.truthy("and the nuance", "your own failure" in back)
+    t.truthy("and what it goes with", "much to my chagrin" in back)
+    t.truthy("and what it is not", "chagrined" in back)
+    t.truthy("and the hook", "sha-GRIN" in back)
+    t.note("what went on the card", f"{len(back)} characters, {back.count('<div')} lines")
+
+    # The note type is the user's, and changing it is the schema change this
+    # project refuses, so the fold styles itself. Which means it has to
+    # survive Anki's night mode: a grey that reads well on a white card is
+    # invisible on a black one, so it names no colour at all.
+    t.check("and nothing in it assumes a light card",
+            re.findall(r"(?<!current)color:\s*[^;\"]+", back), [])
+
+    # ---- the way back out -------------------------------------------------
+    sent.clear()
+    t.page.locator("#detail").uncheck()
+    t.page.locator("#f-Back").fill("halcyon")
+    t.page.wait_for_timeout(3200)
+    t.truthy("unticked, the panel stops claiming it goes on the card",
+             "on the back of the card" not in t.page.locator("#brain").inner_text())
+    t.page.locator("#f-Example").fill("She talks about her halcyon days at school.")
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("a second card was sent", len(sent), 1)
+    t.check("unticked, the back is exactly what was typed",
+            json.loads(sent[0]["inputs"]["fields"])["Back"], "halcyon")
+
+    # ---- a word nobody looked up -----------------------------------------
+    sent.clear()
+    t.page.locator("#detail").check()
+    t.page.locator("#f-Back").fill("zzzz")     # too unlike a word to be asked about
+    t.page.locator("#f-Example").fill("Nothing was ever looked up for this one.")
+    t.page.wait_for_timeout(3200)
+    t.page.locator("#go").click()
+    t.page.wait_for_timeout(1500)
+
+    t.check("a word with no explanation gets no fold",
+            json.loads(sent[0]["inputs"]["fields"])["Back"], "zzzz")
+
+    _the_sentence_cache_does_not_grow_forever(t)
+
+    t.page.unroute("https://api.anthropic.com/**")
+    t.page.unroute("https://api.github.com/**")
+
+
+def _the_sentence_cache_does_not_grow_forever(t):
+    """The explanation cache is keyed by word, so it is capped by how much
+    vocabulary one person has. This one is keyed by the sentence, and there is
+    no end to sentences.
+
+    What a full quota eventually breaks is not the cache - a failed write there
+    loses an answer nobody was waiting for - but everything sharing the origin,
+    which on this page is the settings and the locked GitHub token.
+    """
+    keep = t.page.evaluate("""() => {
+      const found = document.documentElement.innerHTML.match(/const SENTENCE_KEEP = (\d+)/);
+      return found ? Number(found[1]) : 0;
+    }""")
+    t.check("there is a limit at all", keep > 0, True)
+
+    # Written straight in rather than typed: a hundred real sentences is forty
+    # minutes of test, and what is being checked is the pruning, not the typing.
+    left = t.page.evaluate("""(keep) => {
+      const KEY = "said:";
+      for (let i = 0; i < keep * 2; i += 1) {
+        localStorage.setItem(KEY + "sentence number " + i,
+          JSON.stringify({ at: Date.now() - (keep * 2 - i) * 1000, info: { verdict: "natural" } }));
+      }
+      // One more through the page's own writer, which is what prunes.
+      const box = document.getElementById("f-Example");
+      box.value = "One more sentence, written last of all.";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      return null;
+    }""", keep)
+    t.page.wait_for_timeout(3000)
+
+    after = t.page.evaluate("""() => {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("said:")) keys.push(k);
+      }
+      return keys;
+    }""")
+    t.check("and it holds", len(after) <= keep, True)
+    t.note("how many it kept", f"{len(after)} of {keep * 2 + 1} written, limit {keep}")
+    # The newest survive: the oldest go first, which is the only ordering that
+    # makes a cache worth having.
+    t.truthy("keeping the newest rather than whichever came to hand",
+             "said:One more sentence, written last of all." in after)
+    t.truthy("and dropping the oldest", "said:sentence number 0" not in after)

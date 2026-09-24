@@ -95,6 +95,21 @@ def clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# The folded block of meaning the Add to Anki page writes under a word. It is
+# part of the card and belongs in the export like any other markup, but it is
+# not the word - and choose_word_field() below decides which field holds the
+# word by measuring how long each one is. Left in, it turns the answer field
+# from the shortest into by far the longest, and the word column lands on
+# whichever field happens to be short instead.
+DETAIL_BLOCK = re.compile(r"<details\b[^>]*lexis-detail.*?</details>",
+                          re.IGNORECASE | re.DOTALL)
+
+
+def word_sample(raw: str) -> str:
+    """A field as word-detection should see it: the card, without the fold."""
+    return clean(DETAIL_BLOCK.sub(" ", raw or ""))
+
+
 class Clock:
     """Timestamp formatting in the user's chosen timezone."""
 
@@ -437,7 +452,9 @@ def reconcile_word_field(
     for name in candidates:
         per_notetype = []
         for group in by_notetype.values():
-            length = _median_length([r["_fields"].get(name, "") for r in group])
+            length = _median_length(
+                [word_sample(r["_fields_raw"].get(name, "")) for r in group]
+            )
             if length is None:
                 break  # empty for a whole note type, so it cannot be the word
             per_notetype.append(length)
@@ -464,7 +481,10 @@ def assign_word_column(records: list[dict], override: str | None) -> list[str]:
                 if name not in names:
                     names.append(name)
         fields_of[notetype] = names
-        samples_of[notetype] = {name: [r["_fields"].get(name, "") for r in group] for name in names}
+        samples_of[notetype] = {
+            name: [word_sample(r["_fields_raw"].get(name, "")) for r in group]
+            for name in names
+        }
 
     chosen_of: dict[str, str] = {}
     why_of: dict[str, str] = {}

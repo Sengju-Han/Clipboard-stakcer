@@ -50,8 +50,13 @@ from export_deck import (  # noqa: E402
 
 # A field often holds the sentence first and the user's own gloss after a block
 # break. Only the first segment is worth speaking: the rest is notes to self,
-# frequently in another language, and a voice reading it aloud is noise.
-BLOCK_BOUNDARY = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6])\b[^>]*>", re.IGNORECASE)
+# frequently in another language, and a voice reading it aloud is noise. The
+# folded meaning the Add to Anki page writes under a word is the same problem
+# with a louder failure - a whole definition read out - so `details` is a break
+# here as well.
+BLOCK_BOUNDARY = re.compile(
+    r"<\s*(?:div|br|p|li|tr|h[1-6]|details|summary)\b[^>]*>", re.IGNORECASE
+)
 
 # Anki treats a leading underscore as "template asset, leave alone" in Check
 # Media. These are ordinary media files and should be swept like any other.

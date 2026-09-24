@@ -159,6 +159,130 @@ the moment where you try to remember the word yourself, which is most of what
 makes it stick. Everything below the headword is behind the same tap, because
 an example sentence gives the meaning away as surely as the definition does.
 
+### And it goes onto the card
+
+Tick **Fold the meaning onto the back** — it is on by default — and the
+explanation is appended to the **Back** field, underneath the word, inside a
+`<details>`. In Anki it shows as a small **in detail** you can tap, and nothing
+until you do.
+
+Folded, not printed. The back of a card is where you check what you just tried
+to remember, and a definition sitting open next to the word turns that check
+into reading. One tap opens it, and the tap is the point: you take it when you
+were wrong, or curious, and not otherwise. The Korean sits last inside the
+fold, so your eye reaches it after the English rather than before.
+
+It costs nothing and waits for nothing — this is the answer that already
+arrived while you were typing the word, on its way to `docs/lookups/` anyway.
+A word you never looked up gets no fold, and unticking the box stops it for
+every card after that. Cards already made keep theirs.
+
+**It is appended, never prepended.** Everything in this project that asks
+"which word is this card for?" answers it by reading the answer field up to the
+first block tag: the proofreader, the word check, the voice, the exporter, and
+Lexis's own importer. The word stays the first thing in the field and every one
+of them still sees it alone.
+
+The block styles itself inline and names no colour at all, so it reads the same
+on a white card and in Anki's night mode. It has to: the note type is yours,
+and editing it is the schema change that would make AnkiWeb demand a full
+upload — which this project refuses everywhere, for the same reason.
+
+A deck taken into Lexis and exported back out keeps it. Lexis does not show it
+— it has its own panel built from the same answers — but it carries the block
+untouched and writes it back onto the card, the same way it carries the
+`[sound:]` names of recordings it cannot play.
+
+#### The cards you already have
+
+All of that only helps cards made from now on, and the collection this was
+written against has around 1,240 made before it — which are the ones actually
+being reviewed. The **Anki fold meaning** workflow puts the same block on those.
+
+| Input | What it does |
+| --- | --- |
+| `deck` | Which decks. `*` is everything. |
+| `field` | The field holding the word. The fold goes under it. |
+| `limit` | Only the first N cards that could take one. |
+| `ask` | **The only thing here that costs money.** How many words nobody has explained yet to look up. |
+| `apply` | Write it and sync. Off, it only tells you what it would do. |
+| `undo` | Take every fold back out. Needs `apply` as well. |
+
+**Start with everything off.** It syncs your collection down, works out what it
+would do, and writes a summary: how many cards could take a fold, how many
+already have an explanation waiting in `docs/lookups/`, and the list of words
+nobody has looked up. Nothing is written.
+
+`ask` is where money happens, and it is capped by you. Each new word is a few
+hundred tokens each way on Haiku — **about a third of a cent** — and the answer
+is committed to `docs/lookups/` as it lands, so the page, the other device and
+every later run get it free. The whole collection is a few dollars once, ever,
+and you can do it a hundred words at a time.
+
+Run it again and nothing happens twice: a card that already carries a fold is
+counted and skipped, which is what makes it safe to keep running as the cache
+fills up.
+
+None of it is slow. Against a 1,240-card collection the fold takes a second and
+a bit, a re-run under half of one, and the undo about the same — the workflow's
+whole time budget is the AnkiWeb sync and, if you set `ask`, the lookups.
+
+**Nothing is sent to AnkiWeb unless every check passes**, the same ones the rest
+of these workflows make before a sync:
+
+- no note added or removed
+- no note changed that this run did not mean to change
+- **the word is still the word** — a fold that landed in front of it would take
+  the card away from the proofreader, the word check, the voice and the export
+  all at once, so it is compared before and after and refuses outright
+- no card's scheduling moved
+- no `[sound:]` tag went missing anywhere in the collection
+- a full `.colpkg` backup is written first and kept as an artifact
+
+And `undo` with `apply` takes every fold back out, leaving the word, any memory
+hook you wrote yourself, the sentence and the scheduling exactly as they were.
+
+## The sentence, read as you write it
+
+Type into **Example** and the sentence is read back to you while you are still
+on the page — about a second after you stop typing, in the panel under the box.
+Nothing is changed. It offers, and you decide.
+
+This is separate from the check below, which happens on the runner after the
+card is sent. That one is a safety net you read afterwards in a run summary.
+This one is in front of you while you can still think about it, which is the
+only moment any of it is worth anything.
+
+**A verdict on its own is useless**, and that is the whole design of it. Being
+told a sentence is wrong teaches nothing to somebody who does not yet know what
+right looks like. So an answer never arrives alone:
+
+- **the natural version**, changing as little as possible — your words, your
+  meaning, your tense, your register. It is your sentence, not its.
+- **what changed**, in one clause of plain English. Not *"the present perfect
+  requires"* but *"it already finished, so it takes -ed"*.
+- **every word you got wrong, and what the word you meant means** — the
+  definition and the Korean. You spelled it wrong because you do not know it
+  yet, so this is the moment to learn it rather than to be corrected. A word
+  spelled correctly and used wrongly counts too.
+- **any slang or idiom**, explained rather than removed, with how casual it is.
+  If you reached for an idiom you were doing the right thing; it says what it
+  means and leaves it in.
+
+Two buttons: **Use this** replaces what you typed, **Keep mine** puts the panel
+away and leaves the field alone. Until you press one, the field is exactly what
+you typed.
+
+It waits until the sentence looks *finished*, not until you stopped typing —
+those are not the same thing on a phone, where thinking about the next word
+looks exactly like having written the last one. A full stop (or a `?`, a `!`, a
+closing quote) means a short pause is enough; without one it waits a good deal
+longer; and moving on to another field counts as finishing. Anything too short
+to be a sentence is ignored, and the same sentence is never paid for twice.
+
+Without an `ANTHROPIC_API_KEY` in Settings the panel says so, once, and asks
+nothing. The check below still runs, and still costs nothing.
+
 ## Checking your English
 
 Sentences typed on a phone pick up typos, and a sentence can be spelled

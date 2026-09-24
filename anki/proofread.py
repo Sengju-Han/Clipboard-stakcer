@@ -44,8 +44,13 @@ MODEL = os.environ.get("ANTHROPIC_MODEL", "").strip() or "claude-haiku-4-5"
 
 # Everything after the first block break is the learner's own note - a gloss, a
 # definition, often in another language. It is not part of the sentence and is
-# left exactly as found.
-BLOCK_BOUNDARY = re.compile(r"<\s*(?:div|br|p|li|tr|h[1-6])\b[^>]*>", re.IGNORECASE)
+# left exactly as found. `details` is in the list because the Add to Anki page
+# folds the generated meaning into a <details> block under the word: it is a
+# block element like the rest, and everything that stops at the first break
+# needs to stop at it too - the proofreader, the headword, the voice.
+BLOCK_BOUNDARY = re.compile(
+    r"<\s*(?:div|br|p|li|tr|h[1-6]|details|summary)\b[^>]*>", re.IGNORECASE
+)
 
 MARKUP = re.compile(r"<[^>]+>|&[a-zA-Z]+;|&#\d+;")
 
@@ -181,6 +186,24 @@ def split_annotation(raw: str) -> tuple[str, str]:
     if not match:
         return raw, ""
     return raw[: match.start()], raw[match.start() :]
+
+
+def headword(raw: str) -> str:
+    """The word a card exists for, without whatever is written under it.
+
+    The answer field holds the word on the first line and then, on some cards, a
+    memory hook, and now a folded block carrying the meaning that the Add to
+    Anki page generated. Both sit after a block tag, and neither is the word.
+
+    Anything asking "what does this card practise?" wants this and not the raw
+    field. Handing over the whole field looks harmless and is not: as a
+    proofreading target it fills the prompt with prose the sentence was never
+    meant to contain, and in keeps_the_word() every noun in the definition
+    becomes a word the correction is forbidden to drop, which quietly refuses
+    corrections that were perfectly good.
+    """
+    head, _ = split_annotation(str(raw or ""))
+    return MARKUP.sub("", head).strip()
 
 
 def has_markup(text: str) -> bool:
